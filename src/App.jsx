@@ -37,6 +37,57 @@ const processImageFile = (file, callback) => {
   reader.readAsDataURL(file);
 };
 
+// --- HELPER FUNCTION: Direct Bluetooth Print (RawBT / ESC-POS) ---
+// Desain khusus Thermal Printer 58mm (Lebar maksimal 32 Karakter). Ringkas & Hemat Kertas.
+const printDirectBluetooth = (type, data, settings) => {
+    const center = (str) => {
+        const spaces = Math.max(0, Math.floor((32 - str.length) / 2));
+        return ' '.repeat(spaces) + str;
+    };
+    const right = (lbl, val) => {
+        const spaces = Math.max(0, 32 - lbl.length - val.length);
+        return lbl + ' '.repeat(spaces) + val;
+    };
+
+    const loc = data.lokasi || '';
+    const nip = data.kasirMasuk || data.kasirKeluar || '';
+    const nopol = data.nopol || '';
+    const jenis = data.jenis || '';
+    const divider = '-'.repeat(32);
+
+    let text = '';
+    text += center("PARKIR TERPADU") + '\n';
+    text += center(loc) + '\n';
+    text += divider + '\n';
+    
+    if (type === 'IN') {
+        text += center("TIKET MASUK") + '\n';
+        text += divider + '\n';
+        text += `NOPOL : ${nopol}\n`;
+        text += `JENIS : ${jenis}\n`;
+        text += `MASUK : ${data.waktuMasuk.toLocaleString('id-ID')}\n`;
+        text += `KASIR : ${nip}\n`;
+        text += divider + '\n';
+        text += center("SIMPAN TIKET INI") + '\n';
+    } else {
+        text += center("STRUK KELUAR") + '\n';
+        text += divider + '\n';
+        text += `NOPOL : ${nopol}\n`;
+        text += `JENIS : ${jenis} ${data.tiketHilang ? '(HILANG)' : ''}\n`;
+        text += `MASUK : ${data.waktuMasuk.toLocaleTimeString('id-ID')}\n`;
+        text += `KELUAR: ${data.waktuKeluar.toLocaleTimeString('id-ID')}\n`;
+        text += `DURASI: ${data.durasiText}\n`;
+        text += divider + '\n';
+        text += right("TOTAL:", `Rp ${data.totalBiaya.toLocaleString('id-ID')}`) + '\n';
+        text += divider + '\n';
+        text += center("TERIMA KASIH") + '\n';
+    }
+    text += '\n\n';
+
+    // Mengirim perintah teks murni via Intent ke aplikasi RawBT/Bluetooth Print Service
+    window.location.href = `intent:${encodeURI(text)}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
+};
+
 // --- CONSTANTS & DEFAULT DATA ---
 const PURE_LOCATIONS = ['ST. Cimahi Selatan', 'ST. Gadobangkong', 'ST. Cianjur', 'ST. Cibatu'];
 const LOCATIONS = [...PURE_LOCATIONS, 'All Lokasi'];
@@ -64,10 +115,12 @@ const DEFAULT_SETTINGS = {
   members: [],
   activeLogins: {}, // Registry untuk mencegah login ganda di lokasi yang sama
   users: [
-    { id: 'u1', nipp: 'master', nama: 'Petugas Master', role: 'master', password: '123', canViewArea: true },
-    { id: 'u2', nipp: '1014202601', nama: 'Petugas Satu', role: 'kasir', password: '123', canViewArea: true },
-    { id: 'u3', nipp: '1014202602', nama: 'Petugas Dua', role: 'kasir', password: '123', canViewArea: true },
-    { id: 'u4', nipp: 'AUDIT', nama: 'Petugas Audit', role: 'audit', password: '123', canViewArea: true }
+    { id: 'u1', nipp: '200041', nama: 'Petugas Master', role: 'master', password: 'R3gional2BD!', canViewArea: true },
+    { id: 'u2', nipp: 'audit', nama: 'Petugas Audit', role: 'audit', password: 'Rmu123456', canViewArea: true },
+    { id: 'u3', nipp: 'korlap123Rmu', nama: 'Petugas Korlap', role: 'korlap', password: '123', canViewArea: true },
+    { id: 'u4', nipp: 'Kasier Pagi', nama: 'Kasir Pagi', role: 'kasir', password: '123', canViewArea: true },
+    { id: 'u5', nipp: 'Kasir Siang', nama: 'Kasir Siang', role: 'kasir', password: '123', canViewArea: true },
+    { id: 'u6', nipp: 'Kasir Malam', nama: 'Kasir Malam', role: 'kasir', password: '123', canViewArea: true }
   ],
   locations: PURE_LOCATIONS.reduce((acc, loc) => ({ ...acc, [loc]: JSON.parse(JSON.stringify(DEFAULT_LOCATION_SETTINGS)) }), {})
 };
@@ -371,6 +424,22 @@ export default function App() {
             color: #000 !important;
           }
           .dense-table th { background-color: #f1f5f9 !important; font-weight: bold; }
+
+          /* CSS SPESIFIK UNTUK PRINTER THERMAL 58MM JIKA CETAK VIA BROWSER */
+          .thermal-print-area, .thermal-print-area * {
+             visibility: visible !important;
+             display: block !important;
+             color: black !important;
+             background: white !important;
+          }
+          .thermal-print-area {
+             position: absolute;
+             left: 0;
+             top: 0;
+             width: 58mm;
+             margin: 0 !important;
+             padding: 0 !important;
+          }
         }
       `}</style>
 
@@ -453,7 +522,8 @@ function LoginScreen({ onLogin, usersList, settings, updateSettings, deviceId, s
 
   const handleLoginSubmit = (e) => {
     e.preventDefault();
-    const matchedUser = usersList.find(u => u.nipp === formData.nipp && u.password === formData.password);
+    const inputNipp = formData.nipp.trim().toLowerCase();
+    const matchedUser = usersList.find(u => u.nipp.trim().toLowerCase() === inputNipp && u.password === formData.password);
     
     if (!matchedUser) {
        return showToast("NIPP atau Password Tidak Ditemukan/Salah!", "error");
@@ -462,22 +532,24 @@ function LoginScreen({ onLogin, usersList, settings, updateSettings, deviceId, s
        return showToast("Hanya Master/Audit yang dapat mengakses 'All Lokasi'.", "error");
     }
 
-    // CEK SESSION BERSAMAAN (Hanya di lokasi yang sama)
-    const activeLogins = settings.activeLogins || {};
-    const userActive = activeLogins[matchedUser.nipp];
+    // CEK SESSION BERSAMAAN (Hanya di lokasi yang sama - MASTER KEBAL BLOKIR)
+    if (matchedUser.role !== 'master') {
+        const activeLogins = settings.activeLogins || {};
+        const userActive = activeLogins[matchedUser.nipp];
 
-    if (userActive && userActive.lokasi === formData.lokasi && userActive.deviceId !== deviceId) {
-       // Cek apakah masih aktif dalam 5 menit terakhir
-       if (Date.now() - userActive.timestamp < 300000) {
-           return showToast(`Akun ini sedang online di ${formData.lokasi} oleh perangkat lain! Gunakan akun/lokasi berbeda.`, "error");
-       }
+        if (userActive && userActive.lokasi === formData.lokasi && userActive.deviceId !== deviceId) {
+           // Cek apakah masih aktif dalam 5 menit terakhir
+           if (Date.now() - userActive.timestamp < 300000) {
+               return showToast(`Akun ini sedang online di ${formData.lokasi} oleh perangkat lain! Gunakan akun/lokasi berbeda.`, "error");
+           }
+        }
     }
 
     // Set Active Login ke Global Firebase
     updateSettings({
        ...settings,
        activeLogins: {
-           ...activeLogins,
+           ...(settings.activeLogins || {}),
            [matchedUser.nipp]: { lokasi: formData.lokasi, deviceId: deviceId, timestamp: Date.now() }
        }
     });
@@ -564,16 +636,25 @@ function KendaraanMasuk({ user, addTransaction, showToast, settings }) {
     setShowCamera(true);
   };
 
-  const handleCapture = (photo) => {
+  // BUG FIX: Gunakan "async/await" agar data 100% dipastikan ter-save ke Firebase SEBELUM auto-print tertrigger
+  const handleCapture = async (photo) => {
     setShowCamera(false);
     const newTx = {
       id: Date.now().toString(), nopol: nopol.toUpperCase(), jenis, waktuMasuk: new Date(),
       status: 'IN', fotoMasuk: photo, lokasi: user.lokasi === 'All Lokasi' ? PURE_LOCATIONS[0] : user.lokasi,
       kasirMasuk: user.nama, gps
     };
-    addTransaction(newTx);
+    
+    // Tunggu Database Menerima Data
+    await addTransaction(newTx);
+    
     setPrintData(newTx);
     setNopol('');
+
+    // AUTO DIRECT PRINT BLUETOOTH
+    setTimeout(() => {
+       printDirectBluetooth('IN', newTx, settings);
+    }, 500); // Jeda aman 0.5 detik
   };
 
   return (
@@ -682,7 +763,8 @@ function KendaraanKeluar({ user, transactions, updateTransaction, settings, show
     if (selectedTx) setShowCamera(true); 
   };
 
-  const handleCapture = (photo) => {
+  // BUG FIX: Sama halnya seperti masuk, pastikan `await` agar tidak batal terekam di DB
+  const handleCapture = async (photo) => {
     setShowCamera(false);
     const { total, jam, durasiText, exitTime, isMember, denda } = calculateFee(selectedTx);
     
@@ -692,12 +774,21 @@ function KendaraanKeluar({ user, transactions, updateTransaction, settings, show
       isMember, tiketHilang, denda, fotoKTP, fotoSTNK
     };
     
-    updateTransaction(selectedTx.id, updateData);
+    // Tunggu Database Menerima Data Keluar
+    await updateTransaction(selectedTx.id, updateData);
+    
     const locSettings = getLocSettings(settings, selectedTx.lokasi);
-    setPrintData({ ...selectedTx, ...updateData, petugasPhoto: user.photo, locSettings });
+    const finalData = { ...selectedTx, ...updateData, petugasPhoto: user.photo, locSettings };
+
+    setPrintData(finalData);
     setSelectedTx(null);
     setSearchQuery('');
     setTiketHilang(false); setFotoKTP(null); setFotoSTNK(null);
+
+    // AUTO DIRECT PRINT BLUETOOTH
+    setTimeout(() => {
+       printDirectBluetooth('OUT', finalData, settings);
+    }, 500);
   };
 
   return (
@@ -1629,78 +1720,76 @@ function ShiftEndModal({ user, transactions, shiftName, onClose, settings }) {
 
 // --- PRINT MODALS FOR TICKETS ---
 function TicketPrintModal({ data, settings, onClose }) {
-  const webSettings = settings?.web || {};
-  const handleShare = async () => {
-    const text = `=== TIKET MASUK ===\nLokasi: ${data.lokasi}\nNOPOL: ${data.nopol}\nJenis: ${data.jenis}\nMasuk: ${data.waktuMasuk.toLocaleString('id-ID')}\nKasir: ${data.kasirMasuk}\n===================`;
-    if (navigator.share) {
-      try { await navigator.share({ title: 'Tiket Parkir Masuk', text: text }); } 
-      catch (err) { console.error('Error sharing', err); }
-    }
-  };
+  const handleDirectPrint = () => printDirectBluetooth('IN', data, settings);
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm hide-on-print">
       <div className="bg-[#114022] rounded-3xl p-6 shadow-2xl max-w-sm w-full mx-4 flex flex-col items-center">
-        <div className="print-area w-full bg-white text-black p-4 border-2 border-dashed border-slate-300 rounded-xl mb-6 font-mono text-center">
-          {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-8 mb-2 mx-auto" alt="Logo" />}
-          <h2 className="text-xl font-bold mb-1">TIKET MASUK</h2><p className="text-xs mb-4 border-b border-black/20 pb-2">{data.lokasi}</p>
-          <div className="my-6"><h1 className="text-4xl font-black tracking-widest">{data.nopol}</h1><p className="text-sm mt-1">{data.jenis}</p></div>
-          <div className="text-left text-xs space-y-1 border-t border-black/20 pt-2"><p><strong>Masuk:</strong> {data.waktuMasuk.toLocaleString()}</p><p><strong>Kasir:</strong> {data.kasirMasuk}</p></div>
+        
+        {/* Preview Area berukuran asli 58mm (Lebar real-world printer) */}
+        <div className="thermal-print-area bg-white text-black font-mono text-[12px] leading-tight w-[58mm] mx-auto p-2 pb-6 border-2 border-slate-300 mb-6 shadow-md">
+            <h2 className="text-center font-bold text-[14px] mb-1 leading-none">PARKIR TERPADU</h2>
+            <p className="text-center text-[10px] m-0 mb-2 leading-none">{data.lokasi}</p>
+            <div className="border-t border-b border-black border-dashed py-1 my-1 text-center">
+                <h1 className="text-[24px] font-black tracking-wider m-0 leading-none">{data.nopol}</h1>
+                <p className="text-[10px] m-0 mt-1 font-bold leading-none">{data.jenis}</p>
+            </div>
+            <p className="m-0 mt-2">IN : {data.waktuMasuk.toLocaleString('id-ID')}</p>
+            <p className="m-0">OPR: {data.kasirMasuk}</p>
+            <div className="border-t border-black border-dashed mt-2 pt-2 text-center text-[10px]">
+               <p className="m-0 font-bold">SIMPAN TIKET INI</p>
+            </div>
         </div>
-        <div className="flex gap-2 w-full mb-3">
-          <button onClick={() => window.print()} className="flex-1 py-3 rounded-xl bg-green-600 text-white font-bold flex justify-center items-center gap-2 hover:bg-green-500"><FileText size={18} /> Cetak (Android)</button>
-          <button onClick={handleShare} className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold flex justify-center items-center gap-2 hover:bg-blue-500"><Share2 size={18} /> Bagikan (iOS)</button>
+
+        <div className="flex flex-col gap-2 w-full mb-2">
+          <button onClick={handleDirectPrint} className="w-full py-4 rounded-xl bg-teal-600 text-white font-bold flex justify-center items-center gap-2 hover:bg-teal-500 shadow-xl active:scale-95 transition-all text-sm">
+             <Bluetooth size={20} /> Cetak Otomatis (Bluetooth)
+          </button>
+          <div className="flex gap-2 w-full mt-2">
+             <button onClick={() => window.print()} className="flex-1 py-3 rounded-xl bg-orange-600 text-white font-bold flex justify-center items-center gap-2 hover:bg-orange-500 text-xs shadow-md"><FileText size={16} /> Browser Print</button>
+             <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-[#092613] text-white font-bold hover:bg-black/20 text-xs shadow-md">Tutup Lanjut</button>
+          </div>
         </div>
-        <button onClick={onClose} className="w-full py-3 rounded-xl bg-[#092613] text-white font-bold hover:bg-black/20">Tutup</button>
       </div>
     </div>
   );
 }
 
 function ReceiptPrintModal({ data, settings, onClose }) {
-  const locSettings = getLocSettings(settings, data.lokasi);
-  const webSettings = settings.web || DEFAULT_SETTINGS.web;
-  
-  const handleShare = async () => {
-    let text = `=== STRUK KELUAR ===\nLokasi: ${data.lokasi}\nNOPOL: ${data.nopol}\nJenis: ${data.jenis} ${data.tiketHilang ? '(HILANG TIKET)' : ''}\nMasuk: ${data.waktuMasuk.toLocaleString('id-ID')}\nKeluar: ${data.waktuKeluar.toLocaleString('id-ID')}\nLama Parkir: ${data.durasiText}\n`;
-    text += `TOTAL BIAYA: Rp ${data.totalBiaya.toLocaleString('id-ID')}\n===================\n`;
-    if(webSettings.runningText) text += `${webSettings.runningText}\n`;
-
-    if (navigator.share) {
-      try { await navigator.share({ title: 'Struk Parkir Keluar', text: text }); } 
-      catch (err) { console.error('Error sharing', err); }
-    }
-  };
+  const handleDirectPrint = () => printDirectBluetooth('OUT', data, settings);
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm hide-on-print">
       <div className="bg-[#114022] rounded-3xl p-6 shadow-2xl max-w-sm w-full mx-4 flex flex-col items-center">
-        <div className="print-area w-full bg-white text-black p-4 border-2 border-slate-300 rounded-xl mb-6 font-mono text-center relative overflow-hidden">
-          <div className="absolute inset-0 z-0 flex items-center justify-center opacity-[0.05]"><img src={webSettings.logoUrl} className="w-3/4" alt="watermark" /></div>
-          <div className="relative z-10">
-            {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-8 mb-2 mx-auto" alt="Logo" />}
-            <h2 className="text-lg font-bold">STRUK KELUAR</h2><p className="text-xs mb-4 border-b border-black pb-2">{data.lokasi}</p>
-            <div className="my-4"><h1 className="text-3xl font-black">{data.nopol}</h1><p className="text-xs">{data.jenis} {data.tiketHilang && '(HILANG TIKET)'}</p></div>
-            <div className="text-left text-xs space-y-1 border-t border-b border-dashed border-black py-2 my-2">
-              <div className="flex justify-between"><p>Masuk:</p><p>{data.waktuMasuk.toLocaleTimeString()}</p></div>
-              <div className="flex justify-between"><p>Keluar:</p><p>{data.waktuKeluar.toLocaleTimeString()}</p></div>
-              <div className="flex justify-between font-bold"><p>Lama Parkir:</p><p>{data.durasiText}</p></div>
+        
+        {/* Preview Area berukuran asli 58mm (Lebar real-world printer) */}
+        <div className="thermal-print-area bg-white text-black font-mono text-[11px] leading-tight w-[58mm] mx-auto p-2 pb-6 border-2 border-slate-300 mb-6 shadow-md">
+            <h2 className="text-center font-bold text-[14px] mb-1 leading-none">STRUK KELUAR</h2>
+            <p className="text-center text-[10px] m-0 mb-2 leading-none">{data.lokasi}</p>
+            <div className="border-t border-b border-black border-dashed py-1 my-1 text-center">
+                <h1 className="text-[20px] font-black tracking-wider m-0 leading-none">{data.nopol}</h1>
+                <p className="text-[10px] m-0 mt-1 leading-none">{data.jenis} {data.tiketHilang && '(HILANG)'}</p>
             </div>
-            <div className="my-4"><p className="text-xs">TOTAL BIAYA</p><h1 className="text-3xl font-black bg-black text-white py-1 my-1">Rp {data.totalBiaya.toLocaleString('id-ID')}</h1></div>
-            <div className="text-[10px] text-left pt-2">
-               {data.tiketHilang && <p className="text-center font-bold mb-1 text-red-600">*Termasuk denda kehilangan tiket Rp 10.000</p>}
-               {locSettings.tariffs[data.jenis] && locSettings.tariffs[data.jenis].mode === 'progressif' && !data.isMember && (
-                 <p className="text-center italic mt-2 text-[8px]">Max Tarif: Rp {locSettings.tariffs[data.jenis].max} | Inap: Rp {locSettings.tariffs[data.jenis].inap}</p>
-               )}
+            <div className="flex justify-between mt-1 m-0"><p className="m-0">IN</p><p className="m-0">{data.waktuMasuk.toLocaleTimeString('id-ID')}</p></div>
+            <div className="flex justify-between m-0"><p className="m-0">OUT</p><p className="m-0">{data.waktuKeluar.toLocaleTimeString('id-ID')}</p></div>
+            <div className="flex justify-between font-bold m-0"><p className="m-0">LAMA</p><p className="m-0">{data.durasiText}</p></div>
+            <div className="border-t border-black border-dashed my-1"></div>
+            <div className="flex justify-between text-[14px] font-black m-0"><p className="m-0">TOTAL</p><p className="m-0">Rp{data.totalBiaya.toLocaleString('id-ID')}</p></div>
+            <div className="border-t border-black border-dashed mt-2 pt-2 text-center text-[9px]">
+               {data.tiketHilang && <p className="text-red-600 font-bold m-0">*Denda Tiket Hilang</p>}
+               <p className="m-0">TERIMA KASIH</p>
             </div>
-            {webSettings.runningText && <p className="text-[9px] mt-4 pt-2 border-t border-dashed border-black">{webSettings.runningText}</p>}
+        </div>
+
+        <div className="flex flex-col gap-2 w-full mb-2">
+          <button onClick={handleDirectPrint} className="w-full py-4 rounded-xl bg-teal-600 text-white font-bold flex justify-center items-center gap-2 hover:bg-teal-500 shadow-xl active:scale-95 transition-all text-sm">
+             <Bluetooth size={20} /> Cetak Otomatis (Bluetooth)
+          </button>
+          <div className="flex gap-2 w-full mt-2">
+             <button onClick={() => window.print()} className="flex-1 py-3 rounded-xl bg-orange-600 text-white font-bold flex justify-center items-center gap-2 hover:bg-orange-500 text-xs shadow-md"><FileText size={16} /> Browser Print</button>
+             <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-[#092613] text-white font-bold hover:bg-black/20 text-xs shadow-md">Tutup Lanjut</button>
           </div>
         </div>
-        <div className="flex gap-2 w-full mb-3">
-          <button onClick={() => window.print()} className="flex-1 py-3 rounded-xl bg-orange-600 text-white font-bold flex justify-center items-center gap-2 hover:bg-orange-500"><FileText size={18} /> Cetak (Android)</button>
-          <button onClick={handleShare} className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold flex justify-center items-center gap-2 hover:bg-blue-500"><Share2 size={18} /> Bagikan (iOS)</button>
-        </div>
-        <button onClick={onClose} className="w-full py-3 rounded-xl bg-[#092613] text-white font-bold hover:bg-black/20">Tutup</button>
       </div>
     </div>
   );
