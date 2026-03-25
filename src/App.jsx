@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Camera, CheckCircle2, LogOut, Settings, 
-  MapPin, Clock, FileText, ArrowRightSquare, 
-  ArrowLeftSquare, Search, Car, Truck, Bike, Download, Share2,
-  ChevronDown, Bluetooth, Users, Wallet, Monitor, ShieldCheck, FileImage,
-  UploadCloud, AlertTriangle, Maximize2, X, UserCog, CalendarClock, Lock,
-  Trash2, Database
+  MapPin, Clock, FileText, Search, Car, Truck, Bike, Download, Share2,
+  ChevronDown, Bluetooth, Users, Monitor, ShieldCheck, FileImage,
+  UploadCloud, AlertTriangle, X, Lock, Trash2, Database,
+  ArrowRight, ArrowLeft, Building
 } from 'lucide-react';
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, onSnapshot } from 'firebase/firestore';
 
@@ -18,7 +17,6 @@ if (typeof window !== 'undefined') {
 }
 
 // --- HELPER FUNCTION: Image Processing/Compression ---
-// OPTIMALISASI DATABASE: Resolusi dan kualitas gambar dikurangi drastis namun tetap terbaca (Hemat kapasitas hingga 80%)
 const processImageFile = (file, callback) => {
   if (!file) return;
   const reader = new FileReader();
@@ -32,7 +30,7 @@ const processImageFile = (file, callback) => {
       canvas.height = img.height * scale;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      callback(canvas.toDataURL('image/jpeg', 0.4)); // Kualitas 40%
+      callback(canvas.toDataURL('image/jpeg', 0.4));
     };
     img.src = event.target.result;
   };
@@ -64,19 +62,20 @@ const DEFAULT_SETTINGS = {
     printerConnected: false
   },
   members: [],
+  activeLogins: {}, // Registry untuk mencegah login ganda di lokasi yang sama
   users: [
-    { id: 'u1', nipp: '200041', nama: 'petugas Master', role: 'master', password: 'R3gional2BD!', canViewArea: true },
-    { id: 'u2', nipp: 'AUDIT', nama: 'Petugas Audit', role: 'audit', password: '123', canViewArea: true },
-    { id: 'u3', nipp: 'KORLAP', nama: 'Petugas Korlap', role: 'korlap', password: '123', canViewArea: false }
+    { id: 'u1', nipp: 'master', nama: 'Petugas Master', role: 'master', password: '123', canViewArea: true },
+    { id: 'u2', nipp: '1014202601', nama: 'Petugas Satu', role: 'kasir', password: '123', canViewArea: true },
+    { id: 'u3', nipp: '1014202602', nama: 'Petugas Dua', role: 'kasir', password: '123', canViewArea: true },
+    { id: 'u4', nipp: 'AUDIT', nama: 'Petugas Audit', role: 'audit', password: '123', canViewArea: true }
   ],
   locations: PURE_LOCATIONS.reduce((acc, loc) => ({ ...acc, [loc]: JSON.parse(JSON.stringify(DEFAULT_LOCATION_SETTINGS)) }), {})
 };
 
-// Helper: Mendapatkan setingan lokasi spesifik (Fallback aman ke default)
 const getLocSettings = (settings, locName) => {
   if (locName === 'All Lokasi') locName = PURE_LOCATIONS[0];
   if (settings.locations && settings.locations[locName]) return settings.locations[locName];
-  if (settings.tariffs && settings.shifts) return { tariffs: settings.tariffs, shifts: settings.shifts }; // Legacy Support
+  if (settings.tariffs && settings.shifts) return { tariffs: settings.tariffs, shifts: settings.shifts }; 
   return DEFAULT_LOCATION_SETTINGS;
 };
 
@@ -99,38 +98,54 @@ const getActiveShift = (shifts) => {
   return 'Shift Tidak Diketahui';
 };
 
-// --- FIREBASE INITIALIZATION ---
-// PASTIKAN HANYA ADA SATU "firebaseConfig" dan SATU "app" DI SINI
-const firebaseConfig = {
-  apiKey: "AIzaSyDdY7ZlT8NqWf7aPckiIQIvOsjFaBsOcK4",
-  authDomain: "aplikasi-parkir-ku.firebaseapp.com",
-  projectId: "aplikasi-parkir-ku",
-  storageBucket: "aplikasi-parkir-ku.firebasestorage.app",
-  messagingSenderId: "80401749338",
-  appId: "1:80401749338:web:87b4418d98e86a1d3d0f63"
+// --- FIREBASE INITIALIZATION (SAFE MODE) ---
+const fbConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+  apiKey: "dummy", authDomain: "dummy", projectId: "dummy"
 };
-
-const app = initializeApp(firebaseConfig);
+const app = !getApps().length ? initializeApp(fbConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = 'sistem-parkir-pro'; // ID Unik untuk Database Anda
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-// --- COMPONENTS ---
+// --- UI COMPONENTS ---
+const Toast = ({ message, type }) => (
+  <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[200] px-6 py-3 rounded-full text-white font-bold shadow-2xl transition-all animate-in slide-in-from-top-4 flex items-center gap-2 ${type === 'error' ? 'bg-red-600' : 'bg-teal-600'}`}>
+    {type === 'error' ? <AlertTriangle size={18}/> : <CheckCircle2 size={18}/>}
+    {message}
+  </div>
+);
+
+const ConfirmModal = ({ title, message, onConfirm, onCancel }) => (
+  <div className="fixed inset-0 z-[150] bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm">
+    <div className="bg-[#114022] border border-[#1b5e35] p-6 rounded-2xl max-w-sm w-full shadow-2xl text-center">
+      <AlertTriangle size={40} className="mx-auto text-amber-500 mb-4" />
+      <h3 className="text-xl font-bold text-white mb-2">{title}</h3>
+      <p className="text-sm text-green-200/70 mb-6">{message}</p>
+      <div className="flex gap-3">
+        <button onClick={onCancel} className="flex-1 py-3 rounded-xl bg-[#092613] text-white hover:bg-black/30 font-bold transition-colors">Batal</button>
+        <button onClick={onConfirm} className="flex-1 py-3 rounded-xl bg-red-600 text-white hover:bg-red-500 font-bold transition-colors">Ya, Lanjutkan</button>
+      </div>
+    </div>
+  </div>
+);
 
 const CameraModal = ({ facingMode, onCapture, onClose, title }) => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [stream, setStream] = useState(null);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const startCamera = async () => {
       try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error("Kamera tidak didukung di browser/sandbox ini.");
+        }
         const mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facingMode } });
         if (videoRef.current) videoRef.current.srcObject = mediaStream;
         setStream(mediaStream);
       } catch (err) {
-        console.error("Camera Error:", err);
-        alert("Gagal mengakses kamera. Pastikan izin diberikan.");
+        setError(err.message || "Gagal mengakses kamera. Izin diblokir.");
       }
     };
     startCamera();
@@ -141,13 +156,13 @@ const CameraModal = ({ facingMode, onCapture, onClose, title }) => {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      const MAX_WIDTH = 300; // Dikompresi keras untuk database
+      const MAX_WIDTH = 300; 
       const scale = Math.min(1, MAX_WIDTH / video.videoWidth);
       canvas.width = video.videoWidth * scale;
       canvas.height = video.videoHeight * scale;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      onCapture(canvas.toDataURL('image/jpeg', 0.4)); // Kualitas 40%
+      onCapture(canvas.toDataURL('image/jpeg', 0.4)); 
       if (stream) stream.getTracks().forEach(track => track.stop());
     }
   };
@@ -156,19 +171,31 @@ const CameraModal = ({ facingMode, onCapture, onClose, title }) => {
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-md">
       <div className="bg-[#114022] p-6 rounded-[2rem] border border-[#1b5e35] shadow-2xl flex flex-col items-center max-w-md w-full mx-4">
         <h3 className="text-xl font-bold text-white mb-4">{title}</h3>
-        <div className="relative rounded-3xl overflow-hidden w-full aspect-video bg-black mb-6 border border-[#1b5e35]">
-          <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" style={{ transform: facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)' }} />
-          <canvas ref={canvasRef} className="hidden" />
-        </div>
+        
+        {error ? (
+           <div className="w-full aspect-video bg-red-900/20 border border-red-500/50 rounded-3xl flex flex-col items-center justify-center text-red-400 p-4 text-center mb-6">
+             <AlertTriangle size={32} className="mb-2"/>
+             <p className="text-sm font-bold">{error}</p>
+             <p className="text-xs mt-1 opacity-80">Anda bisa melewati ini (Batal) untuk testing jika kamera diblokir sistem.</p>
+           </div>
+        ) : (
+           <div className="relative rounded-3xl overflow-hidden w-full aspect-video bg-black mb-6 border border-[#1b5e35]">
+             <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" style={{ transform: facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)' }} />
+             <canvas ref={canvasRef} className="hidden" />
+           </div>
+        )}
+
         <div className="flex gap-4 w-full">
           <button onClick={onClose} className="flex-1 py-4 rounded-2xl bg-[#092613] text-white font-bold hover:bg-black/20 transition-all">Batal</button>
-          <button onClick={handleCapture} className="flex-1 py-4 rounded-2xl bg-green-600 text-white font-bold hover:bg-green-500 transition-all shadow-lg flex justify-center gap-2"><Camera size={20} /> Ambil Foto</button>
+          {!error && <button onClick={handleCapture} className="flex-1 py-4 rounded-2xl bg-teal-600 text-white font-bold hover:bg-teal-500 transition-all shadow-lg flex justify-center gap-2"><Camera size={20} /> Ambil Foto</button>}
         </div>
       </div>
     </div>
   );
 };
 
+
+// --- MAIN APP COMPONENT ---
 export default function App() {
   const [user, setUser] = useState(null);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
@@ -178,7 +205,21 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('masuk');
   const [shiftData, setShiftData] = useState({ current: 'Loading...', showSummary: false });
 
-  // Firebase Hooks
+  const [toast, setToast] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  
+  // Unique Device ID for session handling
+  const [deviceId] = useState(() => {
+    let id = localStorage.getItem('device_session_id');
+    if (!id) { id = Math.random().toString(36).substr(2, 9); localStorage.setItem('device_session_id', id); }
+    return id;
+  });
+
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -193,86 +234,157 @@ export default function App() {
 
   useEffect(() => {
     if (!fbUser) return;
-    const txRef = collection(db, 'artifacts', appId, 'public', 'data', 'transactions');
-    const unsubTx = onSnapshot(txRef, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      const parsedData = data.map(t => ({
-        ...t, waktuMasuk: t.waktuMasuk ? new Date(t.waktuMasuk) : new Date(), waktuKeluar: t.waktuKeluar ? new Date(t.waktuKeluar) : null
-      }));
-      setTransactions(parsedData);
-    }, (err) => console.error("Error tx:", err));
+    try {
+      const txRef = collection(db, 'artifacts', appId, 'public', 'data', 'transactions');
+      const unsubTx = onSnapshot(txRef, (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const parsedData = data.map(t => ({
+          ...t, waktuMasuk: t.waktuMasuk ? new Date(t.waktuMasuk) : new Date(), waktuKeluar: t.waktuKeluar ? new Date(t.waktuKeluar) : null
+        }));
+        setTransactions(parsedData);
+      }, (err) => console.error("Error tx:", err));
 
-    const settingsRef = collection(db, 'artifacts', appId, 'public', 'data', 'settings');
-    const unsubSettings = onSnapshot(settingsRef, (snapshot) => {
-       if (!snapshot.empty) {
-          const globalSettings = snapshot.docs.find(d => d.id === 'global');
-          if (globalSettings) {
-             const loadedSettings = globalSettings.data();
-             setSettings({ ...DEFAULT_SETTINGS, ...loadedSettings });
-          }
-       } else {
-          setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), DEFAULT_SETTINGS);
-       }
-    }, (err) => console.error("Error settings:", err));
+      const settingsRef = collection(db, 'artifacts', appId, 'public', 'data', 'settings');
+      const unsubSettings = onSnapshot(settingsRef, (snapshot) => {
+         if (!snapshot.empty) {
+            const globalSettings = snapshot.docs.find(d => d.id === 'global');
+            if (globalSettings) {
+               const loadedSettings = globalSettings.data();
+               setSettings({ ...DEFAULT_SETTINGS, ...loadedSettings });
+            }
+         } else {
+            setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), DEFAULT_SETTINGS);
+         }
+      }, (err) => console.error("Error settings:", err));
 
-    return () => { unsubTx(); unsubSettings(); };
+      return () => { unsubTx(); unsubSettings(); };
+    } catch(e) { console.error(e); }
   }, [fbUser]);
 
-  // DB Handlers
   const handleAddTransaction = async (newTx) => {
     if (!fbUser) return;
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', newTx.id), { ...newTx, waktuMasuk: newTx.waktuMasuk.toISOString(), waktuKeluar: null });
   };
+
   const handleUpdateTransaction = async (id, updateData) => {
     if (!fbUser) return;
     const txToUpdate = { ...updateData };
     if (txToUpdate.waktuKeluar) txToUpdate.waktuKeluar = txToUpdate.waktuKeluar.toISOString();
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', id), txToUpdate, { merge: true });
   };
+
   const handleUpdateSettings = async (newSettings) => {
     if (!fbUser) return;
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), newSettings);
   };
 
-  // Check shift end every minute
+  // Heartbeat to keep session alive and check shift
   useEffect(() => {
+    if (!user) return;
     const interval = setInterval(() => {
-      if(user) {
-         const userLocShifts = getLocSettings(settings, user.lokasi).shifts;
-         const active = getActiveShift(userLocShifts);
-         if (active !== shiftData.current) setShiftData({ current: active, showSummary: true });
+      // 1. Shift Check
+      const userLocShifts = getLocSettings(settings, user.lokasi).shifts;
+      const active = getActiveShift(userLocShifts);
+      if (active !== shiftData.current) setShiftData({ current: active, showSummary: true });
+
+      // 2. Heartbeat Session
+      const activeLogins = settings.activeLogins || {};
+      if (activeLogins[user.nipp]?.deviceId === deviceId) {
+         handleUpdateSettings({
+            ...settings, 
+            activeLogins: { ...activeLogins, [user.nipp]: { ...activeLogins[user.nipp], timestamp: Date.now() } }
+         });
       }
     }, 60000);
     return () => clearInterval(interval);
-  }, [user, shiftData.current, settings]);
+  }, [user, shiftData.current, settings, deviceId]);
 
   const handleLogout = () => { 
     if(user){
        const userLocShifts = getLocSettings(settings, user.lokasi).shifts;
        setShiftData({ current: getActiveShift(userLocShifts), showSummary: false }); 
+       
+       // Remove from active sessions
+       const activeLogins = settings.activeLogins || {};
+       const newLogins = { ...activeLogins };
+       delete newLogins[user.nipp];
+       handleUpdateSettings({ ...settings, activeLogins: newLogins });
     }
     setUser(null); 
     setActiveTab('masuk'); 
   };
 
-  // Menunggu Data Load
-  if (!user) return <LoginScreen usersList={settings.users} onLogin={(u) => { 
-     setUser({ ...u, loginTime: new Date() }); 
-     const userLocShifts = getLocSettings(settings, u.lokasi).shifts;
-     setShiftData({ current: getActiveShift(userLocShifts), showSummary: false }); 
-     if (u.role === 'audit') setActiveTab('settings');
-  }} />;
+  if (!user) {
+    return (
+      <>
+        {toast && <Toast message={toast.msg} type={toast.type} />}
+        <LoginScreen 
+            usersList={settings.users || DEFAULT_SETTINGS.users} 
+            settings={settings}
+            updateSettings={handleUpdateSettings}
+            deviceId={deviceId}
+            showToast={showToast}
+            onLogin={(u) => { 
+                setUser({ ...u, loginTime: new Date() }); 
+                const userLocShifts = getLocSettings(settings, u.lokasi).shifts;
+                setShiftData({ current: getActiveShift(userLocShifts), showSummary: false }); 
+                if (u.role === 'audit') setActiveTab('settings');
+            }} 
+        />
+      </>
+    );
+  }
 
   const hasSettingsAccess = ['master', 'korlap', 'audit'].includes(user.role);
   const canViewArea = user.role === 'master' || user.role === 'audit' || user.role === 'kasir' || (user.role === 'korlap' && user.canViewArea);
   const canTransact = user.role === 'master' || user.role === 'korlap' || user.role === 'kasir';
+  const webSettings = settings.web || DEFAULT_SETTINGS.web;
 
   return (
     <div className="min-h-screen bg-[#092613] text-green-50 font-sans selection:bg-green-500 selection:text-white pb-28">
-      {/* Header Tema Hijau Tua */}
-      <header className="fixed top-0 w-full z-40 bg-[#0c331a]/90 backdrop-blur-xl border-b border-[#1b5e35] shadow-lg px-6 py-3 flex items-center justify-between">
+      {/* CSS KHUSUS PRINT 1 LEMBAR A4 */}
+      <style>{`
+        @media print {
+          @page { size: A4 portrait; margin: 10mm; }
+          body { background: white; -webkit-print-color-adjust: exact; margin: 0; padding: 0; }
+          .hide-on-print { display: none !important; }
+          .show-on-print { display: block !important; }
+          
+          /* Memaksa elemen muat di 1 halaman */
+          .print-1-lembar {
+            page-break-after: avoid;
+            page-break-inside: avoid;
+            max-height: 277mm; 
+            overflow: hidden; 
+          }
+          
+          /* Mengecilkan tabel agar muat banyak data */
+          .dense-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 9px !important;
+            margin-top: 10px;
+          }
+          .dense-table th, .dense-table td {
+            border: 1px solid #000 !important;
+            padding: 3px 4px !important;
+            color: #000 !important;
+          }
+          .dense-table th { background-color: #f1f5f9 !important; font-weight: bold; }
+        }
+      `}</style>
+
+      {toast && <Toast message={toast.msg} type={toast.type} />}
+      {confirmDialog && <ConfirmModal {...confirmDialog} />}
+
+      {/* Header */}
+      <header className="fixed top-0 w-full z-40 bg-[#0c331a]/90 backdrop-blur-xl border-b border-[#1b5e35] shadow-lg px-6 py-3 flex items-center justify-between hide-on-print">
         <div className="flex items-center gap-3 w-1/3">
-          <img src={user.photo} alt="User" className="w-12 h-12 rounded-full object-cover border-2 border-green-500 shadow-sm bg-black" />
+          {user.photo ? (
+            <img src={user.photo} alt="User" className="w-12 h-12 rounded-full object-cover border-2 border-green-500 shadow-sm bg-black" />
+          ) : (
+            <div className="w-12 h-12 rounded-full border-2 border-green-500 bg-black flex items-center justify-center text-white"><Users size={20}/></div>
+          )}
           <div className="leading-tight">
             <p className="font-bold text-white text-sm flex items-center gap-1">
               {user.nama} {user.role === 'master' && <ShieldCheck size={14} className="text-green-500"/>}
@@ -281,9 +393,9 @@ export default function App() {
           </div>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center text-center overflow-hidden">
-          <img src={settings.web.logoUrl} alt="Logo" className="h-8 object-contain mb-1 bg-white/10 backdrop-blur-sm rounded-lg px-2" />
+          <img src={webSettings.logoUrl} alt="Logo" className="h-8 object-contain mb-1 bg-white/10 backdrop-blur-sm rounded-lg px-2" />
           <div className="w-full max-w-md overflow-hidden bg-black rounded-full px-4 py-1 border border-[#1b5e35]">
-            <marquee className="text-xs text-red-500 font-bold tracking-widest">{settings.web.runningText}</marquee>
+            <marquee className="text-xs text-red-500 font-bold tracking-widest">{webSettings.runningText}</marquee>
           </div>
         </div>
         <div className="w-1/3 flex justify-end gap-2">
@@ -292,37 +404,35 @@ export default function App() {
                <Clock size={14} /> Akhiri Shift
              </button>
           )}
-          <button onClick={() => setUser(null)} className="p-3 bg-red-600/20 text-red-400 rounded-xl hover:bg-red-600/30 transition-colors flex items-center gap-2 text-sm font-bold border border-red-600/20">
+          <button onClick={handleLogout} className="p-3 bg-red-600/20 text-red-400 rounded-xl hover:bg-red-600/30 transition-colors flex items-center gap-2 text-sm font-bold border border-red-600/20">
             <LogOut size={16} /> Keluar
           </button>
         </div>
       </header>
 
       <main className="pt-28 px-4 md:px-6 max-w-6xl mx-auto">
-        {/* BIG TABS FOR MASUK & KELUAR */}
         {canTransact && !['area', 'settings'].includes(activeTab) && (
-          <div className="flex gap-4 mb-8">
+          <div className="flex gap-4 mb-8 hide-on-print">
             <button onClick={() => setActiveTab('masuk')} className={`flex-1 py-6 md:py-8 rounded-[2rem] flex flex-col items-center justify-center gap-2 transition-all duration-300 shadow-xl border-2 ${activeTab === 'masuk' ? 'bg-green-600 border-green-400 text-white scale-[1.02]' : 'bg-[#114022] border-[#1b5e35] text-green-200/50 hover:bg-[#164d2b]'}`}>
-              <ArrowRightSquare size={40} />
+              <ArrowRight size={40} />
               <span className="text-xl md:text-3xl font-black uppercase tracking-widest">Pintu Masuk</span>
             </button>
             <button onClick={() => setActiveTab('keluar')} className={`flex-1 py-6 md:py-8 rounded-[2rem] flex flex-col items-center justify-center gap-2 transition-all duration-300 shadow-xl border-2 ${activeTab === 'keluar' ? 'bg-teal-600 border-teal-400 text-white scale-[1.02]' : 'bg-[#114022] border-[#1b5e35] text-green-200/50 hover:bg-[#164d2b]'}`}>
-              <ArrowLeftSquare size={40} />
+              <ArrowLeft size={40} />
               <span className="text-xl md:text-3xl font-black uppercase tracking-widest">Pintu Keluar</span>
             </button>
           </div>
         )}
 
-        {/* Content Routing */}
-        {canTransact && activeTab === 'masuk' && <KendaraanMasuk user={user} addTransaction={handleAddTransaction} />}
-        {canTransact && activeTab === 'keluar' && <KendaraanKeluar user={user} transactions={transactions} updateTransaction={handleUpdateTransaction} settings={settings} />}
-        
+        {/* Routers */}
+        {canTransact && activeTab === 'masuk' && <KendaraanMasuk user={user} addTransaction={handleAddTransaction} showToast={showToast} settings={settings} />}
+        {canTransact && activeTab === 'keluar' && <KendaraanKeluar user={user} transactions={transactions} updateTransaction={handleUpdateTransaction} settings={settings} showToast={showToast} />}
         {canViewArea && activeTab === 'area' && <KendaraanArea transactions={transactions} user={user} />}
-        {hasSettingsAccess && activeTab === 'settings' && <MasterSettings settings={settings} setSettings={handleUpdateSettings} user={user} transactions={transactions} updateTransaction={handleUpdateTransaction} />}
+        {hasSettingsAccess && activeTab === 'settings' && <MasterSettings settings={settings} setSettings={handleUpdateSettings} user={user} transactions={transactions} updateTransaction={handleUpdateTransaction} showToast={showToast} setConfirmDialog={setConfirmDialog} />}
       </main>
 
       {/* Bottom Nav */}
-      <div className="fixed bottom-6 w-full flex justify-center z-40 px-4">
+      <div className="fixed bottom-6 w-full flex justify-center z-40 px-4 hide-on-print">
         <div className="bg-[#0c331a]/90 backdrop-blur-2xl p-2 rounded-[2rem] shadow-2xl border border-[#1b5e35] flex items-center gap-2">
           {canTransact && <NavButton active={['masuk', 'keluar'].includes(activeTab)} onClick={() => setActiveTab('masuk')} icon={<Car />} label="Transaksi" color="text-green-400" />}
           {canViewArea && <NavButton active={activeTab === 'area'} onClick={() => setActiveTab('area')} icon={<MapPin />} label="Area Parkir" color="text-teal-400" />}
@@ -335,28 +445,45 @@ export default function App() {
   );
 }
 
-// --- LOGIN COMPONENT ---
-function LoginScreen({ onLogin, usersList }) {
+// --- LOGIN COMPONENT DENGAN LOGIC MULTI-LOKASI ---
+function LoginScreen({ onLogin, usersList, settings, updateSettings, deviceId, showToast }) {
   const [formData, setFormData] = useState({ nipp: '', password: '', lokasi: LOCATIONS[0] });
   const [showCamera, setShowCamera] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
   const [tempUser, setTempUser] = useState(null);
 
   const handleLoginSubmit = (e) => {
     e.preventDefault();
-    setErrorMsg('');
     const matchedUser = usersList.find(u => u.nipp === formData.nipp && u.password === formData.password);
     
     if (!matchedUser) {
-       return setErrorMsg("NIPP atau Password Tidak Ditemukan/Salah!");
+       return showToast("NIPP atau Password Tidak Ditemukan/Salah!", "error");
     }
-    
     if (formData.lokasi === 'All Lokasi' && matchedUser.role !== 'master' && matchedUser.role !== 'audit') {
-       return setErrorMsg("Hanya Master/Audit yang dapat mengakses 'All Lokasi'.");
+       return showToast("Hanya Master/Audit yang dapat mengakses 'All Lokasi'.", "error");
     }
 
+    // CEK SESSION BERSAMAAN (Hanya di lokasi yang sama)
+    const activeLogins = settings.activeLogins || {};
+    const userActive = activeLogins[matchedUser.nipp];
+
+    if (userActive && userActive.lokasi === formData.lokasi && userActive.deviceId !== deviceId) {
+       // Cek apakah masih aktif dalam 5 menit terakhir
+       if (Date.now() - userActive.timestamp < 300000) {
+           return showToast(`Akun ini sedang online di ${formData.lokasi} oleh perangkat lain! Gunakan akun/lokasi berbeda.`, "error");
+       }
+    }
+
+    // Set Active Login ke Global Firebase
+    updateSettings({
+       ...settings,
+       activeLogins: {
+           ...activeLogins,
+           [matchedUser.nipp]: { lokasi: formData.lokasi, deviceId: deviceId, timestamp: Date.now() }
+       }
+    });
+
     setTempUser({ ...matchedUser, lokasi: formData.lokasi });
-    setShowCamera(true);
+    setShowCamera(true); // Minta foto kasir
   };
 
   const processLogin = (photoData) => {
@@ -376,8 +503,6 @@ function LoginScreen({ onLogin, usersList }) {
           <h1 className="text-3xl font-black text-white tracking-tight">Device <span className="font-light text-green-400">Portable</span></h1>
           <p className="text-green-200/70 text-sm mt-2">Sistem kasir berbasis web terintegrasi.</p>
         </div>
-
-        {errorMsg && <div className="bg-red-500/20 border border-red-500/50 text-red-200 p-3 rounded-xl text-sm mb-4 text-center font-bold">{errorMsg}</div>}
 
         <form onSubmit={handleLoginSubmit} className="space-y-5">
           <div>
@@ -418,12 +543,13 @@ function NavButton({ active, onClick, icon, label, color }) {
 }
 
 // --- KENDARAAN MASUK ---
-function KendaraanMasuk({ user, addTransaction }) {
+function KendaraanMasuk({ user, addTransaction, showToast, settings }) {
   const [nopol, setNopol] = useState('');
   const [jenis, setJenis] = useState('Motor');
   const [showCamera, setShowCamera] = useState(false);
   const [printData, setPrintData] = useState(null);
   const [gps, setGps] = useState('Sedang mencari...');
+  const webSettings = settings?.web || DEFAULT_SETTINGS.web;
 
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
@@ -434,7 +560,7 @@ function KendaraanMasuk({ user, addTransaction }) {
 
   const handleProcess = (e) => {
     e.preventDefault();
-    if (!nopol) return alert("Nomor Polisi wajib diisi!");
+    if (!nopol) return showToast("Nomor Polisi wajib diisi!", "error");
     setShowCamera(true);
   };
 
@@ -452,6 +578,11 @@ function KendaraanMasuk({ user, addTransaction }) {
 
   return (
     <div className="fade-in max-w-2xl mx-auto">
+      {webSettings.logoUrl && (
+         <div className="flex justify-center mb-6">
+            <img src={webSettings.logoUrl} className="h-16 object-contain bg-[#114022] border border-[#1b5e35] rounded-2xl p-2 shadow-lg" alt="Logo Perusahaan"/>
+         </div>
+      )}
       <div className="bg-[#114022] rounded-[2.5rem] p-8 shadow-2xl border border-[#1b5e35]">
         <form onSubmit={handleProcess} className="space-y-8">
           <div>
@@ -476,13 +607,13 @@ function KendaraanMasuk({ user, addTransaction }) {
         </form>
       </div>
       {showCamera && <CameraModal facingMode="environment" title="Foto Kendaraan Masuk" onClose={() => setShowCamera(false)} onCapture={handleCapture} />}
-      {printData && <TicketPrintModal data={printData} onClose={() => setPrintData(null)} />}
+      {printData && <TicketPrintModal data={printData} settings={settings} onClose={() => setPrintData(null)} />}
     </div>
   );
 }
 
 // --- KENDARAAN KELUAR ---
-function KendaraanKeluar({ user, transactions, updateTransaction, settings }) {
+function KendaraanKeluar({ user, transactions, updateTransaction, settings, showToast }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTx, setSelectedTx] = useState(null);
   const [showCamera, setShowCamera] = useState(false);
@@ -493,7 +624,8 @@ function KendaraanKeluar({ user, transactions, updateTransaction, settings }) {
   const [fotoKTP, setFotoKTP] = useState(null);
   const [fotoSTNK, setFotoSTNK] = useState(null);
 
-  const activeTransactions = transactions.filter(t => t.status === 'IN' && t.nopol.includes(searchQuery.toUpperCase()) && (user.lokasi === 'All Lokasi' || t.lokasi === user.lokasi));
+  const webSettings = settings?.web || DEFAULT_SETTINGS.web;
+  const activeTransactions = transactions.filter(t => t.status === 'IN' && (t.nopol || '').includes(searchQuery.toUpperCase()) && (user.lokasi === 'All Lokasi' || t.lokasi === user.lokasi));
 
   const calculateFee = (tx) => {
     const exitTime = new Date();
@@ -507,16 +639,16 @@ function KendaraanKeluar({ user, transactions, updateTransaction, settings }) {
     const jam = exactHours + (exactMinutes > 0 ? 1 : 0);
     const billedJam = jam > 0 ? jam : 1; 
 
-    // Ambil tarif berdasarkan lokasi masuk transaksi
     const locSettings = getLocSettings(settings, tx.lokasi);
-    const rate = locSettings.tariffs[tx.jenis];
+    const rate = locSettings.tariffs[tx.jenis] || locSettings.tariffs['Motor'];
     const denda = tiketHilang ? 10000 : 0;
 
     if (rate.gracePeriodActive && diffMinutesTotal <= rate.gracePeriodMinutes) {
        return { total: denda, jam: billedJam, durasiText, exitTime, isMember: false, denda };
     }
 
-    const isMember = settings.members.find(m => m.nopol === tx.nopol && m.status === 'Aktif');
+    const members = settings.members || [];
+    const isMember = members.find(m => m.nopol === tx.nopol && m.status === 'Aktif');
     if (isMember) return { total: denda, jam: billedJam, durasiText, exitTime, isMember: true, denda };
 
     let total = 0;
@@ -544,7 +676,9 @@ function KendaraanKeluar({ user, transactions, updateTransaction, settings }) {
   };
 
   const handleProcess = () => { 
-    if (tiketHilang && (!fotoKTP || !fotoSTNK)) return alert("Mohon upload Foto KTP dan STNK terlebih dahulu!");
+    if (tiketHilang && (!fotoKTP || !fotoSTNK)) {
+        return showToast("Mohon upload Foto KTP dan STNK terlebih dahulu!", "error");
+    }
     if (selectedTx) setShowCamera(true); 
   };
 
@@ -568,6 +702,11 @@ function KendaraanKeluar({ user, transactions, updateTransaction, settings }) {
 
   return (
     <div className="fade-in max-w-2xl mx-auto">
+      {webSettings.logoUrl && (
+         <div className="flex justify-center mb-6">
+            <img src={webSettings.logoUrl} className="h-16 object-contain bg-[#114022] border border-[#1b5e35] rounded-2xl p-2 shadow-lg" alt="Logo Perusahaan"/>
+         </div>
+      )}
       <div className="bg-[#114022] rounded-[2.5rem] p-8 shadow-2xl border border-[#1b5e35]">
         <div className="relative mb-8">
           <div className="absolute inset-y-0 left-6 flex items-center pointer-events-none"><Search className="text-green-300/50" size={24} /></div>
@@ -604,7 +743,6 @@ function KendaraanKeluar({ user, transactions, updateTransaction, settings }) {
                </div>
             </div>
 
-            {/* Hilang Tiket Section (Diperjelas) */}
             <div className="border-t border-[#1b5e35] pt-6 mt-2">
                <label className={`flex items-center justify-between cursor-pointer p-4 border rounded-xl transition-all ${tiketHilang ? 'bg-red-600/20 border-red-500' : 'bg-red-900/10 border-red-600/30 hover:bg-red-900/20'}`}>
                   <div className="flex items-center gap-3">
@@ -622,7 +760,6 @@ function KendaraanKeluar({ user, transactions, updateTransaction, settings }) {
                </label>
             </div>
             
-            {/* Popup/Modal Tiket Hilang */}
             {showLostModal && (
               <div className="fixed inset-0 z-[70] bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm">
                  <div className="bg-[#114022] p-6 rounded-2xl border border-[#1b5e35] max-w-sm w-full shadow-2xl animate-in zoom-in-95">
@@ -646,7 +783,7 @@ function KendaraanKeluar({ user, transactions, updateTransaction, settings }) {
 
                     <div className="flex gap-3 mt-6">
                        <button onClick={() => setShowLostModal(false)} className="flex-1 py-3 bg-[#092613] text-white font-bold rounded-xl hover:bg-black/20 text-sm">Batal</button>
-                       <button onClick={() => { if(!fotoKTP || !fotoSTNK) return alert("KTP & STNK wajib diupload!"); setTiketHilang(true); setShowLostModal(false); }} className="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-500 text-sm">Terapkan Denda</button>
+                       <button onClick={() => { if(!fotoKTP || !fotoSTNK) return showToast("KTP & STNK wajib diupload!", "error"); setTiketHilang(true); setShowLostModal(false); }} className="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-500 text-sm">Terapkan Denda</button>
                     </div>
                  </div>
               </div>
@@ -671,7 +808,7 @@ function KendaraanArea({ transactions, user }) {
   const [zoomImg, setZoomImg] = useState(null);
 
   return (
-    <div className="fade-in max-w-5xl mx-auto">
+    <div className="fade-in max-w-5xl mx-auto hide-on-print">
       <div className="flex items-center gap-4 mb-6">
          <div className="w-14 h-14 bg-teal-500/20 text-teal-400 border border-teal-500/30 rounded-2xl flex items-center justify-center"><MapPin size={28} /></div>
          <div><h2 className="text-2xl font-extrabold text-white">Kendaraan di Area</h2><p className="text-green-200/70 text-sm">Rincian detail kendaraan yang belum melakukan transaksi keluar.</p></div>
@@ -681,7 +818,6 @@ function KendaraanArea({ transactions, user }) {
         {activeTx.map(tx => (
           <div key={tx.id} className="bg-[#114022] p-5 rounded-3xl border border-[#1b5e35] flex flex-col hover:bg-[#164d2b] transition-colors relative overflow-hidden shadow-lg">
             
-            {/* Foto Kendaraan dengan fitur Zoom */}
             <div className="relative w-full aspect-video bg-[#092613] rounded-2xl overflow-hidden mb-4 group cursor-pointer border border-[#1b5e35]" onClick={() => tx.fotoMasuk && setZoomImg(tx.fotoMasuk)}>
                {tx.fotoMasuk ? (
                  <img src={tx.fotoMasuk} alt="Masuk" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
@@ -691,16 +827,14 @@ function KendaraanArea({ transactions, user }) {
                     <span className="text-xs">Foto Tidak Tersedia</span>
                  </div>
                )}
-               {tx.fotoMasuk && <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 text-white"><Maximize2 size={32} /></div>}
+               {tx.fotoMasuk && <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 text-white"><Search size={32} /></div>}
             </div>
             
-            {/* Header Nopol & Jenis */}
             <div className="flex justify-between items-center mb-4">
                <h3 className="text-3xl font-black text-white tracking-widest">{tx.nopol}</h3>
                <span className="text-xs text-green-300/90 bg-[#092613] px-3 py-1.5 rounded-lg font-bold border border-[#1b5e35] uppercase tracking-wider">{tx.jenis}</span>
             </div>
             
-            {/* Detail Transaksi (Tabel Mini) */}
             <div className="text-xs text-green-200/80 space-y-2 bg-[#092613] p-4 rounded-2xl border border-[#1b5e35]">
                <div className="flex justify-between items-center border-b border-[#1b5e35] pb-2">
                   <span className="flex items-center gap-2"><Clock size={14} className="text-teal-400"/> Tanggal Masuk</span>
@@ -724,7 +858,6 @@ function KendaraanArea({ transactions, user }) {
         ))}
       </div>
       
-      {/* Zoom Image Modal */}
       {zoomImg && (
         <div className="fixed inset-0 z-[70] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md" onClick={() => setZoomImg(null)}>
            <img src={zoomImg} className="max-w-[95vw] max-h-[90vh] rounded-2xl shadow-2xl border-4 border-[#1b5e35] object-contain" alt="Zoom"/>
@@ -737,13 +870,13 @@ function KendaraanArea({ transactions, user }) {
 }
 
 // --- MASTER SETTINGS & LAPORAN ---
-function MasterSettings({ settings, setSettings, user, transactions, updateTransaction }) {
+function MasterSettings({ settings, setSettings, user, transactions, updateTransaction, showToast, setConfirmDialog }) {
   const [activeSetTab, setActiveSetTab] = useState('laporan');
   const isReadOnly = user.role !== 'master';
 
   return (
     <div className="fade-in max-w-5xl mx-auto">
-      <div className="flex items-center gap-4 mb-8">
+      <div className="flex items-center gap-4 mb-8 hide-on-print">
         <div className="w-14 h-14 bg-[#114022] text-green-400 border border-[#1b5e35] rounded-2xl flex items-center justify-center"><Settings size={28} /></div>
         <div>
           <h2 className="text-2xl font-extrabold text-white tracking-tight">System Settings & Reports</h2>
@@ -751,8 +884,8 @@ function MasterSettings({ settings, setSettings, user, transactions, updateTrans
         </div>
       </div>
 
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-2 custom-scrollbar">
-        <button onClick={() => setActiveSetTab('laporan')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'laporan' ? 'bg-green-600 text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Laporan Pendapatan</button>
+      <div className="flex gap-2 mb-6 overflow-x-auto pb-2 custom-scrollbar hide-on-print">
+        <button onClick={() => setActiveSetTab('laporan')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'laporan' ? 'bg-green-600 text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Laporan & Audit</button>
         {user.role === 'master' && <button onClick={() => setActiveSetTab('rekapan')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'rekapan' ? 'bg-teal-600 text-white' : 'bg-[#114022] text-teal-400 hover:bg-[#164d2b]'}`}>Rekapan Global (Rinci)</button>}
         <button onClick={() => setActiveSetTab('tarif')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'tarif' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Setting Tarif</button>
         <button onClick={() => setActiveSetTab('member')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'member' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Member Parkir</button>
@@ -761,35 +894,39 @@ function MasterSettings({ settings, setSettings, user, transactions, updateTrans
         <button onClick={() => setActiveSetTab('web')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'web' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Web & Printer</button>
       </div>
 
-      <div className="bg-[#114022] rounded-[2.5rem] p-8 shadow-2xl border border-[#1b5e35]">
-        {activeSetTab === 'laporan' && <Laporan transactions={transactions} user={user} updateTransaction={updateTransaction} />}
-        {activeSetTab === 'rekapan' && user.role === 'master' && <RekapanLaporan transactions={transactions} user={user} />}
-        {activeSetTab === 'tarif' && <SettingTarif settings={settings} setSettings={setSettings} isReadOnly={isReadOnly} user={user} />}
-        {activeSetTab === 'member' && <SettingMember settings={settings} setSettings={setSettings} isReadOnly={isReadOnly} user={user} />}
-        {activeSetTab === 'shift' && <SettingShift settings={settings} setSettings={setSettings} isReadOnly={isReadOnly} user={user} />}
-        {activeSetTab === 'users' && user.role === 'master' && <SettingUser settings={settings} setSettings={setSettings} />}
-        {activeSetTab === 'web' && <SettingWeb settings={settings} setSettings={setSettings} isReadOnly={isReadOnly} />}
+      <div className="bg-[#114022] rounded-[2.5rem] p-8 shadow-2xl border border-[#1b5e35] print:bg-white print:border-none print:shadow-none print:p-0">
+        {activeSetTab === 'laporan' && <Laporan transactions={transactions} user={user} updateTransaction={updateTransaction} showToast={showToast} setConfirmDialog={setConfirmDialog} settings={settings} />}
+        {activeSetTab === 'rekapan' && user.role === 'master' && <RekapanLaporan transactions={transactions} user={user} settings={settings} />}
+        {activeSetTab === 'tarif' && <SettingTarif settings={settings} setSettings={setSettings} isReadOnly={isReadOnly} user={user} showToast={showToast} />}
+        {activeSetTab === 'member' && <SettingMember settings={settings} setSettings={setSettings} isReadOnly={isReadOnly} user={user} showToast={showToast} />}
+        {activeSetTab === 'shift' && <SettingShift settings={settings} setSettings={setSettings} isReadOnly={isReadOnly} user={user} showToast={showToast} />}
+        {activeSetTab === 'users' && user.role === 'master' && <SettingUser settings={settings} setSettings={setSettings} showToast={showToast} />}
+        {activeSetTab === 'web' && <SettingWeb settings={settings} setSettings={setSettings} isReadOnly={isReadOnly} showToast={showToast} />}
       </div>
     </div>
   );
 }
 
-// Sub-Component Laporan Visual (Auditor Friendly)
-function Laporan({ transactions, user, updateTransaction }) {
+// Sub-Component Laporan Visual (Dilengkapi fitur print 1 lembar)
+function Laporan({ transactions, user, updateTransaction, showToast, setConfirmDialog, settings }) {
   const [filterType, setFilterType] = useState('shift'); 
   const [lapTab, setLapTab] = useState('ringkasan');
   const [zoomImg, setZoomImg] = useState(null);
   const [isCleaning, setIsCleaning] = useState(false);
+  const webSettings = settings?.web || {};
   
   let filteredTx = transactions.filter(t => user.lokasi === 'All Lokasi' || t.lokasi === user.lokasi);
   const completedTx = filteredTx.filter(t => t.status === 'OUT');
-  const totalPendapatan = completedTx.reduce((acc, curr) => acc + curr.totalBiaya, 0);
+  const totalPendapatan = completedTx.reduce((acc, curr) => acc + (curr.totalBiaya || 0), 0);
 
   const breakdown = { 'Motor': { qty: 0, nominal: 0 }, 'Mobil': { qty: 0, nominal: 0 }, 'Box/Truck': { qty: 0, nominal: 0 }, 'Sepeda/Becak': { qty: 0, nominal: 0 } };
   const durasiStats = { '1 Jam Awal': 0, '2 sd 5 Jam': 0, '6 sd 12 Jam': 0, '13 sd 24 Jam': 0, '> 24 Jam': 0 };
 
   completedTx.forEach(tx => {
-     if (breakdown[tx.jenis] !== undefined) { breakdown[tx.jenis].qty += 1; breakdown[tx.jenis].nominal += tx.totalBiaya || 0; }
+     if (tx.jenis && breakdown[tx.jenis] !== undefined) { 
+         breakdown[tx.jenis].qty += 1; 
+         breakdown[tx.jenis].nominal += tx.totalBiaya || 0; 
+     }
      const jam = tx.durasiJam || 1;
      if (jam <= 1) durasiStats['1 Jam Awal'] += 1;
      else if (jam <= 5) durasiStats['2 sd 5 Jam'] += 1;
@@ -800,35 +937,37 @@ function Laporan({ transactions, user, updateTransaction }) {
 
   const totalQtySelesai = completedTx.length;
 
-  // Auto-Cleanup Database Logic (Mengosongkan gambar berumur > 30 hari untuk menjaga database tidak 80% penuh)
-  const cleanOldDatabasePhotos = async () => {
-     if(!window.confirm("Peringatan: Proses ini akan menghapus semua file foto transaksi yang berumur LEBIH DARI 30 HARI untuk mengosongkan ruang database. Data log nopol dan biaya tetap aman. Lanjutkan?")) return;
-     
-     setIsCleaning(true);
-     const thirtyDaysAgo = new Date();
-     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-     
-     const txToClean = transactions.filter(t => t.waktuMasuk < thirtyDaysAgo && (t.fotoMasuk || t.fotoKeluar));
-     
-     for (const tx of txToClean) {
-        await updateTransaction(tx.id, { fotoMasuk: null, fotoKeluar: null, fotoKTP: null, fotoSTNK: null, photoCleaned: true });
-     }
-     
-     setIsCleaning(false);
-     alert(`Berhasil! ${txToClean.length} data lama berhasil dihapus fotonya untuk menghemat storage.`);
+  const requestCleanDatabase = () => {
+    setConfirmDialog({
+        title: "Bersihkan Storage Database",
+        message: "Proses ini akan menghapus semua file foto transaksi yang berumur LEBIH DARI 30 HARI. Lanjutkan?",
+        onConfirm: async () => {
+            setConfirmDialog(null);
+            setIsCleaning(true);
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            
+            const txToClean = transactions.filter(t => t.waktuMasuk < thirtyDaysAgo && (t.fotoMasuk || t.fotoKeluar));
+            for (const tx of txToClean) {
+                await updateTransaction(tx.id, { fotoMasuk: null, fotoKeluar: null, fotoKTP: null, fotoSTNK: null, photoCleaned: true });
+            }
+            setIsCleaning(false);
+            showToast(`Berhasil! ${txToClean.length} data lama dihapus fotonya.`);
+        },
+        onCancel: () => setConfirmDialog(null)
+    });
   };
 
   return (
-    <div className="space-y-6">
-      {/* Peringatan Database & Tombol Clean */}
+    <div className="space-y-6 print:space-y-2">
       {user.role === 'master' && (
         <div className="bg-red-900/20 border border-red-500/30 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4 hide-on-print">
            <div className="flex items-center gap-3">
               <Database className="text-red-400" size={24}/>
-              <p className="text-xs text-red-200/80 leading-relaxed"><strong>Sistem Auto-Storage Aktif:</strong> Hapus foto transaksi visual yang berumur lebih dari 1 Bulan (30 Hari) agar kapasitas database Firebase Anda tetap lapang.</p>
+              <p className="text-xs text-red-200/80 leading-relaxed"><strong>Sistem Auto-Storage Aktif:</strong> Hapus foto transaksi visual yang berumur &gt; 1 Bulan.</p>
            </div>
-           <button onClick={cleanOldDatabasePhotos} disabled={isCleaning} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap flex items-center gap-2 transition-colors">
-              <Trash2 size={14}/> {isCleaning ? 'Membersihkan...' : 'Bersihkan Storage > 1 Bulan'}
+           <button onClick={requestCleanDatabase} disabled={isCleaning} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap flex items-center gap-2 transition-colors">
+              <Trash2 size={14}/> {isCleaning ? 'Membersihkan...' : 'Bersihkan Storage &gt; 1 Bulan'}
            </button>
         </div>
       )}
@@ -836,71 +975,58 @@ function Laporan({ transactions, user, updateTransaction }) {
       {/* TABS LAPORAN */}
       <div className="flex bg-[#092613] p-1 rounded-xl border border-[#1b5e35] hide-on-print overflow-x-auto custom-scrollbar">
          <button onClick={()=>setLapTab('ringkasan')} className={`flex-1 py-2 px-4 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${lapTab==='ringkasan'?'bg-[#1b5e35] text-white shadow':'text-green-300/50 hover:text-white'}`}>Ringkasan Bisnis</button>
-         <button onClick={()=>setLapTab('in_area')} className={`flex-1 py-2 px-4 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${lapTab==='in_area'?'bg-teal-600 text-white shadow':'text-green-300/50 hover:text-white'}`}>Audit Kendaraan Area</button>
-         <button onClick={()=>setLapTab('out_area')} className={`flex-1 py-2 px-4 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${lapTab==='out_area'?'bg-orange-600 text-white shadow':'text-green-300/50 hover:text-white'}`}>Audit Kendaraan Keluar</button>
+         <button onClick={()=>setLapTab('in_area')} className={`flex-1 py-2 px-4 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${lapTab==='in_area'?'bg-teal-600 text-white shadow':'text-green-300/50 hover:text-white'}`}>Kendaraan di Area</button>
+         <button onClick={()=>setLapTab('out_area')} className={`flex-1 py-2 px-4 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${lapTab==='out_area'?'bg-orange-600 text-white shadow':'text-green-300/50 hover:text-white'}`}>Kendaraan Keluar</button>
+         <button onClick={()=>setLapTab('semua')} className={`flex-1 py-2 px-4 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${lapTab==='semua'?'bg-blue-600 text-white shadow':'text-green-300/50 hover:text-white'}`}>Semua Transaksi (Master List)</button>
       </div>
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hide-on-print">
         <div><h3 className="font-bold text-xl text-white">Laporan Transaksi</h3></div>
         <div className="flex flex-wrap gap-2">
-           <select value={filterType} onChange={e => setFilterType(e.target.value)} className="bg-[#092613] border border-[#1b5e35] text-white px-4 py-2 rounded-xl text-sm font-bold outline-none hide-on-print">
-              <option value="shift">Per Shift</option><option value="hari">Akhir Hari</option><option value="bulan">Per Bulan</option><option value="tahun">Per Tahun</option>
-           </select>
-          <button onClick={() => window.print()} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-bold hide-on-print"><Download size={16} /> PDF</button>
+          <button onClick={() => window.print()} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-bold hide-on-print shadow-lg"><Download size={16} /> Print 1 Lembar A4</button>
         </div>
       </div>
 
       {lapTab === 'ringkasan' && (
-         <div className="animate-in fade-in space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35]"><p className="text-green-300/50 text-xs font-bold mb-1">Total Pendapatan</p><h3 className="text-2xl font-black text-green-400">Rp {totalPendapatan.toLocaleString('id-ID')}</h3></div>
-              <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35]"><p className="text-green-300/50 text-xs font-bold mb-1">Mobil/Motor Masuk</p><h3 className="text-2xl font-black text-teal-400">{filteredTx.filter(t => t.status === 'IN').length}</h3></div>
-              <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35]"><p className="text-green-300/50 text-xs font-bold mb-1">Transaksi Selesai</p><h3 className="text-2xl font-black text-orange-400">{totalQtySelesai}</h3></div>
+         <div className="animate-in fade-in space-y-6 print-1-lembar">
+            {/* Header Laporan Khusus Print */}
+            <div className="hidden-screen show-on-print border-b-2 border-black pb-2 mb-4">
+                {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-10 mb-2" alt="Logo"/>}
+                <h1 className="text-xl font-bold uppercase">Ringkasan Pendapatan Bisnis</h1>
+                <p className="text-[10px] text-gray-600">Lokasi: {user.lokasi} | Dicetak: {new Date().toLocaleString('id-ID')} | Oleh: {user.nama}</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 print:grid-cols-3">
+              <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35] print:border-black print:bg-white print:text-black print:p-3"><p className="text-green-300/50 print:text-gray-600 text-xs font-bold mb-1">Total Pendapatan</p><h3 className="text-2xl print:text-lg font-black text-green-400 print:text-black">Rp {totalPendapatan.toLocaleString('id-ID')}</h3></div>
+              <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35] print:border-black print:bg-white print:text-black print:p-3"><p className="text-green-300/50 print:text-gray-600 text-xs font-bold mb-1">Total Kendaraan (Masuk)</p><h3 className="text-2xl print:text-lg font-black text-teal-400 print:text-black">{filteredTx.length}</h3></div>
+              <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35] print:border-black print:bg-white print:text-black print:p-3"><p className="text-green-300/50 print:text-gray-600 text-xs font-bold mb-1">Transaksi Selesai</p><h3 className="text-2xl print:text-lg font-black text-orange-400 print:text-black">{totalQtySelesai}</h3></div>
             </div>
             
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 printable-report">
-               {/* Breakdown Jenis Kendaraan */}
-               <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35] print:border-slate-300 print:text-black">
-                  <h4 className="font-bold text-white print:text-black mb-4 border-b border-[#1b5e35] print:border-slate-300 pb-2">Breakdown Jenis Kendaraan</h4>
-                  <table className="w-full text-sm text-left border-collapse">
-                     <thead>
-                        <tr className="text-green-200/70 print:text-slate-600 border-b border-[#1b5e35] print:border-slate-300">
-                           <th className="py-2">Jenis Kendaraan</th><th className="py-2 text-center">Total Qty</th><th className="py-2 text-right">Nominal (Rp)</th>
-                        </tr>
-                     </thead>
-                     <tbody className="text-white print:text-slate-800">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 printable-report print:grid-cols-2">
+               <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35] print:border-black print:text-black print:p-3">
+                  <h4 className="font-bold text-white print:text-black mb-4 print:mb-2 border-b border-[#1b5e35] print:border-black pb-2 print:text-sm">Breakdown Jenis Kendaraan</h4>
+                  <table className="w-full text-sm print:text-[10px] text-left border-collapse">
+                     <thead><tr className="text-green-200/70 print:text-black border-b border-[#1b5e35] print:border-black"><th className="py-2">Jenis Kendaraan</th><th className="py-2 text-center">Total Qty</th><th className="py-2 text-right">Nominal (Rp)</th></tr></thead>
+                     <tbody className="text-white print:text-black">
                         {Object.keys(breakdown).map(jenis => (
-                           <tr key={jenis} className="border-b border-[#1b5e35]/50 print:border-slate-200">
-                              <td className="py-2">{jenis}</td>
-                              <td className="py-2 text-center font-bold text-teal-400 print:text-slate-800">{breakdown[jenis].qty}</td>
-                              <td className="py-2 text-right font-bold text-green-400 print:text-slate-800">{breakdown[jenis].nominal.toLocaleString('id-ID')}</td>
+                           <tr key={jenis} className="border-b border-[#1b5e35]/50 print:border-gray-400">
+                              <td className="py-2">{jenis}</td><td className="py-2 text-center font-bold text-teal-400 print:text-black">{breakdown[jenis].qty}</td><td className="py-2 text-right font-bold text-green-400 print:text-black">{breakdown[jenis].nominal.toLocaleString('id-ID')}</td>
                            </tr>
                         ))}
-                        <tr className="bg-[#114022] print:bg-slate-100 font-bold border-t-2 border-green-500 print:border-black">
-                           <td className="py-3 px-2 uppercase text-xs">GRAND TOTAL</td>
-                           <td className="py-3 text-center text-teal-400 print:text-black">{totalQtySelesai}</td>
-                           <td className="py-3 text-right text-green-400 print:text-black">{totalPendapatan.toLocaleString('id-ID')}</td>
-                        </tr>
+                        <tr className="bg-[#114022] print:bg-gray-200 font-bold border-t-2 border-green-500 print:border-black"><td className="py-3 px-2 uppercase text-xs">GRAND TOTAL</td><td className="py-3 text-center text-teal-400 print:text-black">{totalQtySelesai}</td><td className="py-3 text-right text-green-400 print:text-black">{totalPendapatan.toLocaleString('id-ID')}</td></tr>
                      </tbody>
                   </table>
                </div>
-
-               {/* Statistik Durasi Parkir */}
-               <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35] print:border-slate-300 print:text-black">
-                  <h4 className="font-bold text-white print:text-black mb-4 border-b border-[#1b5e35] print:border-slate-300 pb-2">Persentase Lama Parkir</h4>
-                  <div className="space-y-4 mt-2">
+               <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35] print:border-black print:text-black print:p-3">
+                  <h4 className="font-bold text-white print:text-black mb-4 print:mb-2 border-b border-[#1b5e35] print:border-black pb-2 print:text-sm">Persentase Lama Parkir</h4>
+                  <div className="space-y-4 print:space-y-2 mt-2">
                      {Object.keys(durasiStats).map(rentang => {
                         const count = durasiStats[rentang];
                         const persentase = totalQtySelesai > 0 ? ((count / totalQtySelesai) * 100).toFixed(1) : 0;
                         return (
                            <div key={rentang} className="relative">
-                              <div className="flex justify-between text-xs font-bold text-green-100 mb-1 print:text-black">
-                                 <span>{rentang}</span>
-                                 <span className="text-teal-400 print:text-slate-600">{count} Unit ({persentase}%)</span>
-                              </div>
-                              <div className="w-full bg-[#114022] print:bg-slate-200 h-2.5 rounded-full overflow-hidden">
-                                 <div className="bg-teal-500 print:bg-slate-800 h-full rounded-full" style={{ width: `${persentase}%` }}></div>
-                              </div>
+                              <div className="flex justify-between text-xs print:text-[9px] font-bold text-green-100 mb-1 print:text-black"><span>{rentang}</span><span className="text-teal-400 print:text-black">{count} Unit ({persentase}%)</span></div>
+                              <div className="w-full bg-[#114022] print:bg-gray-200 h-2.5 print:h-1.5 rounded-full overflow-hidden border print:border-black"><div className="bg-teal-500 print:bg-black h-full rounded-full" style={{ width: `${persentase}%` }}></div></div>
                            </div>
                         );
                      })}
@@ -910,20 +1036,67 @@ function Laporan({ transactions, user, updateTransaction }) {
          </div>
       )}
 
-      {/* TAB AUDIT IN AREA */}
+      {/* TAB MASTER LIST (SEMUA TRANSAKSI - IN & OUT UNTUK PRINT 1 LEMBAR) */}
+      {lapTab === 'semua' && (
+         <div className="print-1-lembar bg-[#092613] rounded-2xl border border-[#1b5e35] print:border-none print:bg-transparent animate-in fade-in flex flex-col h-full">
+            <div className="hidden-screen show-on-print border-b-2 border-black pb-2 mb-2">
+                {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-8 mb-1" alt="Logo"/>}
+                <h1 className="text-sm font-bold uppercase">Audit Keseluruhan Transaksi Area (In & Out)</h1>
+                <p className="text-[8px] text-gray-600">Dicetak pada: {new Date().toLocaleString('id-ID')} | Oleh: {user.nama} ({user.lokasi}) | Total Item: {filteredTx.length}</p>
+            </div>
+            
+            <div className="overflow-x-auto hide-scrollbar flex-1">
+               <table className="dense-table print:text-black text-white text-sm w-full">
+                 <thead>
+                   <tr className="bg-[#0c331a] print:bg-gray-200 text-green-300/70 print:text-black text-xs print:text-[8px] uppercase">
+                     <th className="p-3 border-b border-[#1b5e35]">No</th>
+                     <th className="p-3 border-b border-[#1b5e35]">Nopol</th>
+                     <th className="p-3 border-b border-[#1b5e35]">Jenis</th>
+                     <th className="p-3 border-b border-[#1b5e35] text-center">Status</th>
+                     <th className="p-3 border-b border-[#1b5e35]">Masuk</th>
+                     <th className="p-3 border-b border-[#1b5e35]">Keluar</th>
+                     <th className="p-3 border-b border-[#1b5e35] text-right">Biaya (Rp)</th>
+                   </tr>
+                 </thead>
+                 <tbody>
+                   {filteredTx.slice().reverse().map((tx, i) => (
+                     <tr key={tx.id} className="hover:bg-[#114022] border-b border-[#1b5e35]/50 print:border-black transition-colors print:text-[8px]">
+                       <td className="p-2 text-center text-green-200/70 print:text-black">{i+1}</td>
+                       <td className="p-2 font-bold">{tx.nopol}</td>
+                       <td className="p-2">{tx.jenis}</td>
+                       <td className="p-2 text-center">
+                          {tx.status === 'IN' ? (
+                            <span className="bg-amber-900/50 text-amber-400 print:bg-transparent print:text-black print:font-bold px-2 py-0.5 rounded text-[10px] print:text-[8px]">Di Area</span>
+                          ) : (
+                            <span className="bg-green-900/50 text-green-400 print:bg-transparent print:text-black px-2 py-0.5 rounded text-[10px] print:text-[8px]">Selesai</span>
+                          )}
+                       </td>
+                       <td className="p-2">{tx.waktuMasuk.toLocaleString('id-ID')}</td>
+                       <td className="p-2">{tx.waktuKeluar ? tx.waktuKeluar.toLocaleString('id-ID') : '-'}</td>
+                       <td className="p-2 text-right font-bold text-teal-400 print:text-black">{tx.totalBiaya ? tx.totalBiaya.toLocaleString('id-ID') : '0'}</td>
+                     </tr>
+                   ))}
+                 </tbody>
+               </table>
+            </div>
+            <p className="hidden-screen show-on-print text-[8px] mt-2 italic text-center">~ Akhir dari dokumen laporan ~</p>
+         </div>
+      )}
+
+      {/* Tampilan Audit Area / Out Area tetap (Sembunyikan saat di print untuk kepraktisan) */}
       {lapTab === 'in_area' && (
-         <div className="bg-[#092613] rounded-2xl border border-[#1b5e35] overflow-x-auto printable-report print:bg-white animate-in fade-in">
-             <table className="w-full text-left border-collapse print:text-black">
-               <thead><tr className="bg-[#0c331a] print:bg-slate-100 text-green-300/70 print:text-slate-800 text-xs uppercase"><th className="p-4 border-b border-[#1b5e35] print:border-slate-300">Waktu Masuk</th><th className="p-4 border-b border-[#1b5e35] print:border-slate-300">Nopol & Jenis</th><th className="p-4 border-b border-[#1b5e35] print:border-slate-300">Foto Masuk</th><th className="p-4 border-b border-[#1b5e35] print:border-slate-300">Petugas</th></tr></thead>
+         <div className="bg-[#092613] rounded-2xl border border-[#1b5e35] overflow-x-auto hide-on-print animate-in fade-in">
+             <table className="w-full text-left border-collapse">
+               <thead><tr className="bg-[#0c331a] text-green-300/70 text-xs uppercase"><th className="p-4 border-b border-[#1b5e35]">Waktu Masuk</th><th className="p-4 border-b border-[#1b5e35]">Nopol & Jenis</th><th className="p-4 border-b border-[#1b5e35]">Foto Masuk</th><th className="p-4 border-b border-[#1b5e35]">Petugas</th></tr></thead>
                <tbody>
                  {filteredTx.filter(t => t.status === 'IN').slice().reverse().map(tx => (
-                   <tr key={tx.id} className="hover:bg-[#114022] print:hover:bg-white border-b border-[#1b5e35]/50 print:border-slate-200 text-sm transition-colors">
-                     <td className="p-4 text-green-200/70 print:text-slate-700">{tx.waktuMasuk.toLocaleString('id-ID')}</td>
-                     <td className="p-4 font-bold text-white print:text-slate-900">{tx.nopol} <span className="block text-xs text-green-400/50 mt-1">{tx.jenis}</span></td>
+                   <tr key={tx.id} className="hover:bg-[#114022] border-b border-[#1b5e35]/50 text-sm transition-colors text-white">
+                     <td className="p-4 text-green-200/70">{tx.waktuMasuk.toLocaleString('id-ID')}</td>
+                     <td className="p-4 font-bold text-white">{tx.nopol} <span className="block text-xs text-green-400/50 mt-1">{tx.jenis}</span></td>
                      <td className="p-4">
-                        {tx.fotoMasuk ? <img src={tx.fotoMasuk} onClick={()=>setZoomImg(tx.fotoMasuk)} className="w-20 h-14 object-cover rounded cursor-pointer border border-[#1b5e35] hover:opacity-80"/> : <span className="text-xs text-green-200/30">Dibersihkan</span>}
+                        {tx.fotoMasuk ? <img src={tx.fotoMasuk} onClick={()=>setZoomImg(tx.fotoMasuk)} className="w-20 h-14 object-cover rounded cursor-pointer border border-[#1b5e35] hover:opacity-80" alt="Masuk"/> : <span className="text-xs text-green-200/30">N/A</span>}
                      </td>
-                     <td className="p-4 text-green-200/70 print:text-slate-700">{tx.kasirMasuk}</td>
+                     <td className="p-4 text-green-200/70">{tx.kasirMasuk}</td>
                    </tr>
                  ))}
                </tbody>
@@ -931,21 +1104,20 @@ function Laporan({ transactions, user, updateTransaction }) {
          </div>
       )}
 
-      {/* TAB AUDIT KELUAR AREA */}
       {lapTab === 'out_area' && (
-         <div className="bg-[#092613] rounded-2xl border border-[#1b5e35] overflow-x-auto printable-report print:bg-white animate-in fade-in">
-             <table className="w-full text-left border-collapse print:text-black">
-               <thead><tr className="bg-[#0c331a] print:bg-slate-100 text-green-300/70 print:text-slate-800 text-xs uppercase"><th className="p-4 border-b border-[#1b5e35] print:border-slate-300">Nopol</th><th className="p-4 border-b border-[#1b5e35] print:border-slate-300">Waktu</th><th className="p-4 border-b border-[#1b5e35] print:border-slate-300">Foto Masuk vs Keluar</th><th className="p-4 border-b border-[#1b5e35] print:border-slate-300">Biaya</th></tr></thead>
+         <div className="bg-[#092613] rounded-2xl border border-[#1b5e35] overflow-x-auto hide-on-print animate-in fade-in">
+             <table className="w-full text-left border-collapse">
+               <thead><tr className="bg-[#0c331a] text-green-300/70 text-xs uppercase"><th className="p-4 border-b border-[#1b5e35]">Nopol</th><th className="p-4 border-b border-[#1b5e35]">Waktu</th><th className="p-4 border-b border-[#1b5e35]">Foto Masuk vs Keluar</th><th className="p-4 border-b border-[#1b5e35]">Biaya</th></tr></thead>
                <tbody>
                  {completedTx.slice().reverse().map(tx => (
-                   <tr key={tx.id} className="hover:bg-[#114022] print:hover:bg-white border-b border-[#1b5e35]/50 print:border-slate-200 text-sm transition-colors">
-                     <td className="p-4 font-bold text-white print:text-slate-900">{tx.nopol} <span className="block text-xs text-green-400/50 mt-1">{tx.jenis}</span></td>
-                     <td className="p-4 text-xs text-green-200/70 print:text-slate-700"><p>IN: {tx.waktuMasuk.toLocaleString('id-ID')}</p><p>OUT: {tx.waktuKeluar.toLocaleString('id-ID')}</p></td>
+                   <tr key={tx.id} className="hover:bg-[#114022] border-b border-[#1b5e35]/50 text-sm transition-colors text-white">
+                     <td className="p-4 font-bold">{tx.nopol} <span className="block text-xs text-green-400/50 mt-1">{tx.jenis}</span></td>
+                     <td className="p-4 text-xs text-green-200/70"><p>IN: {tx.waktuMasuk.toLocaleString('id-ID')}</p><p>OUT: {tx.waktuKeluar.toLocaleString('id-ID')}</p></td>
                      <td className="p-4 flex gap-2">
-                        {tx.fotoMasuk ? <img src={tx.fotoMasuk} onClick={()=>setZoomImg(tx.fotoMasuk)} className="w-16 h-12 object-cover rounded cursor-pointer border border-[#1b5e35]"/> : <div className="w-16 h-12 bg-black/50 border border-[#1b5e35] rounded flex items-center justify-center text-[8px] text-green-200/30">N/A</div>}
-                        {tx.fotoKeluar ? <img src={tx.fotoKeluar} onClick={()=>setZoomImg(tx.fotoKeluar)} className="w-16 h-12 object-cover rounded cursor-pointer border border-[#1b5e35]"/> : <div className="w-16 h-12 bg-black/50 border border-[#1b5e35] rounded flex items-center justify-center text-[8px] text-green-200/30">N/A</div>}
+                        {tx.fotoMasuk ? <img src={tx.fotoMasuk} onClick={()=>setZoomImg(tx.fotoMasuk)} className="w-16 h-12 object-cover rounded cursor-pointer border border-[#1b5e35]" alt="In"/> : <div className="w-16 h-12 bg-black/50 border border-[#1b5e35] rounded flex items-center justify-center text-[8px] text-green-200/30">N/A</div>}
+                        {tx.fotoKeluar ? <img src={tx.fotoKeluar} onClick={()=>setZoomImg(tx.fotoKeluar)} className="w-16 h-12 object-cover rounded cursor-pointer border border-[#1b5e35]" alt="Out"/> : <div className="w-16 h-12 bg-black/50 border border-[#1b5e35] rounded flex items-center justify-center text-[8px] text-green-200/30">N/A</div>}
                      </td>
-                     <td className="p-4 font-bold text-green-400 print:text-green-700">Rp {tx.totalBiaya.toLocaleString('id-ID')} {tx.tiketHilang && <span className="text-red-500 block text-xs">(Denda Hilang Tiket)</span>}</td>
+                     <td className="p-4 font-bold text-green-400">Rp {tx.totalBiaya.toLocaleString('id-ID')} {tx.tiketHilang && <span className="text-red-500 block text-xs">(Denda Hilang Tiket)</span>}</td>
                    </tr>
                  ))}
                </tbody>
@@ -953,9 +1125,8 @@ function Laporan({ transactions, user, updateTransaction }) {
          </div>
       )}
 
-      {/* Zoom Image Modal */}
       {zoomImg && (
-        <div className="fixed inset-0 z-[70] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md" onClick={() => setZoomImg(null)}>
+        <div className="fixed inset-0 z-[70] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md hide-on-print" onClick={() => setZoomImg(null)}>
            <img src={zoomImg} className="max-w-[95vw] max-h-[90vh] rounded-2xl shadow-2xl border-4 border-[#1b5e35] object-contain" alt="Zoom"/>
            <button className="absolute top-6 right-6 text-white bg-red-600/50 hover:bg-red-600 p-3 rounded-full transition-colors"><X size={24}/></button>
         </div>
@@ -964,115 +1135,72 @@ function Laporan({ transactions, user, updateTransaction }) {
   );
 }
 
-// Sub-Component Rekapan Global
-function RekapanLaporan({ transactions, user }) {
+// Sub-Component Rekapan Global (Disesuaikan u/ Print 1 Lembar)
+function RekapanLaporan({ transactions, user, settings }) {
   const completed = transactions.filter(t => t.status === 'OUT');
-  const total = completed.reduce((a, b) => a + b.totalBiaya, 0);
+  const total = completed.reduce((a, b) => a + (b.totalBiaya || 0), 0);
+  const webSettings = settings?.web || {};
   
-  const totalDurasi = completed.reduce((a, b) => a + b.durasiJam, 0);
-  const avgDurasi = completed.length ? (totalDurasi / completed.length).toFixed(1) : 0;
-  
-  const volumeByJenis = completed.reduce((acc, tx) => { acc[tx.jenis] = (acc[tx.jenis] || 0) + 1; return acc; }, {});
-  
-  const jamMasukFreq = transactions.reduce((acc, tx) => { const h = tx.waktuMasuk.getHours(); acc[h] = (acc[h] || 0) + 1; return acc; }, {});
-  const jamKeluarFreq = completed.reduce((acc, tx) => { const h = tx.waktuKeluar.getHours(); acc[h] = (acc[h] || 0) + 1; return acc; }, {});
-  const jamRamaiMasuk = Object.keys(jamMasukFreq).length ? Object.keys(jamMasukFreq).reduce((a, b) => jamMasukFreq[a] > jamMasukFreq[b] ? a : b) : '-';
-  const jamRamaiKeluar = Object.keys(jamKeluarFreq).length ? Object.keys(jamKeluarFreq).reduce((a, b) => jamKeluarFreq[a] > jamKeluarFreq[b] ? a : b) : '-';
-
   const handleExportExcel = () => {
-    let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; 
-    csvContent += "ID,Lokasi,Nomor Polisi,Jenis Kendaraan,Status,Waktu Masuk,Waktu Keluar,Lama Parkir,Total Biaya,Kasir Keluar,Tiket Hilang\n";
-
+    let csvContent = "data:text/csv;charset=utf-8,\uFEFFID,Lokasi,Nomor Polisi,Jenis Kendaraan,Status,Waktu Masuk,Waktu Keluar,Lama Parkir,Total Biaya,Kasir Keluar,Tiket Hilang\n";
     completed.forEach(t => {
       const wMasuk = t.waktuMasuk ? t.waktuMasuk.toLocaleString('id-ID').replace(/,/g, '') : '-';
       const wKeluar = t.waktuKeluar ? t.waktuKeluar.toLocaleString('id-ID').replace(/,/g, '') : '-';
-      const row = [
-        t.id, t.lokasi, t.nopol, t.jenis, t.status, wMasuk, wKeluar, 
-        t.durasiText || '-', t.totalBiaya || 0, t.kasirKeluar || '-', t.tiketHilang ? 'YA' : 'TIDAK'
-      ].map(v => `"${v}"`).join(",");
+      const row = [t.id, t.lokasi, t.nopol, t.jenis, t.status, wMasuk, wKeluar, t.durasiText || '-', t.totalBiaya || 0, t.kasirKeluar || '-', t.tiketHilang ? 'YA' : 'TIDAK'].map(v => `"${v}"`).join(",");
       csvContent += row + "\n";
     });
-
-    const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Rekapan_Parkir_Global_${new Date().toISOString().slice(0,10)}.csv`);
-    document.body.appendChild(link);
+    link.href = encodeURI(csvContent);
+    link.download = `Rekapan_Global_Parkir_${new Date().toISOString().slice(0,10)}.csv`;
     link.click();
-    document.body.removeChild(link);
   };
 
   return (
-    <div className="space-y-6">
-       <div className="bg-teal-900/30 border border-teal-500/30 p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div><p className="text-sm font-bold text-teal-400">Total Pendapatan Global Semua Lokasi</p><h2 className="text-4xl font-black text-white">Rp {total.toLocaleString('id-ID')}</h2></div>
-          <div className="flex gap-2">
-            <button onClick={() => window.print()} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-bold hide-on-print shadow-lg"><Download size={16} /> PDF</button>
-            <button onClick={handleExportExcel} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-bold shadow-lg"><FileText size={16} /> XLSX / CSV</button>
+    <div className="space-y-6 print-1-lembar">
+       <div className="hidden-screen show-on-print border-b-2 border-black pb-2 mb-2">
+           {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-8 mb-1" alt="Logo"/>}
+           <h1 className="text-sm font-bold uppercase">Rekapan Global Semua Lokasi</h1>
+           <p className="text-[8px] text-gray-600">Dicetak: {new Date().toLocaleString('id-ID')} | Master: {user.nama} | Total Item: {completed.length}</p>
+       </div>
+
+       <div className="bg-teal-900/30 border border-teal-500/30 p-6 print:p-2 print:border-black rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div><p className="text-sm print:text-[10px] font-bold text-teal-400 print:text-black">Total Pendapatan Global Semua Lokasi</p><h2 className="text-4xl print:text-xl font-black text-white print:text-black">Rp {total.toLocaleString('id-ID')}</h2></div>
+          <div className="flex gap-2 hide-on-print">
+            <button onClick={() => window.print()} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-bold shadow-lg"><Download size={16} /> Print 1 Lembar A4</button>
+            <button onClick={handleExportExcel} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-bold shadow-lg"><FileText size={16} /> XLSX/CSV</button>
           </div>
        </div>
-       
-       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-[#092613] p-4 rounded-xl border border-[#1b5e35] text-center"><p className="text-xs text-green-300/50">Rata-rata Parkir</p><h4 className="text-xl font-bold text-white mt-1">{avgDurasi} Jam</h4></div>
-          <div className="bg-[#092613] p-4 rounded-xl border border-[#1b5e35] text-center"><p className="text-xs text-green-300/50">Jam Ramai Masuk</p><h4 className="text-xl font-bold text-teal-400 mt-1">{jamRamaiMasuk}:00</h4></div>
-          <div className="bg-[#092613] p-4 rounded-xl border border-[#1b5e35] text-center"><p className="text-xs text-green-300/50">Jam Ramai Keluar</p><h4 className="text-xl font-bold text-orange-400 mt-1">{jamRamaiKeluar}:00</h4></div>
-          <div className="bg-[#092613] p-4 rounded-xl border border-[#1b5e35] text-center"><p className="text-xs text-green-300/50">Kasus Tiket Hilang</p><h4 className="text-xl font-bold text-red-400 mt-1">{completed.filter(t=>t.tiketHilang).length} Kasus</h4></div>
+
+       <div className="overflow-x-auto hide-scrollbar flex-1">
+          <table className="dense-table print:text-black text-white text-sm w-full">
+             <thead>
+                <tr className="bg-[#0c331a] print:bg-gray-200 text-green-300/70 print:text-black text-xs print:text-[8px] uppercase">
+                   <th className="p-3 border-b border-[#1b5e35]">Lokasi</th>
+                   <th className="p-3 border-b border-[#1b5e35]">Nopol</th>
+                   <th className="p-3 border-b border-[#1b5e35]">Jenis</th>
+                   <th className="p-3 border-b border-[#1b5e35]">Keluar</th>
+                   <th className="p-3 border-b border-[#1b5e35] text-right">Biaya (Rp)</th>
+                </tr>
+             </thead>
+             <tbody>
+                {completed.slice().reverse().map((tx) => (
+                   <tr key={tx.id} className="hover:bg-[#114022] border-b border-[#1b5e35]/50 print:border-black transition-colors print:text-[8px]">
+                      <td className="p-2 text-teal-400 print:text-black font-bold">{tx.lokasi}</td>
+                      <td className="p-2 font-bold">{tx.nopol}</td>
+                      <td className="p-2">{tx.jenis}</td>
+                      <td className="p-2 text-green-200/70 print:text-black">{tx.waktuKeluar.toLocaleString('id-ID')}</td>
+                      <td className="p-2 text-right font-bold text-teal-400 print:text-black">{tx.totalBiaya.toLocaleString('id-ID')}</td>
+                   </tr>
+                ))}
+             </tbody>
+          </table>
        </div>
-
-       <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35]">
-         <h4 className="font-bold text-white mb-4">Volume Kendaraan per Tipe</h4>
-         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-           {['Motor', 'Mobil', 'Box/Truck', 'Sepeda/Becak'].map(jenis => (
-             <div key={jenis} className="bg-[#114022] p-3 rounded-lg border border-[#1b5e35] flex justify-between items-center">
-               <span className="text-xs text-green-200/70">{jenis}</span><span className="font-bold text-white">{volumeByJenis[jenis] || 0} unit</span>
-             </div>
-           ))}
-         </div>
-       </div>
-
-       <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35] mt-6 overflow-x-auto printable-report print:bg-white print:text-black print:border-none print:shadow-none">
-         <div className="hidden-screen show-on-print flex items-center gap-4 p-6 border-b-2 border-slate-200 mb-4 bg-white text-black">
-            <img src={user.photo} alt="Petugas" className="w-16 h-16 rounded-full border-2 border-slate-300 object-cover" />
-            <div>
-               <h2 className="text-2xl font-black uppercase text-slate-800">Rekapan Parkir Global (Master)</h2>
-               <p className="text-sm font-bold text-slate-600">Ditarik Oleh: {user.nama} ({user.role.toUpperCase()})</p>
-               <p className="text-xs text-slate-500">Waktu Penarikan Data: {new Date().toLocaleString('id-ID')}</p>
-            </div>
-         </div>
-
-         <h4 className="font-bold text-white mb-4 hide-on-print">Rincian Transaksi per Lokasi</h4>
-         <table className="w-full text-left border-collapse min-w-[600px] print:text-black">
-           <thead>
-             <tr className="bg-[#0c331a] print:bg-slate-100 text-green-300/70 print:text-slate-800 text-xs uppercase">
-                <th className="p-3 border-b border-[#1b5e35] print:border-slate-300">Lokasi</th>
-                <th className="p-3 border-b border-[#1b5e35] print:border-slate-300">Waktu Keluar</th>
-                <th className="p-3 border-b border-[#1b5e35] print:border-slate-300">Nopol</th>
-                <th className="p-3 border-b border-[#1b5e35] print:border-slate-300">Jenis</th>
-                <th className="p-3 border-b border-[#1b5e35] print:border-slate-300">Durasi Parkir</th>
-                <th className="p-3 border-b border-[#1b5e35] print:border-slate-300">Biaya</th>
-             </tr>
-           </thead>
-           <tbody>
-             {completed.slice().reverse().map(tx => (
-               <tr key={tx.id} className="text-sm text-white hover:bg-[#114022] print:hover:bg-white border-b border-[#1b5e35]/50 print:border-slate-200 transition-colors">
-                 <td className="p-3 text-teal-400 print:text-teal-700 font-bold">{tx.lokasi}</td>
-                 <td className="p-3 text-green-200/70 print:text-slate-700">{tx.waktuKeluar.toLocaleString()}</td>
-                 <td className="p-3 print:font-semibold">{tx.nopol} {tx.tiketHilang && <span className="text-[10px] text-red-400 ml-1">(H)</span>}</td>
-                 <td className="p-3 text-green-200/70 print:text-slate-700">{tx.jenis}</td>
-                 <td className="p-3 text-green-200/70 print:text-slate-700">{tx.durasiText || `${tx.durasiJam} Jam`}</td>
-                 <td className="p-3 font-bold text-green-400 print:text-green-700">Rp {tx.totalBiaya.toLocaleString('id-ID')}</td>
-               </tr>
-             ))}
-           </tbody>
-         </table>
-       </div>
-
     </div>
   );
 }
 
-// Sub-Setting: Shift Multi-Lokasi
-function SettingShift({ settings, setSettings, isReadOnly, user }) {
+// Sub-Setting: Shift
+function SettingShift({ settings, setSettings, isReadOnly, user, showToast }) {
   const [targetLokasi, setTargetLokasi] = useState(user.lokasi === 'All Lokasi' ? PURE_LOCATIONS[0] : user.lokasi);
   const locSettings = getLocSettings(settings, targetLokasi);
   const [shifts, setShifts] = useState(locSettings.shifts || DEFAULT_LOCATION_SETTINGS.shifts);
@@ -1082,7 +1210,7 @@ function SettingShift({ settings, setSettings, isReadOnly, user }) {
   const handleSave = () => {
     const newLocations = { ...settings.locations, [targetLokasi]: { ...getLocSettings(settings, targetLokasi), shifts: shifts } };
     setSettings({ ...settings, locations: newLocations });
-    alert(`Setingan Jam Shift untuk ${targetLokasi} Tersimpan!`);
+    showToast(`Setingan Jam Shift untuk ${targetLokasi} Tersimpan!`);
   };
 
   const updateShift = (index, field, val) => {
@@ -1096,7 +1224,7 @@ function SettingShift({ settings, setSettings, isReadOnly, user }) {
   return (
     <div className="space-y-6">
        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-          <div className="flex items-center gap-3 text-white"><CalendarClock size={20}/> <h3 className="font-bold text-lg">Konfigurasi Waktu Shift</h3></div>
+          <div className="flex items-center gap-3 text-white"><Clock size={20}/> <h3 className="font-bold text-lg">Konfigurasi Waktu Shift</h3></div>
           {user.role === 'master' && (
              <select value={targetLokasi} onChange={e=>setTargetLokasi(e.target.value)} className="bg-[#114022] border border-teal-500 text-white p-2 rounded-lg outline-none font-bold text-sm">
                 {PURE_LOCATIONS.map(loc => <option key={loc} value={loc}>Setting Lokasi: {loc}</option>)}
@@ -1126,14 +1254,14 @@ function SettingShift({ settings, setSettings, isReadOnly, user }) {
 }
 
 // Sub-Setting: User Management
-function SettingUser({ settings, setSettings }) {
+function SettingUser({ settings, setSettings, showToast }) {
   const [usersList, setUsersList] = useState(settings.users || DEFAULT_SETTINGS.users);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ id: '', nipp: '', nama: '', password: '', role: 'kasir', canViewArea: false });
 
   const handleSaveGlobal = () => {
     setSettings({ ...settings, users: usersList });
-    alert("Perubahan Akun Tersimpan ke Database!");
+    showToast("Perubahan Akun Tersimpan ke Database!");
   };
 
   const submitForm = (e) => {
@@ -1148,16 +1276,14 @@ function SettingUser({ settings, setSettings }) {
   };
 
   const hapusUser = (id) => {
-    if (usersList.find(u => u.id === id).role === 'master') return alert("Akun Master tidak bisa dihapus!");
+    if (usersList.find(u => u.id === id).role === 'master') return showToast("Akun Master tidak bisa dihapus!", "error");
     setUsersList(usersList.filter(u => u.id !== id));
   };
 
   return (
     <div className="space-y-6">
        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-3 text-white">
-             <UserCog size={20}/> <h3 className="font-bold text-lg">Manajemen User</h3>
-          </div>
+          <div className="flex items-center gap-3 text-white"><Users size={20}/> <h3 className="font-bold text-lg">Manajemen User</h3></div>
           <button onClick={() => setShowForm(!showForm)} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-blue-500 transition">{showForm ? 'Batal' : '+ Tambah Akun'}</button>
        </div>
 
@@ -1170,10 +1296,7 @@ function SettingUser({ settings, setSettings }) {
                 <div>
                    <label className="block text-xs text-green-200/70 mb-1">Role Jabatan</label>
                    <select value={form.role} onChange={e=>setForm({...form, role: e.target.value})} className="w-full bg-[#114022] border border-[#1b5e35] p-2 rounded-lg text-white outline-none focus:border-green-500">
-                      <option value="kasir">Kasir Biasa</option>
-                      <option value="korlap">Korlap</option>
-                      <option value="audit">Audit</option>
-                      <option value="master">Master</option>
+                      <option value="kasir">Kasir Biasa</option><option value="korlap">Korlap</option><option value="audit">Audit</option><option value="master">Master</option>
                    </select>
                 </div>
              </div>
@@ -1213,7 +1336,7 @@ function SettingUser({ settings, setSettings }) {
 }
 
 // Sub-Setting: Setting Tarif Rinci Multi-Lokasi
-function SettingTarif({ settings, setSettings, isReadOnly, user }) {
+function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
   const [targetLokasi, setTargetLokasi] = useState(user.lokasi === 'All Lokasi' ? PURE_LOCATIONS[0] : user.lokasi);
   const locSettings = getLocSettings(settings, targetLokasi);
   const [localTariff, setLocalTariff] = useState(locSettings.tariffs || DEFAULT_LOCATION_SETTINGS.tariffs);
@@ -1223,7 +1346,7 @@ function SettingTarif({ settings, setSettings, isReadOnly, user }) {
   const handleSave = () => {
     const newLocations = { ...settings.locations, [targetLokasi]: { ...getLocSettings(settings, targetLokasi), tariffs: localTariff } };
     setSettings({ ...settings, locations: newLocations });
-    alert(`Setingan Tarif Per Kendaraan untuk ${targetLokasi} Tersimpan!`);
+    showToast(`Setingan Tarif Per Kendaraan untuk ${targetLokasi} Tersimpan!`);
   };
 
   const updateTariff = (jenis, field, val) => {
@@ -1260,9 +1383,7 @@ function SettingTarif({ settings, setSettings, isReadOnly, user }) {
               <div className={localTariff[jenis].mode === 'flat' ? 'opacity-50 pointer-events-none' : ''}>
                 <label className="block text-xs text-green-200/70 mb-1">Durasi Awal</label>
                 <select disabled={isReadOnly} value={localTariff[jenis].firstDuration} onChange={e => updateTariff(jenis, 'firstDuration', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-green-500">
-                  {[...Array(24).keys()].map(i => (
-                     <option key={i+1} value={i+1}>{i+1} Jam</option>
-                  ))}
+                  {[...Array(24).keys()].map(i => <option key={i+1} value={i+1}>{i+1} Jam</option>)}
                 </select>
               </div>
               <div className={localTariff[jenis].mode === 'flat' ? 'opacity-50 pointer-events-none' : ''}>
@@ -1279,7 +1400,6 @@ function SettingTarif({ settings, setSettings, isReadOnly, user }) {
               </div>
             </div>
 
-            {/* Grace Period Area */}
             <div className="mt-4 pt-4 border-t border-[#1b5e35] flex items-center gap-4">
                <label className="flex items-center gap-2 text-sm text-green-200/70 cursor-pointer">
                   <input type="checkbox" disabled={isReadOnly} checked={localTariff[jenis].gracePeriodActive} onChange={e => updateTariff(jenis, 'gracePeriodActive', e.target.checked)} className="rounded accent-green-500 w-4 h-4" />
@@ -1301,23 +1421,27 @@ function SettingTarif({ settings, setSettings, isReadOnly, user }) {
 }
 
 // Sub-Setting: Member Parkir
-function SettingMember({ settings, setSettings, isReadOnly, user }) {
+function SettingMember({ settings, setSettings, isReadOnly, user, showToast }) {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ nipp: '', nopol: '', masaBerlaku: 'Bulanan', fotoSTNK: null, fotoKartuPegawai: null });
 
+  const membersList = settings.members || [];
+
   const handleAdd = (e) => {
     e.preventDefault();
-    if (!form.fotoSTNK || !form.fotoKartuPegawai) return alert("Mohon Upload Foto STNK dan Kartu Pegawai!");
+    if (!form.fotoSTNK || !form.fotoKartuPegawai) return showToast("Mohon Upload Foto STNK dan Kartu Pegawai!", "error");
     const newMember = { ...form, id: Date.now(), status: 'Pending' };
-    setSettings({ ...settings, members: [...settings.members, newMember] });
+    setSettings({ ...settings, members: [...membersList, newMember] });
     setShowAdd(false);
     setForm({ nipp: '', nopol: '', masaBerlaku: 'Bulanan', fotoSTNK: null, fotoKartuPegawai: null });
+    showToast("Berhasil diajukan!");
   };
 
   const handleVerif = (id) => {
-    if (user.role !== 'master') return alert("Hanya Master yang bisa verifikasi.");
-    const updated = settings.members.map(m => m.id === id ? { ...m, status: 'Aktif' } : m);
+    if (user.role !== 'master') return showToast("Hanya Master yang bisa verifikasi.", "error");
+    const updated = membersList.map(m => m.id === id ? { ...m, status: 'Aktif' } : m);
     setSettings({ ...settings, members: updated });
+    showToast("Member Diverifikasi!");
   };
 
   return (
@@ -1340,13 +1464,13 @@ function SettingMember({ settings, setSettings, isReadOnly, user }) {
                 <div className="text-center">
                    <p className="text-xs font-bold text-green-200/70 mb-2">Upload STNK</p>
                    {form.fotoSTNK ? <img src={form.fotoSTNK} className="h-24 w-full object-cover rounded mb-2 border border-[#1b5e35]" alt="STNK"/> : <div className="h-24 bg-[#114022] rounded mb-2 flex items-center justify-center text-green-300/30 border border-[#1b5e35]"><FileImage/></div>}
-                   <input type="file" id="upload-member-stnk" accept="image/*" capture="environment" className="hidden" onChange={(e) => processImageFile(e.target.files[0], (d)=>setForm({...form, fotoSTNK: d}))} />
+                   <input type="file" id="upload-member-stnk" accept="image/*" className="hidden" onChange={(e) => processImageFile(e.target.files[0], (d)=>setForm({...form, fotoSTNK: d}))} />
                    <label htmlFor="upload-member-stnk" className="bg-orange-600 text-white text-xs py-2 px-4 rounded-lg cursor-pointer hover:bg-orange-500 block font-bold">Pilih Foto STNK</label>
                 </div>
                 <div className="text-center">
                    <p className="text-xs font-bold text-green-200/70 mb-2">Upload Kartu Pegawai</p>
                    {form.fotoKartuPegawai ? <img src={form.fotoKartuPegawai} className="h-24 w-full object-cover rounded mb-2 border border-[#1b5e35]" alt="Kartu"/> : <div className="h-24 bg-[#114022] rounded mb-2 flex items-center justify-center text-green-300/30 border border-[#1b5e35]"><FileImage/></div>}
-                   <input type="file" id="upload-member-kartu" accept="image/*" capture="environment" className="hidden" onChange={(e) => processImageFile(e.target.files[0], (d)=>setForm({...form, fotoKartuPegawai: d}))} />
+                   <input type="file" id="upload-member-kartu" accept="image/*" className="hidden" onChange={(e) => processImageFile(e.target.files[0], (d)=>setForm({...form, fotoKartuPegawai: d}))} />
                    <label htmlFor="upload-member-kartu" className="bg-blue-600 text-white text-xs py-2 px-4 rounded-lg cursor-pointer hover:bg-blue-500 block font-bold">Pilih Kartu Pegawai</label>
                 </div>
              </div>
@@ -1355,8 +1479,7 @@ function SettingMember({ settings, setSettings, isReadOnly, user }) {
                 <label className="block text-xs text-green-200/70 mb-1">Masa Berlaku</label>
                 <select value={form.masaBerlaku} onChange={e=>setForm({...form, masaBerlaku: e.target.value})} className="w-full bg-[#114022] border border-[#1b5e35] p-2 rounded-lg text-white outline-none focus:border-green-500"><option>Bulanan</option><option>Tahunan</option></select>
              </div>
-             
-             <button type="submit" className="w-full bg-green-600 text-white font-bold py-3 rounded-xl mt-4 hover:bg-green-500 transition">Ajukan Member (Verifikasi Master)</button>
+             <button type="submit" className="w-full bg-green-600 text-white font-bold py-3 rounded-xl mt-4 hover:bg-green-500 transition">Ajukan Member</button>
           </form>
        )}
 
@@ -1364,8 +1487,8 @@ function SettingMember({ settings, setSettings, isReadOnly, user }) {
           <table className="w-full text-left border-collapse">
              <thead><tr className="bg-[#0c331a] text-green-300/70 text-xs uppercase"><th className="p-3">NIPP</th><th className="p-3">Nopol</th><th className="p-3">Berlaku</th><th className="p-3">Status</th><th className="p-3">Aksi</th></tr></thead>
              <tbody>
-                {settings.members.length === 0 && <tr><td colSpan="5" className="p-4 text-center text-green-300/30 text-sm">Belum ada data member.</td></tr>}
-                {settings.members.map(m => (
+                {membersList.length === 0 && <tr><td colSpan="5" className="p-4 text-center text-green-300/30 text-sm">Belum ada data member.</td></tr>}
+                {membersList.map(m => (
                    <tr key={m.id} className="border-b border-[#1b5e35] text-sm text-white hover:bg-[#114022]">
                       <td className="p-3 font-bold">{m.nipp}</td><td className="p-3 font-bold">{m.nopol}</td><td className="p-3 text-green-200/70">{m.masaBerlaku}</td>
                       <td className="p-3"><span className={`px-2 py-1 text-[10px] rounded-md font-bold ${m.status === 'Aktif' ? 'bg-green-900/50 text-green-400' : 'bg-orange-900/50 text-orange-400'}`}>{m.status}</span></td>
@@ -1383,30 +1506,25 @@ function SettingMember({ settings, setSettings, isReadOnly, user }) {
   );
 }
 
-// Sub-Setting: Web & Printer (No Bluetooth API)
-function SettingWeb({ settings, setSettings, isReadOnly }) {
-  const [form, setForm] = useState(settings.web);
+// Sub-Setting: Web & Printer 
+function SettingWeb({ settings, setSettings, isReadOnly, showToast }) {
+  const [form, setForm] = useState(settings.web || DEFAULT_SETTINGS.web);
   
   const handleLogoUpload = (e) => {
     processImageFile(e.target.files[0], (data) => setForm({...form, logoUrl: data}));
   };
 
-  const handleSave = (e) => { e.preventDefault(); setSettings({ ...settings, web: form }); alert("Pengaturan Web Tersimpan!"); };
+  const handleSave = (e) => { e.preventDefault(); setSettings({ ...settings, web: form }); showToast("Pengaturan Web Tersimpan!"); };
 
   return (
     <form onSubmit={handleSave} className="space-y-6">
-      
-      {/* Printer Module - Solusi Default Browser */}
       <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35]">
          <h4 className="font-bold text-white mb-2 uppercase text-sm flex items-center gap-2"><Bluetooth size={18} className="text-teal-400"/> Pengaturan Printer Default</h4>
-         <p className="text-xs text-green-200/70 leading-relaxed mb-4">
-            Aplikasi ini telah dioptimalkan untuk menggunakan <strong>pencetakan default perangkat Anda (Print Dialog)</strong>. Ini meniadakan error Bluetooth web dan 100% kompatibel di semua HP dan browser.
-         </p>
+         <p className="text-xs text-green-200/70 leading-relaxed mb-4">Aplikasi ini telah dioptimalkan untuk menggunakan <strong>pencetakan default perangkat Anda (Print Dialog)</strong>.</p>
          <div className="bg-[#114022] p-4 rounded-xl border border-[#1b5e35]">
-            <p className="text-xs text-green-100 mb-1 font-bold">Cara Mencetak Struk:</p>
             <ol className="text-xs text-green-200/60 list-decimal ml-4 space-y-2">
-               <li><strong>HP Android:</strong> Pastikan Anda sudah menginstal aplikasi <em>Print Service</em> (misalnya <strong>RawBT</strong>) di PlayStore. Saat menekan tombol Cetak, struk akan otomatis ter-print.</li>
-               <li><strong>HP iPhone / Safari:</strong> Karena batasan keamanan iOS, Safari <em>tidak mengizinkan</em> print langsung ke Thermal Printer Bluetooth biasa. Gunakan tombol <strong className="text-blue-400">"Bagikan (Share)"</strong> yang sudah kami sediakan di sebelah tombol cetak, lalu kirimkan teks ke aplikasi printer Thermal iOS Anda.</li>
+               <li><strong>HP Android:</strong> Pastikan Anda sudah menginstal aplikasi <em>Print Service</em> (misalnya <strong>RawBT</strong>) di PlayStore.</li>
+               <li><strong>HP iPhone:</strong> Gunakan tombol <strong className="text-blue-400">"Bagikan (Share)"</strong> lalu kirimkan ke aplikasi printer Thermal iOS Anda.</li>
             </ol>
          </div>
       </div>
@@ -1417,54 +1535,43 @@ function SettingWeb({ settings, setSettings, isReadOnly }) {
         {!isReadOnly && (
           <div>
             <input type="file" id="upload-logo" accept="image/*" className="hidden" onChange={handleLogoUpload} />
-            <label htmlFor="upload-logo" className="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-6 rounded-xl cursor-pointer inline-flex items-center gap-2"><UploadCloud size={16}/> Upload Logo Dari Device</label>
+            <label htmlFor="upload-logo" className="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-6 rounded-xl cursor-pointer inline-flex items-center gap-2"><UploadCloud size={16}/> Upload Logo</label>
           </div>
         )}
       </div>
       <div>
-        <label className="block text-sm font-bold text-green-200/70 ml-2 mb-2 uppercase tracking-wider">Running Text / Slogan Bawah Struk</label>
+        <label className="block text-sm font-bold text-green-200/70 ml-2 mb-2 uppercase tracking-wider">Running Text</label>
         <textarea disabled={isReadOnly} rows="2" value={form.runningText} onChange={e => setForm({...form, runningText: e.target.value})} className="w-full bg-[#092613] border border-[#1b5e35] rounded-[1.5rem] px-5 py-4 text-white outline-none focus:border-green-500" />
       </div>
-      {!isReadOnly && <button type="submit" className="w-full bg-green-600 text-white font-bold rounded-[1.5rem] px-6 py-4 shadow-xl hover:bg-green-500 transition-all flex justify-center gap-2">Simpan Pengaturan Web</button>}
+      {!isReadOnly && <button type="submit" className="w-full bg-green-600 text-white font-bold rounded-[1.5rem] px-6 py-4 shadow-xl hover:bg-green-500 transition-all flex justify-center gap-2">Simpan</button>}
     </form>
   );
 }
 
-
 // --- SHIFT END MODAL (AUTO LOGOUT POPUP) ---
 function ShiftEndModal({ user, transactions, shiftName, onClose, settings }) {
   const [waSent, setWaSent] = useState(false);
+  const webSettings = settings?.web || {};
   
-  const shiftTx = transactions.filter(t => t.kasirKeluar === user.nama && t.waktuKeluar && t.waktuKeluar >= user.loginTime);
-  const totalNominal = shiftTx.reduce((sum, t) => sum + t.totalBiaya, 0);
+  const shiftTx = transactions.filter(t => t.kasirKeluar === user.nama && t.waktuKeluar && t.waktuKeluar >= (user.loginTime || new Date()));
+  const totalNominal = shiftTx.reduce((sum, t) => sum + (t.totalBiaya || 0), 0);
   
   const statsPerType = shiftTx.reduce((acc, tx) => { 
      if (!acc[tx.jenis]) acc[tx.jenis] = { qty: 0, nominal: 0 };
      acc[tx.jenis].qty += 1;
-     acc[tx.jenis].nominal += tx.totalBiaya;
+     acc[tx.jenis].nominal += (tx.totalBiaya || 0);
      return acc; 
   }, {});
   const allTypes = ['Motor', 'Mobil', 'Box/Truck', 'Sepeda/Becak'];
 
   const exportWA = () => {
-    let text = `*LAPORAN PENDAPATAN SHIFT*\n`;
-    text += `🏢 *Lokasi:* ${user.lokasi}\n`;
-    text += `👤 *Petugas:* ${user.nama}\n`;
-    text += `🕒 *Shift:* ${shiftName}\n`;
-    text += `📅 *Tanggal:* ${new Date().toLocaleDateString('id-ID')}\n\n`;
-    text += `*RINCIAN PENDAPATAN:*\n`;
-    
+    let text = `*LAPORAN PENDAPATAN SHIFT*\n🏢 *Lokasi:* ${user.lokasi}\n👤 *Petugas:* ${user.nama}\n🕒 *Shift:* ${shiftName}\n📅 *Tanggal:* ${new Date().toLocaleDateString('id-ID')}\n\n*RINCIAN PENDAPATAN:*\n`;
     allTypes.forEach(jenis => {
        if(statsPerType[jenis]) {
            text += `▪️ ${jenis}: ${statsPerType[jenis].qty} unit (Rp ${statsPerType[jenis].nominal.toLocaleString('id-ID')})\n`;
        }
     });
-
-    text += `\n========================\n`;
-    text += `💰 *TOTAL SETORAN: Rp ${totalNominal.toLocaleString('id-ID')}*\n`;
-    text += `========================\n\n`;
-    text += `_System Generated by Device Portable_`;
-    
+    text += `\n========================\n💰 *TOTAL SETORAN: Rp ${totalNominal.toLocaleString('id-ID')}*\n========================\n\n_System Generated by Device Portable_`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
     setWaSent(true);
   };
@@ -1476,39 +1583,37 @@ function ShiftEndModal({ user, transactions, shiftName, onClose, settings }) {
           <h2 className="text-xl md:text-2xl font-black text-white mb-2">Shift Telah Berakhir</h2>
           <p className="text-green-200/70 text-xs md:text-sm mb-6">Waktu shift Anda telah selesai. Berikut rekapan pendapatan Anda pada sesi ini.</p>
           
-          <div className="print-area bg-[#092613] border border-[#1b5e35] p-4 rounded-2xl text-left mb-6 font-mono text-xs md:text-sm">
-             <div className="hidden-screen show-on-print flex items-center gap-3 border-b border-black/20 pb-4 mb-4 bg-white text-black">
-                <img src={user.photo} alt="Petugas" className="w-12 h-12 rounded-full border border-slate-300 object-cover" />
-                <div>
-                   <h3 className="font-bold text-lg leading-tight uppercase">Rekapan Shift</h3>
-                   <p className="text-xs text-slate-600">Dicetak: {new Date().toLocaleString('id-ID')}</p>
-                </div>
+          <div className="print-area bg-[#092613] border border-[#1b5e35] p-4 rounded-2xl text-left mb-6 font-mono text-xs md:text-sm print-1-lembar">
+             <div className="hidden-screen show-on-print border-b-2 border-black pb-2 mb-4 bg-white text-black text-center">
+                {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-10 mb-2 mx-auto" alt="Logo" />}
+                <h3 className="font-bold text-lg leading-tight uppercase">Rekapan Laporan Shift</h3>
+                <p className="text-xs text-slate-600">Dicetak: {new Date().toLocaleString('id-ID')}</p>
              </div>
 
              <p className="text-center font-bold text-white border-b border-[#1b5e35] pb-2 mb-2 hide-on-print">REKAPAN {shiftName.toUpperCase()}</p>
-             <p className="text-green-300/50 print:text-slate-600">Kasir: <span className="text-white print:text-black font-bold float-right">{user.nama}</span></p>
-             <p className="text-green-300/50 print:text-slate-600 mb-2">Lokasi: <span className="text-white print:text-black font-bold float-right">{user.lokasi}</span></p>
+             <p className="text-green-300/50 print:text-black print:font-bold">Kasir: <span className="text-white print:text-black font-bold float-right">{user.nama}</span></p>
+             <p className="text-green-300/50 print:text-black print:font-bold mb-2">Lokasi: <span className="text-white print:text-black font-bold float-right">{user.lokasi}</span></p>
              
-             <div className="border-t border-[#1b5e35] my-2 pt-2">
-                <p className="font-bold text-white mb-2">Rincian Pendapatan:</p>
+             <div className="border-t border-[#1b5e35] print:border-black my-2 pt-2 print:text-black">
+                <p className="font-bold text-white print:text-black mb-2">Rincian Pendapatan:</p>
                 {Object.keys(statsPerType).length === 0 && <p className="text-green-400/30 text-xs text-center py-2">Tidak ada transaksi keluar</p>}
                 {allTypes.map(jenis => {
                    if (!statsPerType[jenis]) return null;
                    return (
-                     <div key={jenis} className="flex justify-between items-center text-green-200/70 mb-1">
+                     <div key={jenis} className="flex justify-between items-center text-green-200/70 print:text-black mb-1">
                         <span>- {jenis} ({statsPerType[jenis].qty})</span>
-                        <span className="text-white">Rp {statsPerType[jenis].nominal.toLocaleString('id-ID')}</span>
+                        <span className="text-white print:text-black">Rp {statsPerType[jenis].nominal.toLocaleString('id-ID')}</span>
                      </div>
                    )
                 })}
              </div>
-             <div className="border-t border-[#1b5e35] mt-3 pt-3 bg-black/30 p-3 rounded text-center">
-                <p className="text-xs text-green-300/50 mb-1">TOTAL SETORAN</p>
-                <h3 className="text-2xl font-black text-green-400">Rp {totalNominal.toLocaleString('id-ID')}</h3>
+             <div className="border-t border-[#1b5e35] print:border-black mt-3 pt-3 bg-black/30 print:bg-transparent print:border-2 p-3 rounded text-center">
+                <p className="text-xs text-green-300/50 print:text-black print:font-bold mb-1">TOTAL SETORAN</p>
+                <h3 className="text-2xl font-black text-green-400 print:text-black">Rp {totalNominal.toLocaleString('id-ID')}</h3>
              </div>
           </div>
 
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 hide-on-print">
              <div className="flex gap-2">
                 <button onClick={exportWA} className="flex-1 bg-green-600 hover:bg-green-500 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2 text-sm"><Share2 size={18}/> Kirim WA</button>
                 <button onClick={() => window.print()} className="flex-1 bg-teal-600 hover:bg-teal-500 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2 text-sm"><Download size={18}/> Cetak PDF</button>
@@ -1518,30 +1623,18 @@ function ShiftEndModal({ user, transactions, shiftName, onClose, settings }) {
              </button>
           </div>
        </div>
-
-       <style dangerouslySetInnerHTML={{__html: `
-        @media print {
-          body * { visibility: hidden; }
-          .hide-on-print { display: none !important; }
-          .print-area, .print-area * { visibility: visible; background: white !important; color: black !important; }
-          .print-area { position: absolute; left: 0; top: 0; width: 100%; border: none; }
-        }
-      `}} />
     </div>
   );
 }
 
 // --- PRINT MODALS FOR TICKETS ---
-function TicketPrintModal({ data, onClose }) {
-
+function TicketPrintModal({ data, settings, onClose }) {
+  const webSettings = settings?.web || {};
   const handleShare = async () => {
     const text = `=== TIKET MASUK ===\nLokasi: ${data.lokasi}\nNOPOL: ${data.nopol}\nJenis: ${data.jenis}\nMasuk: ${data.waktuMasuk.toLocaleString('id-ID')}\nKasir: ${data.kasirMasuk}\n===================`;
     if (navigator.share) {
-      try {
-        await navigator.share({ title: 'Tiket Parkir Masuk', text: text });
-      } catch (err) { console.error('Error sharing', err); }
-    } else {
-      alert('Fitur Share tidak didukung di browser ini.');
+      try { await navigator.share({ title: 'Tiket Parkir Masuk', text: text }); } 
+      catch (err) { console.error('Error sharing', err); }
     }
   };
 
@@ -1549,6 +1642,7 @@ function TicketPrintModal({ data, onClose }) {
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm hide-on-print">
       <div className="bg-[#114022] rounded-3xl p-6 shadow-2xl max-w-sm w-full mx-4 flex flex-col items-center">
         <div className="print-area w-full bg-white text-black p-4 border-2 border-dashed border-slate-300 rounded-xl mb-6 font-mono text-center">
+          {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-8 mb-2 mx-auto" alt="Logo" />}
           <h2 className="text-xl font-bold mb-1">TIKET MASUK</h2><p className="text-xs mb-4 border-b border-black/20 pb-2">{data.lokasi}</p>
           <div className="my-6"><h1 className="text-4xl font-black tracking-widest">{data.nopol}</h1><p className="text-sm mt-1">{data.jenis}</p></div>
           <div className="text-left text-xs space-y-1 border-t border-black/20 pt-2"><p><strong>Masuk:</strong> {data.waktuMasuk.toLocaleString()}</p><p><strong>Kasir:</strong> {data.kasirMasuk}</p></div>
@@ -1565,18 +1659,16 @@ function TicketPrintModal({ data, onClose }) {
 
 function ReceiptPrintModal({ data, settings, onClose }) {
   const locSettings = getLocSettings(settings, data.lokasi);
+  const webSettings = settings.web || DEFAULT_SETTINGS.web;
   
   const handleShare = async () => {
     let text = `=== STRUK KELUAR ===\nLokasi: ${data.lokasi}\nNOPOL: ${data.nopol}\nJenis: ${data.jenis} ${data.tiketHilang ? '(HILANG TIKET)' : ''}\nMasuk: ${data.waktuMasuk.toLocaleString('id-ID')}\nKeluar: ${data.waktuKeluar.toLocaleString('id-ID')}\nLama Parkir: ${data.durasiText}\n`;
     text += `TOTAL BIAYA: Rp ${data.totalBiaya.toLocaleString('id-ID')}\n===================\n`;
-    if(settings.web.runningText) text += `${settings.web.runningText}\n`;
+    if(webSettings.runningText) text += `${webSettings.runningText}\n`;
 
     if (navigator.share) {
-      try {
-        await navigator.share({ title: 'Struk Parkir Keluar', text: text });
-      } catch (err) { console.error('Error sharing', err); }
-    } else {
-      alert('Fitur Share tidak didukung di browser ini.');
+      try { await navigator.share({ title: 'Struk Parkir Keluar', text: text }); } 
+      catch (err) { console.error('Error sharing', err); }
     }
   };
 
@@ -1584,8 +1676,9 @@ function ReceiptPrintModal({ data, settings, onClose }) {
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm hide-on-print">
       <div className="bg-[#114022] rounded-3xl p-6 shadow-2xl max-w-sm w-full mx-4 flex flex-col items-center">
         <div className="print-area w-full bg-white text-black p-4 border-2 border-slate-300 rounded-xl mb-6 font-mono text-center relative overflow-hidden">
-          <div className="absolute inset-0 z-0 flex items-center justify-center opacity-[0.05]"><img src={settings.web.logoUrl} className="w-3/4" alt="watermark" /></div>
+          <div className="absolute inset-0 z-0 flex items-center justify-center opacity-[0.05]"><img src={webSettings.logoUrl} className="w-3/4" alt="watermark" /></div>
           <div className="relative z-10">
+            {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-8 mb-2 mx-auto" alt="Logo" />}
             <h2 className="text-lg font-bold">STRUK KELUAR</h2><p className="text-xs mb-4 border-b border-black pb-2">{data.lokasi}</p>
             <div className="my-4"><h1 className="text-3xl font-black">{data.nopol}</h1><p className="text-xs">{data.jenis} {data.tiketHilang && '(HILANG TIKET)'}</p></div>
             <div className="text-left text-xs space-y-1 border-t border-b border-dashed border-black py-2 my-2">
@@ -1596,11 +1689,11 @@ function ReceiptPrintModal({ data, settings, onClose }) {
             <div className="my-4"><p className="text-xs">TOTAL BIAYA</p><h1 className="text-3xl font-black bg-black text-white py-1 my-1">Rp {data.totalBiaya.toLocaleString('id-ID')}</h1></div>
             <div className="text-[10px] text-left pt-2">
                {data.tiketHilang && <p className="text-center font-bold mb-1 text-red-600">*Termasuk denda kehilangan tiket Rp 10.000</p>}
-               {locSettings.tariffs[data.jenis].mode === 'progressif' && !data.isMember && (
+               {locSettings.tariffs[data.jenis] && locSettings.tariffs[data.jenis].mode === 'progressif' && !data.isMember && (
                  <p className="text-center italic mt-2 text-[8px]">Max Tarif: Rp {locSettings.tariffs[data.jenis].max} | Inap: Rp {locSettings.tariffs[data.jenis].inap}</p>
                )}
             </div>
-            {settings.web.runningText && <p className="text-[9px] mt-4 pt-2 border-t border-dashed border-black">{settings.web.runningText}</p>}
+            {webSettings.runningText && <p className="text-[9px] mt-4 pt-2 border-t border-dashed border-black">{webSettings.runningText}</p>}
           </div>
         </div>
         <div className="flex gap-2 w-full mb-3">
@@ -1609,14 +1702,6 @@ function ReceiptPrintModal({ data, settings, onClose }) {
         </div>
         <button onClick={onClose} className="w-full py-3 rounded-xl bg-[#092613] text-white font-bold hover:bg-black/20">Tutup</button>
       </div>
-      <style dangerouslySetInnerHTML={{__html: `
-        @media print {
-          body * { visibility: hidden; }
-          .hide-on-print { display: none !important; }
-          .print-area, .print-area * { visibility: visible; }
-          .print-area { position: absolute; left: 0; top: 0; width: 100%; border: none; }
-        }
-      `}} />
     </div>
   );
 }
