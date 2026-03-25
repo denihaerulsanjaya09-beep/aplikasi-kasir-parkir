@@ -102,12 +102,12 @@ const getActiveShift = (shifts) => {
 // --- FIREBASE INITIALIZATION ---
 // PASTIKAN HANYA ADA SATU "firebaseConfig" dan SATU "app" DI SINI
 const firebaseConfig = {
-  apiKey: "PASTE_API_KEY_ANDA_DISINI",
-  authDomain: "PASTE_AUTH_DOMAIN_ANDA_DISINI",
-  projectId: "PASTE_PROJECT_ID_ANDA_DISINI",
-  storageBucket: "PASTE_STORAGE_BUCKET_ANDA_DISINI",
-  messagingSenderId: "PASTE_SENDER_ID_ANDA_DISINI",
-  appId: "PASTE_APP_ID_ANDA_DISINI"
+  apiKey: "AIzaSyDdY7ZlT8NqWf7aPckiIQIvOsjFaBsOcK4",
+  authDomain: "aplikasi-parkir-ku.firebaseapp.com",
+  projectId: "aplikasi-parkir-ku",
+  storageBucket: "aplikasi-parkir-ku.firebasestorage.app",
+  messagingSenderId: "80401749338",
+  appId: "1:80401749338:web:87b4418d98e86a1d3d0f63"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -1404,10 +1404,9 @@ function SettingWeb({ settings, setSettings, isReadOnly }) {
          </p>
          <div className="bg-[#114022] p-4 rounded-xl border border-[#1b5e35]">
             <p className="text-xs text-green-100 mb-1 font-bold">Cara Mencetak Struk:</p>
-            <ol className="text-xs text-green-200/60 list-decimal ml-4 space-y-1">
-               <li>Pastikan Printer Thermal / POS Bluetooth Anda menyala.</li>
-               <li>Buka menu <strong>Settings (Pengaturan) Bluetooth HP Anda</strong>, lalu sandingkan (Pair) ke printer.</li>
-               <li>Saat Anda menekan tombol "Cetak" di aplikasi, menu print browser akan muncul. Pilih printer Anda lalu cetak.</li>
+            <ol className="text-xs text-green-200/60 list-decimal ml-4 space-y-2">
+               <li><strong>HP Android:</strong> Pastikan Anda sudah menginstal aplikasi <em>Print Service</em> (misalnya <strong>RawBT</strong>) di PlayStore. Saat menekan tombol Cetak, struk akan otomatis ter-print.</li>
+               <li><strong>HP iPhone / Safari:</strong> Karena batasan keamanan iOS, Safari <em>tidak mengizinkan</em> print langsung ke Thermal Printer Bluetooth biasa. Gunakan tombol <strong className="text-blue-400">"Bagikan (Share)"</strong> yang sudah kami sediakan di sebelah tombol cetak, lalu kirimkan teks ke aplikasi printer Thermal iOS Anda.</li>
             </ol>
          </div>
       </div>
@@ -1534,6 +1533,18 @@ function ShiftEndModal({ user, transactions, shiftName, onClose, settings }) {
 
 // --- PRINT MODALS FOR TICKETS ---
 function TicketPrintModal({ data, onClose }) {
+
+  const handleShare = async () => {
+    const text = `=== TIKET MASUK ===\nLokasi: ${data.lokasi}\nNOPOL: ${data.nopol}\nJenis: ${data.jenis}\nMasuk: ${data.waktuMasuk.toLocaleString('id-ID')}\nKasir: ${data.kasirMasuk}\n===================`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Tiket Parkir Masuk', text: text });
+      } catch (err) { console.error('Error sharing', err); }
+    } else {
+      alert('Fitur Share tidak didukung di browser ini.');
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm hide-on-print">
       <div className="bg-[#114022] rounded-3xl p-6 shadow-2xl max-w-sm w-full mx-4 flex flex-col items-center">
@@ -1542,10 +1553,11 @@ function TicketPrintModal({ data, onClose }) {
           <div className="my-6"><h1 className="text-4xl font-black tracking-widest">{data.nopol}</h1><p className="text-sm mt-1">{data.jenis}</p></div>
           <div className="text-left text-xs space-y-1 border-t border-black/20 pt-2"><p><strong>Masuk:</strong> {data.waktuMasuk.toLocaleString()}</p><p><strong>Kasir:</strong> {data.kasirMasuk}</p></div>
         </div>
-        <div className="flex gap-3 w-full">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-[#092613] text-white font-bold hover:bg-black/20">Tutup</button>
-          <button onClick={() => window.print()} className="flex-1 py-3 rounded-xl bg-green-600 text-white font-bold flex justify-center gap-2 hover:bg-green-500"><FileText size={18} /> Cetak</button>
+        <div className="flex gap-2 w-full mb-3">
+          <button onClick={() => window.print()} className="flex-1 py-3 rounded-xl bg-green-600 text-white font-bold flex justify-center items-center gap-2 hover:bg-green-500"><FileText size={18} /> Cetak (Android)</button>
+          <button onClick={handleShare} className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold flex justify-center items-center gap-2 hover:bg-blue-500"><Share2 size={18} /> Bagikan (iOS)</button>
         </div>
+        <button onClick={onClose} className="w-full py-3 rounded-xl bg-[#092613] text-white font-bold hover:bg-black/20">Tutup</button>
       </div>
     </div>
   );
@@ -1554,6 +1566,20 @@ function TicketPrintModal({ data, onClose }) {
 function ReceiptPrintModal({ data, settings, onClose }) {
   const locSettings = getLocSettings(settings, data.lokasi);
   
+  const handleShare = async () => {
+    let text = `=== STRUK KELUAR ===\nLokasi: ${data.lokasi}\nNOPOL: ${data.nopol}\nJenis: ${data.jenis} ${data.tiketHilang ? '(HILANG TIKET)' : ''}\nMasuk: ${data.waktuMasuk.toLocaleString('id-ID')}\nKeluar: ${data.waktuKeluar.toLocaleString('id-ID')}\nLama Parkir: ${data.durasiText}\n`;
+    text += `TOTAL BIAYA: Rp ${data.totalBiaya.toLocaleString('id-ID')}\n===================\n`;
+    if(settings.web.runningText) text += `${settings.web.runningText}\n`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Struk Parkir Keluar', text: text });
+      } catch (err) { console.error('Error sharing', err); }
+    } else {
+      alert('Fitur Share tidak didukung di browser ini.');
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm hide-on-print">
       <div className="bg-[#114022] rounded-3xl p-6 shadow-2xl max-w-sm w-full mx-4 flex flex-col items-center">
@@ -1577,10 +1603,11 @@ function ReceiptPrintModal({ data, settings, onClose }) {
             {settings.web.runningText && <p className="text-[9px] mt-4 pt-2 border-t border-dashed border-black">{settings.web.runningText}</p>}
           </div>
         </div>
-        <div className="flex gap-3 w-full">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-[#092613] text-white font-bold hover:bg-black/20">Tutup</button>
-          <button onClick={() => window.print()} className="flex-1 py-3 rounded-xl bg-orange-600 text-white font-bold flex justify-center gap-2 hover:bg-orange-500"><FileText size={18} /> Cetak</button>
+        <div className="flex gap-2 w-full mb-3">
+          <button onClick={() => window.print()} className="flex-1 py-3 rounded-xl bg-orange-600 text-white font-bold flex justify-center items-center gap-2 hover:bg-orange-500"><FileText size={18} /> Cetak (Android)</button>
+          <button onClick={handleShare} className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold flex justify-center items-center gap-2 hover:bg-blue-500"><Share2 size={18} /> Bagikan (iOS)</button>
         </div>
+        <button onClick={onClose} className="w-full py-3 rounded-xl bg-[#092613] text-white font-bold hover:bg-black/20">Tutup</button>
       </div>
       <style dangerouslySetInnerHTML={{__html: `
         @media print {
