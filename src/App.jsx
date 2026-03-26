@@ -160,8 +160,8 @@ const getActiveShift = (shifts) => {
   return 'Shift Tidak Diketahui';
 };
 
-// --- FIREBASE INITIALIZATION (SAFE MODE) ---
-const firebaseConfig = {
+// --- FIREBASE INITIALIZATION (DENGAN CONFIG MILIK ANDA) ---
+const MY_FIREBASE_CONFIG = {
   apiKey: "AIzaSyDdY7ZlT8NqWf7aPckiIQIvOsjFaBsOcK4",
   authDomain: "aplikasi-parkir-ku.firebaseapp.com",
   projectId: "aplikasi-parkir-ku",
@@ -169,10 +169,15 @@ const firebaseConfig = {
   messagingSenderId: "80401749338",
   appId: "1:80401749338:web:87b4418d98e86a1d3d0f63"
 };
+
+// Cegah crash dengan mengecek environment, fallback aman ke config Anda jika di-build lokal/production
+const fbConfig = (typeof __firebase_config !== 'undefined' && __firebase_config) ? JSON.parse(__firebase_config) : MY_FIREBASE_CONFIG;
 const app = !getApps().length ? initializeApp(fbConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// Pengaturan ID Project untuk struktur koleksi di Firebase
+const appId = (typeof __app_id !== 'undefined' && __app_id) ? __app_id : MY_FIREBASE_CONFIG.projectId;
 
 // --- UI COMPONENTS ---
 const Toast = ({ message, type }) => (
