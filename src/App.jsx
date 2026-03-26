@@ -116,7 +116,8 @@ const DEFAULT_SETTINGS = {
   web: {
     logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/Check_green_icon.svg/1200px-Check_green_icon.svg.png',
     runningText: 'Selamat Datang di Sistem Parkir Terpadu - Utamakan Pelayanan yang Ramah dan Senyum kepada Pelanggan.',
-    printerConnected: false
+    printerConnected: false,
+    appVersion: 'v.1.3.26'
   },
   members: [],
   activeLogins: {},
@@ -464,15 +465,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#092613] text-green-50 font-sans selection:bg-green-500 selection:text-white pb-28">
-      {/* CSS KHUSUS PRINT A4 (Hemat Kertas, Formal, Rapi) */}
+      {/* CSS KHUSUS PRINT Laporan Bersih, Padat & Tanpa Background Warnai */}
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 15mm 10mm; }
+          @page { margin: 15mm; }
           body { 
             background: white !important; 
             color: black !important;
-            -webkit-print-color-adjust: exact; 
-            print-color-adjust: exact;
           }
           
           /* Menyembunyikan elemen UI yang tidak perlu dicetak */
@@ -498,18 +497,17 @@ export default function App() {
           .dense-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 10px !important;
-            margin-top: 10px;
-            page-break-inside: auto;
+            font-size: 11px !important;
+            margin-top: 15px;
           }
           .dense-table tr { page-break-inside: avoid; page-break-after: auto; }
           .dense-table th, .dense-table td {
-            border: 1px solid #333 !important;
-            padding: 4px 6px !important;
+            border: 1px solid black !important;
+            padding: 6px 8px !important;
             color: black !important;
+            background-color: transparent !important;
           }
-          .dense-table th { background-color: #f1f5f9 !important; font-weight: bold; text-align: center; }
-          .dense-table td { background-color: white !important; }
+          .dense-table th { font-weight: bold; text-align: center; }
 
           /* Layout Khusus Laporan Kasir (Shift End) */
           .shift-report-print {
@@ -656,6 +654,8 @@ function LoginScreen({ onLogin, usersList, settings, updateSettings, deviceId, s
           </div>
           <h1 className="text-3xl font-black text-white tracking-tight">Device <span className="font-light text-green-400">Portable</span></h1>
           <p className="text-green-200/70 text-sm mt-2">Sistem kasir berbasis web terintegrasi.</p>
+          <p className="text-green-400 font-bold text-xs mt-1">{settings?.web?.appVersion || 'v.1.3.26'}</p>
+          <p className="text-green-200/40 text-[10px] mt-0.5">&copy; copyright by 200041</p>
         </div>
 
         <form onSubmit={handleLoginSubmit} className="space-y-5">
@@ -1154,20 +1154,21 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
       {lapTab === 'ringkasan' && (
          <div className="animate-in fade-in space-y-6 print-a4-layout">
             {/* Header Laporan Khusus Print */}
-            <div className="hidden-screen show-on-print border-b-2 border-black pb-4 mb-6">
-                {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-12 mb-2" alt="Logo"/>}
+            <div className="hidden-screen show-on-print border-b-2 border-black pb-4 mb-6 text-center">
+                {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-12 mb-2 mx-auto" alt="Logo"/>}
                 <h1 className="text-2xl font-black uppercase tracking-tight">Ringkasan Pendapatan Bisnis</h1>
                 <p className="text-sm text-gray-700 font-medium mt-1">Lokasi: {user.lokasi} | Dicetak: {new Date().toLocaleString('id-ID')} | Petugas Audit: {user.nama}</p>
+                <p className="text-[10px] mt-1 text-gray-500">{webSettings.appVersion || 'v.1.3.26'} | &copy; copyright by 200041</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 print:grid-cols-3">
-              <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35] print:border-black print:bg-white print:text-black print:p-4"><p className="text-green-300/50 print:text-gray-600 text-xs font-bold mb-1">Total Pendapatan</p><h3 className="text-2xl print:text-xl font-black text-green-400 print:text-black">Rp {totalPendapatan.toLocaleString('id-ID')}</h3></div>
-              <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35] print:border-black print:bg-white print:text-black print:p-4"><p className="text-green-300/50 print:text-gray-600 text-xs font-bold mb-1">Total Kendaraan (Masuk)</p><h3 className="text-2xl print:text-xl font-black text-teal-400 print:text-black">{filteredTx.length}</h3></div>
-              <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35] print:border-black print:bg-white print:text-black print:p-4"><p className="text-green-300/50 print:text-gray-600 text-xs font-bold mb-1">Transaksi Selesai</p><h3 className="text-2xl print:text-xl font-black text-orange-400 print:text-black">{totalQtySelesai}</h3></div>
+              <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35] print:border-black print:bg-transparent print:text-black print:p-4 print:border-0"><p className="text-green-300/50 print:text-gray-600 text-xs font-bold mb-1">Total Pendapatan</p><h3 className="text-2xl print:text-xl font-black text-green-400 print:text-black">Rp {totalPendapatan.toLocaleString('id-ID')}</h3></div>
+              <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35] print:border-black print:bg-transparent print:text-black print:p-4 print:border-0"><p className="text-green-300/50 print:text-gray-600 text-xs font-bold mb-1">Total Kendaraan (Masuk)</p><h3 className="text-2xl print:text-xl font-black text-teal-400 print:text-black">{filteredTx.length}</h3></div>
+              <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35] print:border-black print:bg-transparent print:text-black print:p-4 print:border-0"><p className="text-green-300/50 print:text-gray-600 text-xs font-bold mb-1">Transaksi Selesai</p><h3 className="text-2xl print:text-xl font-black text-orange-400 print:text-black">{totalQtySelesai}</h3></div>
             </div>
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print:grid-cols-2 mt-4 print:mt-8">
-               <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35] print:border-black print:text-black print:p-0 print:border-0">
+               <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35] print:border-black print:bg-transparent print:text-black print:p-0 print:border-0">
                   <h4 className="font-bold text-white print:text-black mb-4 print:mb-2 border-b border-[#1b5e35] print:border-black pb-2 print:text-lg">Breakdown Jenis Kendaraan</h4>
                   <table className="w-full text-sm print:text-sm text-left border-collapse dense-table">
                      <thead><tr className="text-green-200/70 print:text-black"><th className="py-2">Jenis Kendaraan</th><th className="py-2 text-center">Total Qty</th><th className="py-2 text-right">Nominal (Rp)</th></tr></thead>
@@ -1177,11 +1178,11 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
                               <td className="py-2">{jenis}</td><td className="py-2 text-center font-bold text-teal-400 print:text-black">{breakdown[jenis].qty}</td><td className="py-2 text-right font-bold text-green-400 print:text-black">{breakdown[jenis].nominal.toLocaleString('id-ID')}</td>
                            </tr>
                         ))}
-                        <tr className="bg-[#114022] print:bg-gray-200 font-bold border-t-2 border-green-500 print:border-black"><td className="py-3 px-2 uppercase text-xs">GRAND TOTAL</td><td className="py-3 text-center text-teal-400 print:text-black">{totalQtySelesai}</td><td className="py-3 text-right text-green-400 print:text-black">{totalPendapatan.toLocaleString('id-ID')}</td></tr>
+                        <tr className="bg-[#114022] print:bg-transparent font-bold border-t-2 border-green-500 print:border-black"><td className="py-3 px-2 uppercase text-xs">GRAND TOTAL</td><td className="py-3 text-center text-teal-400 print:text-black">{totalQtySelesai}</td><td className="py-3 text-right text-green-400 print:text-black">{totalPendapatan.toLocaleString('id-ID')}</td></tr>
                      </tbody>
                   </table>
                </div>
-               <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35] print:border-black print:text-black print:p-4 print:border">
+               <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35] print:border-black print:bg-transparent print:text-black print:p-4 print:border">
                   <h4 className="font-bold text-white print:text-black mb-4 print:mb-2 border-b border-[#1b5e35] print:border-black pb-2 print:text-lg">Persentase Lama Parkir</h4>
                   <div className="space-y-4 print:space-y-3 mt-2">
                      {Object.keys(durasiStats).map(rentang => {
@@ -1190,7 +1191,7 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
                         return (
                            <div key={rentang} className="relative">
                               <div className="flex justify-between text-xs print:text-xs font-bold text-green-100 mb-1 print:text-black"><span>{rentang}</span><span className="text-teal-400 print:text-black">{count} Unit ({persentase}%)</span></div>
-                              <div className="w-full bg-[#114022] print:bg-gray-200 h-2.5 print:h-2.5 rounded-full overflow-hidden border print:border-black print:border-opacity-30"><div className="bg-teal-500 print:bg-slate-700 h-full rounded-full" style={{ width: `${persentase}%` }}></div></div>
+                              <div className="w-full bg-[#114022] print:bg-transparent h-2.5 print:h-2.5 rounded-full overflow-hidden border print:border-black"><div className="bg-teal-500 print:bg-transparent border-r-2 border-black h-full rounded-full" style={{ width: `${persentase}%` }}></div></div>
                            </div>
                         );
                      })}
@@ -1203,16 +1204,17 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
       {/* TAB MASTER LIST (SEMUA TRANSAKSI - IN & OUT UNTUK PRINT 1 LEMBAR) */}
       {lapTab === 'semua' && (
          <div className="print-a4-layout bg-[#092613] rounded-2xl border border-[#1b5e35] print:border-none print:bg-transparent animate-in fade-in flex flex-col h-full">
-            <div className="hidden-screen show-on-print border-b-2 border-black pb-2 mb-4">
-                {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-10 mb-2" alt="Logo"/>}
+            <div className="hidden-screen show-on-print border-b-2 border-black pb-2 mb-4 text-center">
+                {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-10 mb-2 mx-auto" alt="Logo"/>}
                 <h1 className="text-xl font-bold uppercase">Audit Keseluruhan Transaksi Area (In & Out)</h1>
                 <p className="text-[10px] text-gray-600">Dicetak pada: {new Date().toLocaleString('id-ID')} | Oleh: {user.nama} ({user.lokasi}) | Total Item: {filteredTx.length}</p>
+                <p className="text-[8px] mt-1 text-gray-500">{webSettings.appVersion || 'v.1.3.26'} | &copy; copyright by 200041</p>
             </div>
             
             <div className="overflow-x-auto hide-scrollbar flex-1 w-full">
                <table className="dense-table print:text-black text-white text-sm w-full">
                  <thead>
-                   <tr className="bg-[#0c331a] print:bg-gray-200 text-green-300/70 print:text-black text-xs uppercase">
+                   <tr className="bg-[#0c331a] print:bg-transparent text-green-300/70 print:text-black text-xs uppercase">
                      <th className="p-3 border-b border-[#1b5e35]">No</th>
                      <th className="p-3 border-b border-[#1b5e35]">Nopol</th>
                      <th className="p-3 border-b border-[#1b5e35]">Jenis</th>
@@ -1224,7 +1226,7 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
                  </thead>
                  <tbody>
                    {filteredTx.slice().reverse().map((tx, i) => (
-                     <tr key={tx.id} className="hover:bg-[#114022] border-b border-[#1b5e35]/50 transition-colors">
+                     <tr key={tx.id} className="hover:bg-[#114022] print:bg-transparent border-b border-[#1b5e35]/50 transition-colors">
                        <td className="p-2 text-center text-green-200/70 print:text-black">{i+1}</td>
                        <td className="p-2 font-bold">{tx.nopol}</td>
                        <td className="p-2">{tx.jenis}</td>
@@ -1321,16 +1323,17 @@ function RekapanLaporan({ transactions, user, settings }) {
 
   return (
     <div className="space-y-6 print-a4-layout">
-       <div className="hidden-screen show-on-print border-b-2 border-black pb-4 mb-4">
-           {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-10 mb-2" alt="Logo"/>}
+       <div className="hidden-screen show-on-print border-b-2 border-black pb-4 mb-4 text-center">
+           {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-10 mb-2 mx-auto" alt="Logo"/>}
            <h1 className="text-xl font-bold uppercase">Rekapan Global Semua Lokasi</h1>
            <p className="text-xs text-gray-600">Dicetak: {new Date().toLocaleString('id-ID')} | Master: {user.nama} | Total Item: {completed.length}</p>
+           <p className="text-[10px] mt-1 text-gray-500">{webSettings.appVersion || 'v.1.3.26'} | &copy; copyright by 200041</p>
        </div>
 
-       <div className="bg-teal-900/30 border border-teal-500/30 p-6 print:p-4 print:border-black print:border-2 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+       <div className="bg-teal-900/30 border border-teal-500/30 p-6 print:p-4 print:border-black print:border-2 print:bg-transparent rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div><p className="text-sm print:text-xs font-bold text-teal-400 print:text-black">Total Pendapatan Global Semua Lokasi</p><h2 className="text-4xl print:text-2xl font-black text-white print:text-black">Rp {total.toLocaleString('id-ID')}</h2></div>
           <div className="flex gap-2 hide-on-print">
-            <button onClick={() => window.print()} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-bold shadow-lg"><Download size={16} /> Print 1 Lembar A4</button>
+            <button onClick={() => window.print()} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-bold shadow-lg"><Download size={16} /> Print Laporan Rekapan</button>
             <button onClick={handleExportExcel} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-bold shadow-lg"><FileText size={16} /> XLSX/CSV</button>
           </div>
        </div>
@@ -1338,7 +1341,7 @@ function RekapanLaporan({ transactions, user, settings }) {
        <div className="overflow-x-auto hide-scrollbar flex-1 w-full">
           <table className="dense-table print:text-black text-white text-sm w-full">
              <thead>
-                <tr className="bg-[#0c331a] print:bg-gray-200 text-green-300/70 print:text-black text-xs uppercase">
+                <tr className="bg-[#0c331a] print:bg-transparent text-green-300/70 print:text-black text-xs uppercase">
                    <th className="p-3 border-b border-[#1b5e35]">Lokasi</th>
                    <th className="p-3 border-b border-[#1b5e35]">Nopol</th>
                    <th className="p-3 border-b border-[#1b5e35]">Jenis</th>
@@ -1348,7 +1351,7 @@ function RekapanLaporan({ transactions, user, settings }) {
              </thead>
              <tbody>
                 {completed.slice().reverse().map((tx) => (
-                   <tr key={tx.id} className="hover:bg-[#114022] border-b border-[#1b5e35]/50 transition-colors">
+                   <tr key={tx.id} className="hover:bg-[#114022] print:bg-transparent border-b border-[#1b5e35]/50 transition-colors">
                       <td className="p-2 text-teal-400 print:text-black font-bold">{tx.lokasi}</td>
                       <td className="p-2 font-bold">{tx.nopol}</td>
                       <td className="p-2">{tx.jenis}</td>
@@ -1709,9 +1712,13 @@ function SettingWeb({ settings, setSettings, isReadOnly, showToast }) {
       </div>
       <div>
         <label className="block text-sm font-bold text-green-200/70 ml-2 mb-2 uppercase tracking-wider">Running Text</label>
-        <textarea disabled={isReadOnly} rows="2" value={form.runningText} onChange={e => setForm({...form, runningText: e.target.value})} className="w-full bg-[#092613] border border-[#1b5e35] rounded-[1.5rem] px-5 py-4 text-white outline-none focus:border-green-500" />
+        <textarea disabled={isReadOnly} rows="2" value={form.runningText} onChange={e => setForm({...form, runningText: e.target.value})} className="w-full bg-[#092613] border border-[#1b5e35] rounded-[1.5rem] px-5 py-4 text-white outline-none focus:border-green-500 mb-4" />
       </div>
-      {!isReadOnly && <button type="submit" className="w-full bg-green-600 text-white font-bold rounded-[1.5rem] px-6 py-4 shadow-xl hover:bg-green-500 transition-all flex justify-center gap-2">Simpan</button>}
+      <div>
+        <label className="block text-sm font-bold text-green-200/70 ml-2 mb-2 uppercase tracking-wider">Versi Aplikasi</label>
+        <input disabled={isReadOnly} type="text" value={form.appVersion || 'v.1.3.26'} onChange={e => setForm({...form, appVersion: e.target.value})} className="w-full bg-[#092613] border border-[#1b5e35] rounded-[1.5rem] px-5 py-4 text-white outline-none focus:border-green-500" />
+      </div>
+      {!isReadOnly && <button type="submit" className="w-full bg-green-600 text-white font-bold rounded-[1.5rem] px-6 py-4 shadow-xl hover:bg-green-500 transition-all flex justify-center gap-2">Simpan Semua Setingan</button>}
     </form>
   );
 }
@@ -1755,43 +1762,44 @@ function ShiftEndModal({ user, transactions, shiftName, onClose, settings }) {
             <p className="text-green-200/70 text-sm mb-6">Waktu shift Anda telah selesai. Berikut rekapan pendapatan Anda pada sesi ini.</p>
           </div>
           
-          <div className="shift-report-print bg-[#092613] border border-[#1b5e35] p-6 rounded-2xl text-left mb-6 font-mono text-sm">
+          <div className="shift-report-print bg-[#092613] border border-[#1b5e35] p-6 rounded-2xl text-left mb-6 font-mono text-sm print:bg-transparent print:border-none print:p-0">
              <div className="hidden-screen show-on-print border-b-[3px] border-black pb-4 mb-6 bg-white text-black text-center">
                 {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-16 mb-2 mx-auto" alt="Logo" />}
                 <h3 className="font-black text-xl leading-tight uppercase tracking-widest mt-2">Laporan Pendapatan Shift</h3>
                 <p className="text-sm font-semibold mt-1">Sistem Parkir Terpadu</p>
+                <p className="text-[10px] mt-1 text-gray-500">{webSettings.appVersion || 'v.1.3.26'} | &copy; copyright by 200041</p>
              </div>
 
-             <div className="grid grid-cols-2 gap-4 mb-4 text-green-300/80 print-text-black border-b border-[#1b5e35] print-border-black pb-4">
+             <div className="grid grid-cols-2 gap-4 mb-4 text-green-300/80 print:text-black border-b border-[#1b5e35] print:border-black pb-4">
                 <div>
-                   <p className="font-bold text-white print-text-black">LOKASI TUGAS:</p>
+                   <p className="font-bold text-white print:text-black">LOKASI TUGAS:</p>
                    <p>{user.lokasi}</p>
                 </div>
                 <div className="text-right">
-                   <p className="font-bold text-white print-text-black">KASIR / PETUGAS:</p>
+                   <p className="font-bold text-white print:text-black">KASIR / PETUGAS:</p>
                    <p>{user.nama} ({user.nipp})</p>
                 </div>
                 <div>
-                   <p className="font-bold text-white print-text-black">SHIFT:</p>
+                   <p className="font-bold text-white print:text-black">SHIFT:</p>
                    <p>{shiftName.toUpperCase()}</p>
                 </div>
                 <div className="text-right">
-                   <p className="font-bold text-white print-text-black">TANGGAL CETAK:</p>
+                   <p className="font-bold text-white print:text-black">TANGGAL CETAK:</p>
                    <p>{new Date().toLocaleString('id-ID')}</p>
                 </div>
              </div>
              
              <div className="mb-4">
-                <p className="font-bold text-white print-text-black mb-3 text-center uppercase tracking-widest">Rincian Transaksi</p>
+                <p className="font-bold text-white print:text-black mb-3 text-center uppercase tracking-widest">Rincian Transaksi</p>
                 <table className="w-full text-left">
                    <tbody>
                       {Object.keys(statsPerType).length === 0 && <tr><td colSpan="2" className="text-green-400/30 text-center py-2">Tidak ada transaksi tercatat pada shift ini.</td></tr>}
                       {allTypes.map(jenis => {
                          if (!statsPerType[jenis]) return null;
                          return (
-                           <tr key={jenis} className="border-b border-[#1b5e35]/50 print-border-black text-green-200/80 print-text-black">
+                           <tr key={jenis} className="border-b border-[#1b5e35]/50 print:border-black text-green-200/80 print:text-black">
                               <td className="py-2">{jenis} ({statsPerType[jenis].qty} Unit)</td>
-                              <td className="py-2 text-right font-bold text-white print-text-black">Rp {statsPerType[jenis].nominal.toLocaleString('id-ID')}</td>
+                              <td className="py-2 text-right font-bold text-white print:text-black">Rp {statsPerType[jenis].nominal.toLocaleString('id-ID')}</td>
                            </tr>
                          )
                       })}
@@ -1799,13 +1807,13 @@ function ShiftEndModal({ user, transactions, shiftName, onClose, settings }) {
                 </table>
              </div>
 
-             <div className="mt-6 border-t-[3px] border-[#1b5e35] print-border-black pt-4 bg-black/20 print-bg-transparent rounded text-center">
-                <p className="text-sm font-bold text-green-300/80 print-text-black mb-1 uppercase tracking-widest">Grand Total Setoran</p>
-                <h3 className="text-3xl font-black text-green-400 print-text-black">Rp {totalNominal.toLocaleString('id-ID')}</h3>
+             <div className="mt-6 border-t-[3px] border-[#1b5e35] print:border-black pt-4 bg-black/20 print:bg-transparent rounded text-center">
+                <p className="text-sm font-bold text-green-300/80 print:text-black mb-1 uppercase tracking-widest">Grand Total Setoran</p>
+                <h3 className="text-3xl font-black text-green-400 print:text-black">Rp {totalNominal.toLocaleString('id-ID')}</h3>
              </div>
 
              {/* TANDA TANGAN ONLINE & FOTO KASIR (Hanya Tampil Saat Print) */}
-             <div className="hidden-screen show-on-print mt-16 print-text-black font-sans">
+             <div className="hidden-screen show-on-print mt-16 print:text-black font-sans">
                  <div className="flex justify-between px-10">
                     <div className="text-center w-40">
                        <p className="text-sm">Mengetahui,</p>
@@ -1835,8 +1843,8 @@ function ShiftEndModal({ user, transactions, shiftName, onClose, settings }) {
 
           <div className="flex flex-col gap-3 hide-on-print">
              <div className="flex gap-2">
-                <button onClick={exportWA} className="flex-1 bg-green-600 hover:bg-green-500 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2 text-sm"><Share2 size={18}/> Kirim WA</button>
-                <button onClick={() => window.print()} className="flex-1 bg-teal-600 hover:bg-teal-500 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2 text-sm"><Download size={18}/> Cetak PDF</button>
+                 <button onClick={exportWA} className="flex-1 bg-green-600 hover:bg-green-500 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2 text-sm"><Share2 size={18}/> Kirim WA</button>
+                 <button onClick={() => window.print()} className="flex-1 bg-teal-600 hover:bg-teal-500 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2 text-sm"><Download size={18}/> Cetak PDF</button>
              </div>
              <button onClick={onClose} disabled={!waSent} className={`py-4 rounded-xl font-bold transition-all text-sm ${waSent ? 'bg-[#1b5e35] text-white hover:bg-[#258249]' : 'bg-[#092613] text-green-300/30 cursor-not-allowed border border-[#1b5e35]'}`}>
                 {waSent ? 'Tutup & Logout Sistem' : 'Kirim WA Laporan Dahulu'}
