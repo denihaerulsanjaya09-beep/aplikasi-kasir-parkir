@@ -273,8 +273,10 @@ const CameraModal = ({ facingMode, onCapture, onClose, title }) => {
 // --- COMPONENT: TICKET PREVIEW (SOP KONTROL) ---
 const TicketPreviewModal = ({ type, data, settings, onClose, showToast }) => {
   return (
+    // FIX CSS PRINT: Menghapus background dan membiarkan tampilan bersih saat print
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in zoom-in-95 print:bg-white print:p-0 print:block">
       <div className="bg-[#114022] p-6 rounded-[2rem] border border-[#1b5e35] shadow-2xl flex flex-col items-center max-w-sm w-full relative print:border-none print:shadow-none print:p-0 print:bg-white print:w-full print:max-w-none">
+        
         <div className="absolute -top-5 bg-teal-500 text-white px-4 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-2 hide-on-print">
           <CheckCircle2 size={14}/> Tercetak Otomatis
         </div>
@@ -284,18 +286,21 @@ const TicketPreviewModal = ({ type, data, settings, onClose, showToast }) => {
         </h3>
 
         {/* Simulasi Kertas Karcis Thermal / Area Print Sistem */}
-        <div className="bg-white text-black font-mono w-full p-4 print:p-0 rounded shadow-inner text-sm leading-snug relative overflow-hidden print:shadow-none">
+        <div className="bg-white text-black font-mono w-full p-4 print:p-0 rounded shadow-inner text-sm leading-snug relative overflow-hidden print:shadow-none print:overflow-visible">
+           
            <div className="text-center font-bold mb-2">
-              {/* LOGO DI TENGAH ATAS TULISAN */}
+              {/* BUG FIX LOGO PRINT: Dihapus filter grayscale mix-blend & ditambahkan inline-style agar Android Spooler bisa membacanya */}
               {settings?.ticket?.logoUrl && (
                  <div className="flex justify-center mb-1">
-                    <img src={settings.ticket.logoUrl} alt="Logo" className="h-12 w-auto object-contain grayscale mix-blend-multiply" />
+                    <img src={settings.ticket.logoUrl} alt="Logo" className="mx-auto" style={{ display: 'block', maxHeight: '48px', width: 'auto' }} />
                  </div>
               )}
-              <p className="text-base">{settings?.ticket?.title || 'Sistem Device Portable'}</p>
+              
+              <p className="text-base leading-tight mt-1">{settings?.ticket?.title || 'Sistem Device Portable'}</p>
               {settings?.ticket?.subtitle && <p className="text-[10px] leading-tight mt-0.5">{settings.ticket.subtitle}</p>}
               <p className="text-xs mt-1">{data.lokasi}</p>
            </div>
+
            <div className="border-b-2 border-dashed border-black/50 mb-2"></div>
            <div className="text-center font-bold mb-2">{type === 'IN' ? 'TIKET MASUK' : 'STRUK KELUAR'}</div>
            <div className="border-b-2 border-dashed border-black/50 mb-2"></div>
@@ -1919,10 +1924,9 @@ function SettingUser({ settings, setSettings, showToast }) {
 // Sub-Setting: Setting Tarif Rinci Multi-Lokasi
 function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
   const [targetLokasi, setTargetLokasi] = useState(user.lokasi === 'All Lokasi' ? PURE_LOCATIONS[0] : user.lokasi);
-  const locSettings = getLocSettings(settings, targetLokasi);
-  const [localTariff, setLocalTariff] = useState(locSettings.tariffs || DEFAULT_LOCATION_SETTINGS.tariffs);
+  const [localTariff, setLocalTariff] = useState(getLocSettings(settings, targetLokasi).tariffs || DEFAULT_LOCATION_SETTINGS.tariffs);
 
-  // BUG FIX & FITUR BARU: Kuncian per jenis kendaraan untuk mencegah salah tekan
+  // Kuncian per jenis kendaraan untuk mencegah salah tekan
   const [locked, setLocked] = useState({
      'Motor': true,
      'Mobil': true,
@@ -1930,12 +1934,26 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
      'Sepeda/Becak': true
   });
 
-  // BUG FIX: Hapus `settings` dari dependency agar auto-sync background tidak mereset input yang sedang diketik
+  // BUG FIX TARIFF RESET: Efek ini hanya akan me-replace input lokal dengan data DB 
+  // JIKA kolom tersebut statusnya sedang TERKUNCI (bukan sedang di-edit oleh user)
   useEffect(() => { 
-     setLocalTariff(getLocSettings(settings, targetLokasi).tariffs || DEFAULT_LOCATION_SETTINGS.tariffs); 
-     // Reset kuncian saat ganti lokasi
+     const dbTariff = getLocSettings(settings, targetLokasi).tariffs || DEFAULT_LOCATION_SETTINGS.tariffs;
+     setLocalTariff(prev => {
+         const nextState = { ...prev };
+         Object.keys(dbTariff).forEach(jenis => {
+             // Hanya timpa dari DB jika kuncinya aktif (user tidak sedang mengetik)
+             if (locked[jenis]) {
+                 nextState[jenis] = dbTariff[jenis];
+             }
+         });
+         return nextState;
+     });
+  }, [settings, targetLokasi, locked]); 
+
+  // Reset kuncian saat ganti target lokasi di dropdown atas
+  useEffect(() => {
      setLocked({ 'Motor': true, 'Mobil': true, 'Box/Truck': true, 'Sepeda/Becak': true });
-  }, [targetLokasi]); 
+  }, [targetLokasi]);
 
   const updateTariff = (jenis, field, val) => {
     setLocalTariff(prev => ({ ...prev, [jenis]: { ...prev[jenis], [field]: field === 'mode' || typeof val === 'boolean' ? val : Number(val) } }));
@@ -1956,9 +1974,12 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
              }
          } 
      };
+     
+     // Set state ke DB
      setSettings({ ...settings, locations: newLocations });
+     // Kunci kembali untuk memicu useEffect sinkronisasi
      setLocked(prev => ({ ...prev, [jenis]: true }));
-     showToast(`Tarif ${jenis} di lokasi ${targetLokasi} berhasil diperbarui & dikunci!`);
+     showToast(`Tarif ${jenis} di lokasi ${targetLokasi} berhasil disimpan!`);
   };
 
   return (
@@ -2211,7 +2232,8 @@ function SettingTiket({ settings, setSettings, isReadOnly, showToast }) {
         <p className="text-sm font-bold text-green-200/70 mb-4 uppercase">Logo Pada Struk (Mode Thermal)</p>
         {form.logoUrl ? (
            <div className="relative inline-block">
-              <img src={form.logoUrl} alt="Logo Struk" className="h-24 bg-white rounded-xl px-4 py-2 mb-4 object-contain grayscale mix-blend-screen" />
+              {/* Dihapus filter aneh agar lebih netral terlihat */}
+              <img src={form.logoUrl} alt="Logo Struk" className="h-24 bg-white rounded-xl px-4 py-2 mb-4 object-contain" />
               {!isReadOnly && <button type="button" onClick={handleRemoveLogo} className="absolute -top-2 -right-2 bg-red-600 rounded-full p-1 text-white hover:bg-red-500 shadow-md"><X size={14}/></button>}
            </div>
         ) : (
