@@ -1079,7 +1079,63 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
   const [isCleaning, setIsCleaning] = useState(false);
   const webSettings = settings?.web || {};
   
-  let filteredTx = transactions.filter(t => user.lokasi === 'All Lokasi' || t.lokasi === user.lokasi);
+  // NEW FILTER STATES
+  const [filterMode, setFilterMode] = useState('semua');
+  const [filterDate, setFilterDate] = useState(new Date().toISOString().slice(0, 10));
+  const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [filterYear, setFilterYear] = useState(new Date().getFullYear().toString());
+  const locShifts = getLocSettings(settings, user.lokasi).shifts || [];
+  const [filterShift, setFilterShift] = useState(locShifts[0]?.id || '');
+
+  let baseFilteredTx = transactions.filter(t => user.lokasi === 'All Lokasi' || t.lokasi === user.lokasi);
+
+  let filteredTx = baseFilteredTx.filter(tx => {
+      if (filterMode === 'semua') return true;
+
+      const txDate = tx.waktuKeluar || tx.waktuMasuk;
+      if (!txDate) return false;
+
+      if (filterMode === 'harian') {
+          const selected = new Date(filterDate);
+          const start = new Date(selected); start.setHours(6, 0, 0, 0);
+          const end = new Date(selected); end.setDate(end.getDate() + 1); end.setHours(5, 59, 59, 999);
+          return txDate >= start && txDate <= end;
+      }
+      if (filterMode === 'shift') {
+          const selected = new Date(filterDate);
+          const startDay = new Date(selected); startDay.setHours(6, 0, 0, 0);
+          const endDay = new Date(selected); endDay.setDate(endDay.getDate() + 1); endDay.setHours(5, 59, 59, 999);
+
+          if (!(txDate >= startDay && txDate <= endDay)) return false;
+
+          const selectedShift = locShifts.find(s => s.id === filterShift) || locShifts[0];
+          if(!selectedShift) return true;
+
+          const startH = parseInt(selectedShift.start.split(':')[0]);
+          const startM = parseInt(selectedShift.start.split(':')[1]);
+          const endH = parseInt(selectedShift.end.split(':')[0]);
+          const endM = parseInt(selectedShift.end.split(':')[1]);
+
+          const txTotalM = txDate.getHours() * 60 + txDate.getMinutes();
+          const startTotalM = startH * 60 + startM;
+          const endTotalM = endH * 60 + endM;
+
+          if (startTotalM <= endTotalM) {
+              return txTotalM >= startTotalM && txTotalM <= endTotalM;
+          } else {
+              return txTotalM >= startTotalM || txTotalM <= endTotalM;
+          }
+      }
+      if (filterMode === 'bulanan') {
+          const txMonth = txDate.getFullYear() + '-' + String(txDate.getMonth() + 1).padStart(2, '0');
+          return txMonth === filterMonth;
+      }
+      if (filterMode === 'tahunan') {
+          return txDate.getFullYear().toString() === filterYear;
+      }
+      return true;
+  });
+
   const completedTx = filteredTx.filter(t => t.status === 'OUT');
   const totalPendapatan = completedTx.reduce((acc, curr) => acc + (curr.totalBiaya || 0), 0);
 
@@ -1122,6 +1178,31 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
     });
   };
 
+  let periodeText = "Semua Waktu";
+  if(filterMode === 'harian') periodeText = `Harian (${filterDate})`;
+  if(filterMode === 'shift') periodeText = `Shift (${filterDate} - ${locShifts.find(s=>s.id===filterShift)?.name || ''})`;
+  if(filterMode === 'bulanan') periodeText = `Bulan (${filterMonth})`;
+  if(filterMode === 'tahunan') periodeText = `Tahun (${filterYear})`;
+
+  const signatureBlock = (
+     <div className="hidden-screen show-on-print mt-12 print:text-black font-sans w-full pb-8">
+         <div className="flex justify-between px-10">
+            <div className="text-center w-40">
+               <p className="text-sm">Mengetahui,</p>
+               <p className="text-sm font-bold mb-16">Pimpinan / Manager</p>
+               <div className="border-b-[1.5px] border-black w-full"></div>
+            </div>
+            
+            <div className="text-center w-40">
+               <p className="text-sm">Dicetak Oleh,</p>
+               <p className="text-sm font-bold mb-16">Petugas Bertugas</p>
+               <p className="border-b-[1.5px] border-black font-bold uppercase w-full pb-1">{user.nama}</p>
+               <p className="text-[10px] mt-1 uppercase">{user.role}</p>
+            </div>
+         </div>
+     </div>
+  );
+
   return (
     <div className="space-y-6 print:space-y-2 print-a4-layout">
       {user.role === 'master' && (
@@ -1135,6 +1216,55 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
            </button>
         </div>
       )}
+
+      {/* FILTER BAR TRANSAKSI */}
+      <div className="bg-[#092613] p-4 rounded-xl border border-[#1b5e35] hide-on-print flex flex-wrap items-end gap-4">
+         <div>
+            <label className="block text-xs text-green-200/70 mb-1">Filter Periode</label>
+            <select value={filterMode} onChange={e=>setFilterMode(e.target.value)} className="bg-[#114022] border border-[#1b5e35] p-2 rounded-lg text-white outline-none focus:border-green-500 text-sm">
+               <option value="semua">Semua Waktu</option>
+               <option value="shift">Per Shift</option>
+               <option value="harian">Akhir Hari (Cutoff 06:00)</option>
+               <option value="bulanan">Per Bulan</option>
+               <option value="tahunan">Per Tahun</option>
+            </select>
+         </div>
+         
+         {(filterMode === 'shift' || filterMode === 'harian') && (
+            <div>
+               <label className="block text-xs text-green-200/70 mb-1">Tanggal</label>
+               <input type="date" value={filterDate} onChange={e=>setFilterDate(e.target.value)} className="bg-[#114022] border border-[#1b5e35] p-2 rounded-lg text-white outline-none focus:border-green-500 text-sm" />
+            </div>
+         )}
+
+         {filterMode === 'shift' && (
+            <div>
+               <label className="block text-xs text-green-200/70 mb-1">Pilih Shift</label>
+               <select value={filterShift} onChange={e=>setFilterShift(e.target.value)} className="bg-[#114022] border border-[#1b5e35] p-2 rounded-lg text-white outline-none focus:border-green-500 text-sm">
+                  {locShifts.map(s => <option key={s.id} value={s.id}>{s.name} ({s.start}-{s.end})</option>)}
+               </select>
+            </div>
+         )}
+
+         {filterMode === 'bulanan' && (
+            <div>
+               <label className="block text-xs text-green-200/70 mb-1">Bulan</label>
+               <input type="month" value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-[#114022] border border-[#1b5e35] p-2 rounded-lg text-white outline-none focus:border-green-500 text-sm" />
+            </div>
+         )}
+
+         {filterMode === 'tahunan' && (
+            <div>
+               <label className="block text-xs text-green-200/70 mb-1">Tahun</label>
+               <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-[#114022] border border-[#1b5e35] p-2 rounded-lg text-white outline-none focus:border-green-500 text-sm">
+                  {[0,1,2,3,4].map(y => {
+                     const year = new Date().getFullYear() - y;
+                     return <option key={year} value={year.toString()}>{year}</option>
+                  })}
+               </select>
+            </div>
+         )}
+      </div>
 
       {/* TABS LAPORAN */}
       <div className="flex bg-[#092613] p-1 rounded-xl border border-[#1b5e35] hide-on-print overflow-x-auto custom-scrollbar">
@@ -1157,8 +1287,8 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
             <div className="hidden-screen show-on-print border-b-2 border-black pb-4 mb-6 text-center">
                 {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-12 mb-2 mx-auto" alt="Logo"/>}
                 <h1 className="text-2xl font-black uppercase tracking-tight">Ringkasan Pendapatan Bisnis</h1>
-                <p className="text-sm text-gray-700 font-medium mt-1">Lokasi: {user.lokasi} | Dicetak: {new Date().toLocaleString('id-ID')} | Petugas Audit: {user.nama}</p>
-                <p className="text-[10px] mt-1 text-gray-500">{webSettings.appVersion || 'v.1.3.26'} | &copy; copyright by 200041</p>
+                <p className="text-sm text-gray-700 font-medium mt-1">Lokasi: {user.lokasi} | Periode: {periodeText}</p>
+                <p className="text-[10px] mt-1 text-gray-500">Dicetak: {new Date().toLocaleString('id-ID')} | {webSettings.appVersion || 'v.1.3.26'} | &copy; copyright by 200041</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 print:grid-cols-3">
@@ -1198,6 +1328,8 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
                   </div>
                </div>
             </div>
+            
+            {signatureBlock}
          </div>
       )}
 
@@ -1207,8 +1339,8 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
             <div className="hidden-screen show-on-print border-b-2 border-black pb-2 mb-4 text-center">
                 {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-10 mb-2 mx-auto" alt="Logo"/>}
                 <h1 className="text-xl font-bold uppercase">Audit Keseluruhan Transaksi Area (In & Out)</h1>
-                <p className="text-[10px] text-gray-600">Dicetak pada: {new Date().toLocaleString('id-ID')} | Oleh: {user.nama} ({user.lokasi}) | Total Item: {filteredTx.length}</p>
-                <p className="text-[8px] mt-1 text-gray-500">{webSettings.appVersion || 'v.1.3.26'} | &copy; copyright by 200041</p>
+                <p className="text-[10px] text-gray-600">Lokasi: {user.lokasi} | Periode: {periodeText} | Total Item: {filteredTx.length}</p>
+                <p className="text-[8px] mt-1 text-gray-500">Dicetak: {new Date().toLocaleString('id-ID')} | {webSettings.appVersion || 'v.1.3.26'} | &copy; copyright by 200041</p>
             </div>
             
             <div className="overflow-x-auto hide-scrollbar flex-1 w-full">
@@ -1246,6 +1378,8 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
                </table>
             </div>
             <p className="hidden-screen show-on-print text-[10px] mt-4 italic text-center text-gray-500">~ Akhir dari dokumen laporan audit ~</p>
+            
+            {signatureBlock}
          </div>
       )}
 
@@ -1303,9 +1437,89 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
 
 // Sub-Component Rekapan Global (Disesuaikan u/ Print 1 Lembar)
 function RekapanLaporan({ transactions, user, settings }) {
-  const completed = transactions.filter(t => t.status === 'OUT');
-  const total = completed.reduce((a, b) => a + (b.totalBiaya || 0), 0);
+  const [filterMode, setFilterMode] = useState('semua');
+  const [filterDate, setFilterDate] = useState(new Date().toISOString().slice(0, 10));
+  const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [filterYear, setFilterYear] = useState(new Date().getFullYear().toString());
+  const locShifts = getLocSettings(settings, user.lokasi).shifts || [];
+  const [filterShift, setFilterShift] = useState(locShifts[0]?.id || '');
   const webSettings = settings?.web || {};
+
+  let baseCompleted = transactions.filter(t => t.status === 'OUT');
+  
+  const completed = baseCompleted.filter(tx => {
+      if (filterMode === 'semua') return true;
+
+      const txDate = tx.waktuKeluar || tx.waktuMasuk;
+      if (!txDate) return false;
+
+      if (filterMode === 'harian') {
+          const selected = new Date(filterDate);
+          const start = new Date(selected); start.setHours(6, 0, 0, 0);
+          const end = new Date(selected); end.setDate(end.getDate() + 1); end.setHours(5, 59, 59, 999);
+          return txDate >= start && txDate <= end;
+      }
+      if (filterMode === 'shift') {
+          const selected = new Date(filterDate);
+          const startDay = new Date(selected); startDay.setHours(6, 0, 0, 0);
+          const endDay = new Date(selected); endDay.setDate(endDay.getDate() + 1); endDay.setHours(5, 59, 59, 999);
+
+          if (!(txDate >= startDay && txDate <= endDay)) return false;
+
+          const selectedShift = locShifts.find(s => s.id === filterShift) || locShifts[0];
+          if(!selectedShift) return true;
+
+          const startH = parseInt(selectedShift.start.split(':')[0]);
+          const startM = parseInt(selectedShift.start.split(':')[1]);
+          const endH = parseInt(selectedShift.end.split(':')[0]);
+          const endM = parseInt(selectedShift.end.split(':')[1]);
+
+          const txTotalM = txDate.getHours() * 60 + txDate.getMinutes();
+          const startTotalM = startH * 60 + startM;
+          const endTotalM = endH * 60 + endM;
+
+          if (startTotalM <= endTotalM) {
+              return txTotalM >= startTotalM && txTotalM <= endTotalM;
+          } else {
+              return txTotalM >= startTotalM || txTotalM <= endTotalM;
+          }
+      }
+      if (filterMode === 'bulanan') {
+          const txMonth = txDate.getFullYear() + '-' + String(txDate.getMonth() + 1).padStart(2, '0');
+          return txMonth === filterMonth;
+      }
+      if (filterMode === 'tahunan') {
+          return txDate.getFullYear().toString() === filterYear;
+      }
+      return true;
+  });
+
+  const total = completed.reduce((a, b) => a + (b.totalBiaya || 0), 0);
+  
+  let periodeText = "Semua Waktu";
+  if(filterMode === 'harian') periodeText = `Harian (${filterDate})`;
+  if(filterMode === 'shift') periodeText = `Shift (${filterDate} - ${locShifts.find(s=>s.id===filterShift)?.name || ''})`;
+  if(filterMode === 'bulanan') periodeText = `Bulan (${filterMonth})`;
+  if(filterMode === 'tahunan') periodeText = `Tahun (${filterYear})`;
+
+  const signatureBlock = (
+     <div className="hidden-screen show-on-print mt-12 print:text-black font-sans w-full pb-8">
+         <div className="flex justify-between px-10">
+            <div className="text-center w-40">
+               <p className="text-sm">Mengetahui,</p>
+               <p className="text-sm font-bold mb-16">Pimpinan / Manager</p>
+               <div className="border-b-[1.5px] border-black w-full"></div>
+            </div>
+            
+            <div className="text-center w-40">
+               <p className="text-sm">Dicetak Oleh,</p>
+               <p className="text-sm font-bold mb-16">Petugas Bertugas</p>
+               <p className="border-b-[1.5px] border-black font-bold uppercase w-full pb-1">{user.nama}</p>
+               <p className="text-[10px] mt-1 uppercase">{user.role}</p>
+            </div>
+         </div>
+     </div>
+  );
   
   const handleExportExcel = () => {
     let csvContent = "data:text/csv;charset=utf-8,\uFEFFID,Lokasi,Nomor Polisi,Jenis Kendaraan,Status,Waktu Masuk,Waktu Keluar,Lama Parkir,Total Biaya,Kasir Keluar,Tiket Hilang\n";
@@ -1323,11 +1537,60 @@ function RekapanLaporan({ transactions, user, settings }) {
 
   return (
     <div className="space-y-6 print-a4-layout">
+       {/* FILTER BAR TRANSAKSI */}
+       <div className="bg-[#092613] p-4 rounded-xl border border-[#1b5e35] hide-on-print flex flex-wrap items-end gap-4">
+          <div>
+             <label className="block text-xs text-green-200/70 mb-1">Filter Periode</label>
+             <select value={filterMode} onChange={e=>setFilterMode(e.target.value)} className="bg-[#114022] border border-[#1b5e35] p-2 rounded-lg text-white outline-none focus:border-green-500 text-sm">
+                <option value="semua">Semua Waktu</option>
+                <option value="shift">Per Shift</option>
+                <option value="harian">Akhir Hari (Cutoff 06:00)</option>
+                <option value="bulanan">Per Bulan</option>
+                <option value="tahunan">Per Tahun</option>
+             </select>
+          </div>
+          
+          {(filterMode === 'shift' || filterMode === 'harian') && (
+             <div>
+                <label className="block text-xs text-green-200/70 mb-1">Tanggal</label>
+                <input type="date" value={filterDate} onChange={e=>setFilterDate(e.target.value)} className="bg-[#114022] border border-[#1b5e35] p-2 rounded-lg text-white outline-none focus:border-green-500 text-sm" />
+             </div>
+          )}
+
+          {filterMode === 'shift' && (
+             <div>
+                <label className="block text-xs text-green-200/70 mb-1">Pilih Shift</label>
+                <select value={filterShift} onChange={e=>setFilterShift(e.target.value)} className="bg-[#114022] border border-[#1b5e35] p-2 rounded-lg text-white outline-none focus:border-green-500 text-sm">
+                   {locShifts.map(s => <option key={s.id} value={s.id}>{s.name} ({s.start}-{s.end})</option>)}
+                </select>
+             </div>
+          )}
+
+          {filterMode === 'bulanan' && (
+             <div>
+                <label className="block text-xs text-green-200/70 mb-1">Bulan</label>
+                <input type="month" value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-[#114022] border border-[#1b5e35] p-2 rounded-lg text-white outline-none focus:border-green-500 text-sm" />
+             </div>
+          )}
+
+          {filterMode === 'tahunan' && (
+             <div>
+                <label className="block text-xs text-green-200/70 mb-1">Tahun</label>
+                <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-[#114022] border border-[#1b5e35] p-2 rounded-lg text-white outline-none focus:border-green-500 text-sm">
+                   {[0,1,2,3,4].map(y => {
+                      const year = new Date().getFullYear() - y;
+                      return <option key={year} value={year.toString()}>{year}</option>
+                   })}
+                </select>
+             </div>
+          )}
+       </div>
+
        <div className="hidden-screen show-on-print border-b-2 border-black pb-4 mb-4 text-center">
            {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-10 mb-2 mx-auto" alt="Logo"/>}
            <h1 className="text-xl font-bold uppercase">Rekapan Global Semua Lokasi</h1>
-           <p className="text-xs text-gray-600">Dicetak: {new Date().toLocaleString('id-ID')} | Master: {user.nama} | Total Item: {completed.length}</p>
-           <p className="text-[10px] mt-1 text-gray-500">{webSettings.appVersion || 'v.1.3.26'} | &copy; copyright by 200041</p>
+           <p className="text-xs text-gray-600">Periode: {periodeText} | Master: {user.nama} | Total Item: {completed.length}</p>
+           <p className="text-[10px] mt-1 text-gray-500">Dicetak: {new Date().toLocaleString('id-ID')} | {webSettings.appVersion || 'v.1.3.26'} | &copy; copyright by 200041</p>
        </div>
 
        <div className="bg-teal-900/30 border border-teal-500/30 p-6 print:p-4 print:border-black print:border-2 print:bg-transparent rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -1362,6 +1625,8 @@ function RekapanLaporan({ transactions, user, settings }) {
              </tbody>
           </table>
        </div>
+       
+       {signatureBlock}
     </div>
   );
 }
