@@ -271,27 +271,30 @@ const CameraModal = ({ facingMode, onCapture, onClose, title }) => {
 };
 
 // --- COMPONENT: TICKET PREVIEW (SOP KONTROL) ---
-const TicketPreviewModal = ({ type, data, settings, onClose }) => {
+const TicketPreviewModal = ({ type, data, settings, onClose, showToast }) => {
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in zoom-in-95">
-      <div className="bg-[#114022] p-6 rounded-[2rem] border border-[#1b5e35] shadow-2xl flex flex-col items-center max-w-sm w-full relative">
-        <div className="absolute -top-5 bg-teal-500 text-white px-4 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-2">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in zoom-in-95 print:bg-white print:p-0 print:block">
+      <div className="bg-[#114022] p-6 rounded-[2rem] border border-[#1b5e35] shadow-2xl flex flex-col items-center max-w-sm w-full relative print:border-none print:shadow-none print:p-0 print:bg-white print:w-full print:max-w-none">
+        <div className="absolute -top-5 bg-teal-500 text-white px-4 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-2 hide-on-print">
           <CheckCircle2 size={14}/> Tercetak Otomatis
         </div>
         
-        <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+        <h3 className="text-white font-bold mb-4 flex items-center gap-2 hide-on-print">
           <FileText className="text-teal-400"/> SOP Preview Karcis
         </h3>
 
-        {/* Simulasi Kertas Karcis Thermal */}
-        <div className="bg-white text-black font-mono w-full p-4 rounded shadow-inner text-sm leading-snug relative overflow-hidden">
-           <div className="relative text-center font-bold mb-2 min-h-[36px]">
-              <p>{settings?.ticket?.title || 'Sistem Device Portable'}</p>
+        {/* Simulasi Kertas Karcis Thermal / Area Print Sistem */}
+        <div className="bg-white text-black font-mono w-full p-4 print:p-0 rounded shadow-inner text-sm leading-snug relative overflow-hidden print:shadow-none">
+           <div className="text-center font-bold mb-2">
+              {/* LOGO DI TENGAH ATAS TULISAN */}
+              {settings?.ticket?.logoUrl && (
+                 <div className="flex justify-center mb-1">
+                    <img src={settings.ticket.logoUrl} alt="Logo" className="h-12 w-auto object-contain grayscale mix-blend-multiply" />
+                 </div>
+              )}
+              <p className="text-base">{settings?.ticket?.title || 'Sistem Device Portable'}</p>
               {settings?.ticket?.subtitle && <p className="text-[10px] leading-tight mt-0.5">{settings.ticket.subtitle}</p>}
               <p className="text-xs mt-1">{data.lokasi}</p>
-              {settings?.ticket?.logoUrl && (
-                 <img src={settings.ticket.logoUrl} alt="Logo" className="absolute -top-1 -right-1 h-9 w-9 object-contain grayscale mix-blend-multiply" />
-              )}
            </div>
            <div className="border-b-2 border-dashed border-black/50 mb-2"></div>
            <div className="text-center font-bold mb-2">{type === 'IN' ? 'TIKET MASUK' : 'STRUK KELUAR'}</div>
@@ -305,7 +308,7 @@ const TicketPreviewModal = ({ type, data, settings, onClose }) => {
               <>
                 <div className="flex justify-between mb-1"><span>KELUAR:</span><span>{data.waktuKeluar.toLocaleTimeString('id-ID')}</span></div>
                 <div className="flex justify-between mb-1"><span>DURASI:</span><span>{data.durasiText}</span></div>
-                {data.tiketHilang && <div className="text-center text-xs mt-1">*Termasuk Denda Kehilangan</div>}
+                {data.tiketHilang && <div className="text-center text-xs mt-1 text-red-600 font-bold">*Termasuk Denda Kehilangan</div>}
                 <div className="border-b-2 border-dashed border-black/50 my-2"></div>
                 <div className="flex justify-between font-black text-base"><span>TOTAL:</span><span>Rp {data.totalBiaya?.toLocaleString('id-ID')}</span></div>
               </>
@@ -319,17 +322,20 @@ const TicketPreviewModal = ({ type, data, settings, onClose }) => {
            <div className="text-center text-xs mt-2 font-bold">{type === 'IN' ? (settings?.ticket?.footerIn || 'SIMPAN TIKET INI') : (settings?.ticket?.footerOut || 'TERIMA KASIH')}</div>
            
            {/* Zig-zag bottom edge effect */}
-           <div className="absolute bottom-0 left-0 w-full h-2 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPjxwb2x5Z29uIHBvaW50cz0iMCw4IDQsMCA4LDgiIGZpbGw9IiMxMTQwMjIiLz48L3N2Zz4=')] bg-repeat-x"></div>
+           <div className="absolute bottom-0 left-0 w-full h-2 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPjxwb2x5Z29uIHBvaW50cz0iMCw4IDQsMCA4LDgiIGZpbGw9IiMxMTQwMjIiLz48L3N2Zz4=')] bg-repeat-x hide-on-print"></div>
         </div>
 
-        <p className="text-[10px] text-green-200/50 mt-4 text-center">Data telah tersimpan dan perintah cetak telah dikirim ke printer bluetooth.</p>
+        <p className="text-[10px] text-green-200/50 mt-4 text-center hide-on-print">Data telah tersimpan dan perintah cetak telah dikirim.</p>
 
-        <div className="flex gap-3 mt-4 w-full">
-           <button onClick={() => { printDirectBluetooth(type, data, settings); showToast("Mengirim ulang perintah cetak..."); }} className="py-3 px-4 rounded-xl bg-[#092613] border border-[#1b5e35] text-white hover:bg-[#164d2b] transition-all flex justify-center items-center gap-2">
-             <Printer size={16}/> Print Ulang
+        <div className="flex flex-wrap gap-2 mt-4 w-full hide-on-print">
+           <button onClick={() => window.print()} className="flex-1 py-3 px-2 rounded-xl bg-[#092613] border border-[#1b5e35] text-white hover:bg-[#164d2b] transition-all flex justify-center items-center gap-2 text-xs font-bold">
+             <Printer size={14}/> Print (Spooler)
            </button>
-           <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-teal-600 text-white font-bold hover:bg-teal-500 transition-all shadow-lg">
-             Tutup (Lanjut)
+           <button onClick={() => { printDirectBluetooth(type, data, settings); showToast("Mengirim ulang via bluetooth..."); }} className="flex-1 py-3 px-2 rounded-xl bg-orange-600 border border-orange-500 text-white hover:bg-orange-500 transition-all flex justify-center items-center gap-2 text-xs font-bold">
+             <Bluetooth size={14}/> Print Bluetooth
+           </button>
+           <button onClick={onClose} className="w-full py-3 rounded-xl bg-teal-600 text-white font-bold hover:bg-teal-500 transition-all shadow-lg mt-2 text-sm">
+             Selesai / Tutup
            </button>
         </div>
       </div>
@@ -483,7 +489,7 @@ export default function App() {
       {/* CSS KHUSUS PRINT Laporan Bersih, Padat & Tanpa Background Warnai */}
       <style>{`
         @media print {
-          @page { margin: 15mm; }
+          @page { margin: 10mm; }
           body { 
             background: white !important; 
             color: black !important;
@@ -542,7 +548,7 @@ export default function App() {
       {confirmDialog && <ConfirmModal {...confirmDialog} />}
       
       {/* TICKET PREVIEW MODAL */}
-      {ticketPreview && <TicketPreviewModal type={ticketPreview.type} data={ticketPreview.data} settings={settings} onClose={() => setTicketPreview(null)} />}
+      {ticketPreview && <TicketPreviewModal type={ticketPreview.type} data={ticketPreview.data} settings={settings} onClose={() => setTicketPreview(null)} showToast={showToast} />}
 
       {/* Header */}
       <header className="fixed top-0 w-full z-40 bg-[#0c331a]/90 backdrop-blur-xl border-b border-[#1b5e35] shadow-lg px-6 py-3 flex items-center justify-between hide-on-print">
