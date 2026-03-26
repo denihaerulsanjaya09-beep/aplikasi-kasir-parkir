@@ -1087,28 +1087,37 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
   const locShifts = getLocSettings(settings, user.lokasi).shifts || [];
   const [filterShift, setFilterShift] = useState(locShifts[0]?.id || '');
 
+  // STATE UNTUK FILTER YANG DITERAPKAN SETELAH TOMBOL CARI DIKLIK
+  const [appliedFilter, setAppliedFilter] = useState({
+     mode: 'semua', date: filterDate, month: filterMonth, year: filterYear, shift: filterShift
+  });
+
+  const handleApplyFilter = () => {
+     setAppliedFilter({ mode: filterMode, date: filterDate, month: filterMonth, year: filterYear, shift: filterShift });
+  };
+
   let baseFilteredTx = transactions.filter(t => user.lokasi === 'All Lokasi' || t.lokasi === user.lokasi);
 
   let filteredTx = baseFilteredTx.filter(tx => {
-      if (filterMode === 'semua') return true;
+      if (appliedFilter.mode === 'semua') return true;
 
       const txDate = tx.waktuKeluar || tx.waktuMasuk;
       if (!txDate) return false;
 
-      if (filterMode === 'harian') {
-          const selected = new Date(filterDate);
+      if (appliedFilter.mode === 'harian') {
+          const selected = new Date(appliedFilter.date);
           const start = new Date(selected); start.setHours(6, 0, 0, 0);
           const end = new Date(selected); end.setDate(end.getDate() + 1); end.setHours(5, 59, 59, 999);
           return txDate >= start && txDate <= end;
       }
-      if (filterMode === 'shift') {
-          const selected = new Date(filterDate);
+      if (appliedFilter.mode === 'shift') {
+          const selected = new Date(appliedFilter.date);
           const startDay = new Date(selected); startDay.setHours(6, 0, 0, 0);
           const endDay = new Date(selected); endDay.setDate(endDay.getDate() + 1); endDay.setHours(5, 59, 59, 999);
 
           if (!(txDate >= startDay && txDate <= endDay)) return false;
 
-          const selectedShift = locShifts.find(s => s.id === filterShift) || locShifts[0];
+          const selectedShift = locShifts.find(s => s.id === appliedFilter.shift) || locShifts[0];
           if(!selectedShift) return true;
 
           const startH = parseInt(selectedShift.start.split(':')[0]);
@@ -1126,12 +1135,12 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
               return txTotalM >= startTotalM || txTotalM <= endTotalM;
           }
       }
-      if (filterMode === 'bulanan') {
+      if (appliedFilter.mode === 'bulanan') {
           const txMonth = txDate.getFullYear() + '-' + String(txDate.getMonth() + 1).padStart(2, '0');
-          return txMonth === filterMonth;
+          return txMonth === appliedFilter.month;
       }
-      if (filterMode === 'tahunan') {
-          return txDate.getFullYear().toString() === filterYear;
+      if (appliedFilter.mode === 'tahunan') {
+          return txDate.getFullYear().toString() === appliedFilter.year;
       }
       return true;
   });
@@ -1179,10 +1188,10 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
   };
 
   let periodeText = "Semua Waktu";
-  if(filterMode === 'harian') periodeText = `Harian (${filterDate})`;
-  if(filterMode === 'shift') periodeText = `Shift (${filterDate} - ${locShifts.find(s=>s.id===filterShift)?.name || ''})`;
-  if(filterMode === 'bulanan') periodeText = `Bulan (${filterMonth})`;
-  if(filterMode === 'tahunan') periodeText = `Tahun (${filterYear})`;
+  if(appliedFilter.mode === 'harian') periodeText = `Harian (${appliedFilter.date})`;
+  if(appliedFilter.mode === 'shift') periodeText = `Shift (${appliedFilter.date} - ${locShifts.find(s=>s.id===appliedFilter.shift)?.name || ''})`;
+  if(appliedFilter.mode === 'bulanan') periodeText = `Bulan (${appliedFilter.month})`;
+  if(appliedFilter.mode === 'tahunan') periodeText = `Tahun (${appliedFilter.year})`;
 
   const signatureBlock = (
      <div className="hidden-screen show-on-print mt-12 print:text-black font-sans w-full pb-8">
@@ -1264,6 +1273,10 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
                </select>
             </div>
          )}
+         
+         <button onClick={handleApplyFilter} className="bg-teal-600 hover:bg-teal-500 text-white px-6 py-2 rounded-lg font-bold text-sm h-[38px] flex items-center gap-2 shadow-lg transition-all active:scale-95">
+            <Search size={16}/> Cari
+         </button>
       </div>
 
       {/* TABS LAPORAN */}
@@ -1445,28 +1458,37 @@ function RekapanLaporan({ transactions, user, settings }) {
   const [filterShift, setFilterShift] = useState(locShifts[0]?.id || '');
   const webSettings = settings?.web || {};
 
+  // STATE UNTUK FILTER YANG DITERAPKAN SETELAH TOMBOL CARI DIKLIK
+  const [appliedFilter, setAppliedFilter] = useState({
+     mode: 'semua', date: filterDate, month: filterMonth, year: filterYear, shift: filterShift
+  });
+
+  const handleApplyFilter = () => {
+     setAppliedFilter({ mode: filterMode, date: filterDate, month: filterMonth, year: filterYear, shift: filterShift });
+  };
+
   let baseCompleted = transactions.filter(t => t.status === 'OUT');
   
   const completed = baseCompleted.filter(tx => {
-      if (filterMode === 'semua') return true;
+      if (appliedFilter.mode === 'semua') return true;
 
       const txDate = tx.waktuKeluar || tx.waktuMasuk;
       if (!txDate) return false;
 
-      if (filterMode === 'harian') {
-          const selected = new Date(filterDate);
+      if (appliedFilter.mode === 'harian') {
+          const selected = new Date(appliedFilter.date);
           const start = new Date(selected); start.setHours(6, 0, 0, 0);
           const end = new Date(selected); end.setDate(end.getDate() + 1); end.setHours(5, 59, 59, 999);
           return txDate >= start && txDate <= end;
       }
-      if (filterMode === 'shift') {
-          const selected = new Date(filterDate);
+      if (appliedFilter.mode === 'shift') {
+          const selected = new Date(appliedFilter.date);
           const startDay = new Date(selected); startDay.setHours(6, 0, 0, 0);
           const endDay = new Date(selected); endDay.setDate(endDay.getDate() + 1); endDay.setHours(5, 59, 59, 999);
 
           if (!(txDate >= startDay && txDate <= endDay)) return false;
 
-          const selectedShift = locShifts.find(s => s.id === filterShift) || locShifts[0];
+          const selectedShift = locShifts.find(s => s.id === appliedFilter.shift) || locShifts[0];
           if(!selectedShift) return true;
 
           const startH = parseInt(selectedShift.start.split(':')[0]);
@@ -1484,12 +1506,12 @@ function RekapanLaporan({ transactions, user, settings }) {
               return txTotalM >= startTotalM || txTotalM <= endTotalM;
           }
       }
-      if (filterMode === 'bulanan') {
+      if (appliedFilter.mode === 'bulanan') {
           const txMonth = txDate.getFullYear() + '-' + String(txDate.getMonth() + 1).padStart(2, '0');
-          return txMonth === filterMonth;
+          return txMonth === appliedFilter.month;
       }
-      if (filterMode === 'tahunan') {
-          return txDate.getFullYear().toString() === filterYear;
+      if (appliedFilter.mode === 'tahunan') {
+          return txDate.getFullYear().toString() === appliedFilter.year;
       }
       return true;
   });
@@ -1497,10 +1519,10 @@ function RekapanLaporan({ transactions, user, settings }) {
   const total = completed.reduce((a, b) => a + (b.totalBiaya || 0), 0);
   
   let periodeText = "Semua Waktu";
-  if(filterMode === 'harian') periodeText = `Harian (${filterDate})`;
-  if(filterMode === 'shift') periodeText = `Shift (${filterDate} - ${locShifts.find(s=>s.id===filterShift)?.name || ''})`;
-  if(filterMode === 'bulanan') periodeText = `Bulan (${filterMonth})`;
-  if(filterMode === 'tahunan') periodeText = `Tahun (${filterYear})`;
+  if(appliedFilter.mode === 'harian') periodeText = `Harian (${appliedFilter.date})`;
+  if(appliedFilter.mode === 'shift') periodeText = `Shift (${appliedFilter.date} - ${locShifts.find(s=>s.id===appliedFilter.shift)?.name || ''})`;
+  if(appliedFilter.mode === 'bulanan') periodeText = `Bulan (${appliedFilter.month})`;
+  if(appliedFilter.mode === 'tahunan') periodeText = `Tahun (${appliedFilter.year})`;
 
   const signatureBlock = (
      <div className="hidden-screen show-on-print mt-12 print:text-black font-sans w-full pb-8">
@@ -1584,6 +1606,10 @@ function RekapanLaporan({ transactions, user, settings }) {
                 </select>
              </div>
           )}
+          
+          <button onClick={handleApplyFilter} className="bg-teal-600 hover:bg-teal-500 text-white px-6 py-2 rounded-lg font-bold text-sm h-[38px] flex items-center gap-2 shadow-lg transition-all active:scale-95">
+             <Search size={16}/> Cari
+          </button>
        </div>
 
        <div className="hidden-screen show-on-print border-b-2 border-black pb-4 mb-4 text-center">
