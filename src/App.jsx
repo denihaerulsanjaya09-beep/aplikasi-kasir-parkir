@@ -38,7 +38,7 @@ const processImageFile = (file, callback) => {
 };
 
 // --- HELPER FUNCTION: Direct Bluetooth Print (RawBT / ESC-POS) ---
-// Desain khusus Thermal Printer 58mm (Lebar maksimal 32 Karakter). Ringkas & Hemat Kertas.
+// SEAMLESS BACKGROUND PRINTING: Menggunakan hidden iframe agar state browser tidak terpotong
 const printDirectBluetooth = (type, data, settings) => {
     const center = (str) => {
         const spaces = Math.max(0, Math.floor((32 - str.length) / 2));
@@ -84,8 +84,17 @@ const printDirectBluetooth = (type, data, settings) => {
     }
     text += '\n\n';
 
-    // Mengirim perintah teks murni via Intent ke aplikasi RawBT/Bluetooth Print Service
-    window.location.href = `intent:${encodeURI(text)}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
+    // TRIGGER BACKGROUND INTENT (Mencegah bug reload/data hilang)
+    const intentUrl = `intent:${encodeURI(text)}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = intentUrl;
+    document.body.appendChild(iframe);
+    
+    // Auto Remove Iframe
+    setTimeout(() => {
+        if (document.body.contains(iframe)) document.body.removeChild(iframe);
+    }, 2000);
 };
 
 // --- CONSTANTS & DEFAULT DATA ---
@@ -113,11 +122,11 @@ const DEFAULT_SETTINGS = {
     printerConnected: false
   },
   members: [],
-  activeLogins: {}, // Registry untuk mencegah login ganda di lokasi yang sama
+  activeLogins: {},
   users: [
     { id: 'u1', nipp: '200041', nama: 'Petugas Master', role: 'master', password: 'R3gional2BD!', canViewArea: true },
     { id: 'u2', nipp: 'audit', nama: 'Petugas Audit', role: 'audit', password: 'Rmu123456', canViewArea: true },
-    { id: 'u3', nipp: 'korlap123Rmu', nama: 'Petugas Korlap', role: 'korlap', password: '123', canViewArea: true },
+    { id: 'u3', nipp: 'korlap', nama: 'Petugas Korlap', role: 'korlap', password: 'korlap123Rmu', canViewArea: true },
     { id: 'u4', nipp: 'Kasier Pagi', nama: 'Kasir Pagi', role: 'kasir', password: '123', canViewArea: true },
     { id: 'u5', nipp: 'Kasir Siang', nama: 'Kasir Siang', role: 'kasir', password: '123', canViewArea: true },
     { id: 'u6', nipp: 'Kasir Malam', nama: 'Kasir Malam', role: 'kasir', password: '123', canViewArea: true }
@@ -152,8 +161,13 @@ const getActiveShift = (shifts) => {
 };
 
 // --- FIREBASE INITIALIZATION (SAFE MODE) ---
-const fbConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-  apiKey: "dummy", authDomain: "dummy", projectId: "dummy"
+const firebaseConfig = {
+  apiKey: "AIzaSyDdY7ZlT8NqWf7aPckiIQIvOsjFaBsOcK4",
+  authDomain: "aplikasi-parkir-ku.firebaseapp.com",
+  projectId: "aplikasi-parkir-ku",
+  storageBucket: "aplikasi-parkir-ku.firebasestorage.app",
+  messagingSenderId: "80401749338",
+  appId: "1:80401749338:web:87b4418d98e86a1d3d0f63"
 };
 const app = !getApps().length ? initializeApp(fbConfig) : getApp();
 const auth = getAuth(app);
@@ -424,22 +438,6 @@ export default function App() {
             color: #000 !important;
           }
           .dense-table th { background-color: #f1f5f9 !important; font-weight: bold; }
-
-          /* CSS SPESIFIK UNTUK PRINTER THERMAL 58MM JIKA CETAK VIA BROWSER */
-          .thermal-print-area, .thermal-print-area * {
-             visibility: visible !important;
-             display: block !important;
-             color: black !important;
-             background: white !important;
-          }
-          .thermal-print-area {
-             position: absolute;
-             left: 0;
-             top: 0;
-             width: 58mm;
-             margin: 0 !important;
-             padding: 0 !important;
-          }
         }
       `}</style>
 
@@ -619,7 +617,6 @@ function KendaraanMasuk({ user, addTransaction, showToast, settings }) {
   const [nopol, setNopol] = useState('');
   const [jenis, setJenis] = useState('Motor');
   const [showCamera, setShowCamera] = useState(false);
-  const [printData, setPrintData] = useState(null);
   const [gps, setGps] = useState('Sedang mencari...');
   const webSettings = settings?.web || DEFAULT_SETTINGS.web;
 
@@ -636,7 +633,6 @@ function KendaraanMasuk({ user, addTransaction, showToast, settings }) {
     setShowCamera(true);
   };
 
-  // BUG FIX: Gunakan "async/await" agar data 100% dipastikan ter-save ke Firebase SEBELUM auto-print tertrigger
   const handleCapture = async (photo) => {
     setShowCamera(false);
     const newTx = {
@@ -645,16 +641,15 @@ function KendaraanMasuk({ user, addTransaction, showToast, settings }) {
       kasirMasuk: user.nama, gps
     };
     
-    // Tunggu Database Menerima Data
+    // TUNGGU DATA TERSIMPAN SEBELUM PERINTAH CETAK KELUAR (Bug Fix)
     await addTransaction(newTx);
     
-    setPrintData(newTx);
+    // AUTO DIRECT PRINT TANPA POP-UP UI UNTUK MEMPERCEPAT TRANSAKSI
+    printDirectBluetooth('IN', newTx, settings);
+    
+    // UI LANGSUNG BERSIH & SIAP KENDARAAN BERIKUTNYA
     setNopol('');
-
-    // AUTO DIRECT PRINT BLUETOOTH
-    setTimeout(() => {
-       printDirectBluetooth('IN', newTx, settings);
-    }, 500); // Jeda aman 0.5 detik
+    showToast("Data Tersimpan! Tiket Sedang Dicetak...");
   };
 
   return (
@@ -683,12 +678,11 @@ function KendaraanMasuk({ user, addTransaction, showToast, settings }) {
           </div>
 
           <button type="submit" className="w-full bg-green-600 hover:bg-green-500 text-white font-black rounded-[1.5rem] px-6 py-6 shadow-xl shadow-green-600/20 text-xl transition-all active:scale-95 flex justify-center items-center gap-3">
-            <Camera size={28} /> PROSES & FOTO MASUK
+            <Camera size={28} /> PROSES TIKET (DIRECT PRINT)
           </button>
         </form>
       </div>
       {showCamera && <CameraModal facingMode="environment" title="Foto Kendaraan Masuk" onClose={() => setShowCamera(false)} onCapture={handleCapture} />}
-      {printData && <TicketPrintModal data={printData} settings={settings} onClose={() => setPrintData(null)} />}
     </div>
   );
 }
@@ -698,7 +692,6 @@ function KendaraanKeluar({ user, transactions, updateTransaction, settings, show
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTx, setSelectedTx] = useState(null);
   const [showCamera, setShowCamera] = useState(false);
-  const [printData, setPrintData] = useState(null);
   const [tiketHilang, setTiketHilang] = useState(false);
   const [showLostModal, setShowLostModal] = useState(false);
   
@@ -763,7 +756,6 @@ function KendaraanKeluar({ user, transactions, updateTransaction, settings, show
     if (selectedTx) setShowCamera(true); 
   };
 
-  // BUG FIX: Sama halnya seperti masuk, pastikan `await` agar tidak batal terekam di DB
   const handleCapture = async (photo) => {
     setShowCamera(false);
     const { total, jam, durasiText, exitTime, isMember, denda } = calculateFee(selectedTx);
@@ -774,21 +766,20 @@ function KendaraanKeluar({ user, transactions, updateTransaction, settings, show
       isMember, tiketHilang, denda, fotoKTP, fotoSTNK
     };
     
-    // Tunggu Database Menerima Data Keluar
+    // TUNGGU DATA TERSIMPAN SEBELUM PERINTAH CETAK KELUAR
     await updateTransaction(selectedTx.id, updateData);
     
     const locSettings = getLocSettings(settings, selectedTx.lokasi);
     const finalData = { ...selectedTx, ...updateData, petugasPhoto: user.photo, locSettings };
 
-    setPrintData(finalData);
+    // AUTO DIRECT PRINT TANPA POP-UP UI
+    printDirectBluetooth('OUT', finalData, settings);
+
+    // UI LANGSUNG BERSIH
+    showToast(`Transaksi Selesai. Total Biaya: Rp ${total.toLocaleString('id-ID')}`);
     setSelectedTx(null);
     setSearchQuery('');
     setTiketHilang(false); setFotoKTP(null); setFotoSTNK(null);
-
-    // AUTO DIRECT PRINT BLUETOOTH
-    setTimeout(() => {
-       printDirectBluetooth('OUT', finalData, settings);
-    }, 500);
   };
 
   return (
@@ -884,11 +875,10 @@ function KendaraanKeluar({ user, transactions, updateTransaction, settings, show
         )}
 
         <button onClick={handleProcess} disabled={!selectedTx} className={`w-full font-black rounded-[1.5rem] px-6 py-6 text-xl transition-all flex justify-center items-center gap-3 ${selectedTx ? 'bg-teal-600 hover:bg-teal-500 text-white shadow-xl shadow-teal-600/20 active:scale-95' : 'bg-[#092613] border-2 border-[#1b5e35] text-green-300/30 cursor-not-allowed'}`}>
-          <Camera size={28} /> PROSES KELUAR & HITUNG
+          <Camera size={28} /> HITUNG & CETAK STRUK
         </button>
       </div>
       {showCamera && <CameraModal facingMode="environment" title="Foto Kendaraan Keluar" onClose={() => setShowCamera(false)} onCapture={handleCapture} />}
-      {printData && <ReceiptPrintModal data={printData} settings={settings} onClose={() => setPrintData(null)} />}
     </div>
   );
 }
@@ -1350,25 +1340,31 @@ function SettingUser({ settings, setSettings, showToast }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ id: '', nipp: '', nama: '', password: '', role: 'kasir', canViewArea: false });
 
-  const handleSaveGlobal = () => {
-    setSettings({ ...settings, users: usersList });
-    showToast("Perubahan Akun Tersimpan ke Database!");
-  };
-
+  // BUG FIX: Hapus tombol manual "Simpan", buat proses otomatis begitu disubmit/hapus.
   const submitForm = (e) => {
     e.preventDefault();
+    let newList;
     if (form.id) {
-       setUsersList(usersList.map(u => u.id === form.id ? form : u));
+       newList = usersList.map(u => u.id === form.id ? form : u);
     } else {
-       setUsersList([...usersList, { ...form, id: `u_${Date.now()}` }]);
+       newList = [...usersList, { ...form, id: `u_${Date.now()}` }];
     }
+    
+    setUsersList(newList);
+    setSettings({ ...settings, users: newList }); // AUTO-SAVE KE FIREBASE
+    
     setShowForm(false);
     setForm({ id: '', nipp: '', nama: '', password: '', role: 'kasir', canViewArea: false });
+    showToast("Akun berhasil disimpan ke database utama!");
   };
 
   const hapusUser = (id) => {
     if (usersList.find(u => u.id === id).role === 'master') return showToast("Akun Master tidak bisa dihapus!", "error");
-    setUsersList(usersList.filter(u => u.id !== id));
+    const newList = usersList.filter(u => u.id !== id);
+    
+    setUsersList(newList);
+    setSettings({ ...settings, users: newList }); // AUTO-SAVE KE FIREBASE
+    showToast("Akun berhasil dihapus!");
   };
 
   return (
@@ -1399,7 +1395,7 @@ function SettingUser({ settings, setSettings, showToast }) {
                    </label>
                 </div>
              )}
-             <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl mt-4 hover:bg-blue-500 transition">{form.id ? 'Update Akun' : 'Buat Akun Baru'}</button>
+             <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl mt-4 hover:bg-blue-500 transition shadow-lg">{form.id ? 'Update & Auto-Save Akun' : 'Buat & Auto-Save Akun'}</button>
           </form>
        )}
 
@@ -1421,7 +1417,6 @@ function SettingUser({ settings, setSettings, showToast }) {
              </tbody>
           </table>
        </div>
-       <button onClick={handleSaveGlobal} className="w-full bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-blue-600 transition-all flex justify-center gap-2"><Lock size={20}/> Terapkan Perubahan Akun ke Database</button>
     </div>
   );
 }
@@ -1611,11 +1606,11 @@ function SettingWeb({ settings, setSettings, isReadOnly, showToast }) {
     <form onSubmit={handleSave} className="space-y-6">
       <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35]">
          <h4 className="font-bold text-white mb-2 uppercase text-sm flex items-center gap-2"><Bluetooth size={18} className="text-teal-400"/> Pengaturan Printer Default</h4>
-         <p className="text-xs text-green-200/70 leading-relaxed mb-4">Aplikasi ini telah dioptimalkan untuk menggunakan <strong>pencetakan default perangkat Anda (Print Dialog)</strong>.</p>
+         <p className="text-xs text-green-200/70 leading-relaxed mb-4">Aplikasi ini telah dioptimalkan untuk menggunakan pencetakan otomatis (<strong>Direct Background Print</strong>).</p>
          <div className="bg-[#114022] p-4 rounded-xl border border-[#1b5e35]">
             <ol className="text-xs text-green-200/60 list-decimal ml-4 space-y-2">
-               <li><strong>HP Android:</strong> Pastikan Anda sudah menginstal aplikasi <em>Print Service</em> (misalnya <strong>RawBT</strong>) di PlayStore.</li>
-               <li><strong>HP iPhone:</strong> Gunakan tombol <strong className="text-blue-400">"Bagikan (Share)"</strong> lalu kirimkan ke aplikasi printer Thermal iOS Anda.</li>
+               <li><strong>Android:</strong> Wajib install aplikasi <strong>RawBT</strong> Print Service. Aktifkan fitur <em>"Don't ask before print"</em> agar struk otomatis keluar seketika.</li>
+               <li>Pastikan Printer Thermal Bluetooth Anda sudah di-pairing (dipasangkan) di setingan Bluetooth HP.</li>
             </ol>
          </div>
       </div>
@@ -1714,83 +1709,6 @@ function ShiftEndModal({ user, transactions, shiftName, onClose, settings }) {
              </button>
           </div>
        </div>
-    </div>
-  );
-}
-
-// --- PRINT MODALS FOR TICKETS ---
-function TicketPrintModal({ data, settings, onClose }) {
-  const handleDirectPrint = () => printDirectBluetooth('IN', data, settings);
-
-  return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm hide-on-print">
-      <div className="bg-[#114022] rounded-3xl p-6 shadow-2xl max-w-sm w-full mx-4 flex flex-col items-center">
-        
-        {/* Preview Area berukuran asli 58mm (Lebar real-world printer) */}
-        <div className="thermal-print-area bg-white text-black font-mono text-[12px] leading-tight w-[58mm] mx-auto p-2 pb-6 border-2 border-slate-300 mb-6 shadow-md">
-            <h2 className="text-center font-bold text-[14px] mb-1 leading-none">PARKIR TERPADU</h2>
-            <p className="text-center text-[10px] m-0 mb-2 leading-none">{data.lokasi}</p>
-            <div className="border-t border-b border-black border-dashed py-1 my-1 text-center">
-                <h1 className="text-[24px] font-black tracking-wider m-0 leading-none">{data.nopol}</h1>
-                <p className="text-[10px] m-0 mt-1 font-bold leading-none">{data.jenis}</p>
-            </div>
-            <p className="m-0 mt-2">IN : {data.waktuMasuk.toLocaleString('id-ID')}</p>
-            <p className="m-0">OPR: {data.kasirMasuk}</p>
-            <div className="border-t border-black border-dashed mt-2 pt-2 text-center text-[10px]">
-               <p className="m-0 font-bold">SIMPAN TIKET INI</p>
-            </div>
-        </div>
-
-        <div className="flex flex-col gap-2 w-full mb-2">
-          <button onClick={handleDirectPrint} className="w-full py-4 rounded-xl bg-teal-600 text-white font-bold flex justify-center items-center gap-2 hover:bg-teal-500 shadow-xl active:scale-95 transition-all text-sm">
-             <Bluetooth size={20} /> Cetak Otomatis (Bluetooth)
-          </button>
-          <div className="flex gap-2 w-full mt-2">
-             <button onClick={() => window.print()} className="flex-1 py-3 rounded-xl bg-orange-600 text-white font-bold flex justify-center items-center gap-2 hover:bg-orange-500 text-xs shadow-md"><FileText size={16} /> Browser Print</button>
-             <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-[#092613] text-white font-bold hover:bg-black/20 text-xs shadow-md">Tutup Lanjut</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ReceiptPrintModal({ data, settings, onClose }) {
-  const handleDirectPrint = () => printDirectBluetooth('OUT', data, settings);
-
-  return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm hide-on-print">
-      <div className="bg-[#114022] rounded-3xl p-6 shadow-2xl max-w-sm w-full mx-4 flex flex-col items-center">
-        
-        {/* Preview Area berukuran asli 58mm (Lebar real-world printer) */}
-        <div className="thermal-print-area bg-white text-black font-mono text-[11px] leading-tight w-[58mm] mx-auto p-2 pb-6 border-2 border-slate-300 mb-6 shadow-md">
-            <h2 className="text-center font-bold text-[14px] mb-1 leading-none">STRUK KELUAR</h2>
-            <p className="text-center text-[10px] m-0 mb-2 leading-none">{data.lokasi}</p>
-            <div className="border-t border-b border-black border-dashed py-1 my-1 text-center">
-                <h1 className="text-[20px] font-black tracking-wider m-0 leading-none">{data.nopol}</h1>
-                <p className="text-[10px] m-0 mt-1 leading-none">{data.jenis} {data.tiketHilang && '(HILANG)'}</p>
-            </div>
-            <div className="flex justify-between mt-1 m-0"><p className="m-0">IN</p><p className="m-0">{data.waktuMasuk.toLocaleTimeString('id-ID')}</p></div>
-            <div className="flex justify-between m-0"><p className="m-0">OUT</p><p className="m-0">{data.waktuKeluar.toLocaleTimeString('id-ID')}</p></div>
-            <div className="flex justify-between font-bold m-0"><p className="m-0">LAMA</p><p className="m-0">{data.durasiText}</p></div>
-            <div className="border-t border-black border-dashed my-1"></div>
-            <div className="flex justify-between text-[14px] font-black m-0"><p className="m-0">TOTAL</p><p className="m-0">Rp{data.totalBiaya.toLocaleString('id-ID')}</p></div>
-            <div className="border-t border-black border-dashed mt-2 pt-2 text-center text-[9px]">
-               {data.tiketHilang && <p className="text-red-600 font-bold m-0">*Denda Tiket Hilang</p>}
-               <p className="m-0">TERIMA KASIH</p>
-            </div>
-        </div>
-
-        <div className="flex flex-col gap-2 w-full mb-2">
-          <button onClick={handleDirectPrint} className="w-full py-4 rounded-xl bg-teal-600 text-white font-bold flex justify-center items-center gap-2 hover:bg-teal-500 shadow-xl active:scale-95 transition-all text-sm">
-             <Bluetooth size={20} /> Cetak Otomatis (Bluetooth)
-          </button>
-          <div className="flex gap-2 w-full mt-2">
-             <button onClick={() => window.print()} className="flex-1 py-3 rounded-xl bg-orange-600 text-white font-bold flex justify-center items-center gap-2 hover:bg-orange-500 text-xs shadow-md"><FileText size={16} /> Browser Print</button>
-             <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-[#092613] text-white font-bold hover:bg-black/20 text-xs shadow-md">Tutup Lanjut</button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
