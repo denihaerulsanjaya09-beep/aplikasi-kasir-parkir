@@ -1820,16 +1820,43 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
   const locSettings = getLocSettings(settings, targetLokasi);
   const [localTariff, setLocalTariff] = useState(locSettings.tariffs || DEFAULT_LOCATION_SETTINGS.tariffs);
 
-  useEffect(() => { setLocalTariff(getLocSettings(settings, targetLokasi).tariffs || DEFAULT_LOCATION_SETTINGS.tariffs); }, [targetLokasi, settings]);
+  // BUG FIX & FITUR BARU: Kuncian per jenis kendaraan untuk mencegah salah tekan
+  const [locked, setLocked] = useState({
+     'Motor': true,
+     'Mobil': true,
+     'Box/Truck': true,
+     'Sepeda/Becak': true
+  });
 
-  const handleSave = () => {
-    const newLocations = { ...settings.locations, [targetLokasi]: { ...getLocSettings(settings, targetLokasi), tariffs: localTariff } };
-    setSettings({ ...settings, locations: newLocations });
-    showToast(`Setingan Tarif Per Kendaraan untuk ${targetLokasi} Tersimpan!`);
-  };
+  // BUG FIX: Hapus `settings` dari dependency agar auto-sync background tidak mereset input yang sedang diketik
+  useEffect(() => { 
+     setLocalTariff(getLocSettings(settings, targetLokasi).tariffs || DEFAULT_LOCATION_SETTINGS.tariffs); 
+     // Reset kuncian saat ganti lokasi
+     setLocked({ 'Motor': true, 'Mobil': true, 'Box/Truck': true, 'Sepeda/Becak': true });
+  }, [targetLokasi]); 
 
   const updateTariff = (jenis, field, val) => {
     setLocalTariff(prev => ({ ...prev, [jenis]: { ...prev[jenis], [field]: field === 'mode' || typeof val === 'boolean' ? val : Number(val) } }));
+  };
+
+  const toggleEdit = (jenis) => {
+     setLocked(prev => ({ ...prev, [jenis]: false }));
+  };
+
+  const handleSaveJenis = (jenis) => {
+     const newLocations = { 
+         ...settings.locations, 
+         [targetLokasi]: { 
+             ...getLocSettings(settings, targetLokasi), 
+             tariffs: {
+                 ...(getLocSettings(settings, targetLokasi).tariffs || DEFAULT_LOCATION_SETTINGS.tariffs),
+                 [jenis]: localTariff[jenis]
+             }
+         } 
+     };
+     setSettings({ ...settings, locations: newLocations });
+     setLocked(prev => ({ ...prev, [jenis]: true }));
+     showToast(`Tarif ${jenis} di lokasi ${targetLokasi} berhasil diperbarui & dikunci!`);
   };
 
   return (
@@ -1845,56 +1872,79 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
 
       <div className="space-y-6">
         {Object.keys(localTariff).map(jenis => (
-          <div key={jenis} className="border border-[#1b5e35] rounded-2xl p-5 bg-[#092613] shadow-sm">
+          <div key={jenis} className={`border ${locked[jenis] ? 'border-[#1b5e35]' : 'border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.15)]'} rounded-2xl p-5 bg-[#092613] transition-all duration-300`}>
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-              <h4 className="font-bold text-lg text-white border-b-2 border-green-500 pb-1">{jenis}</h4>
+              <div className="flex items-center gap-3">
+                 <h4 className="font-bold text-lg text-white border-b-2 border-green-500 pb-1">{jenis}</h4>
+                 {locked[jenis] ? (
+                     <span className="bg-[#114022] text-green-500 border border-[#1b5e35] text-[10px] px-2 py-1 rounded font-bold uppercase flex items-center gap-1"><Lock size={12}/> Terkunci</span>
+                 ) : (
+                     <span className="bg-amber-900/50 text-amber-400 border border-amber-500/50 text-[10px] px-2 py-1 rounded font-bold uppercase flex items-center gap-1"><Settings size={12}/> Mode Edit Aktif</span>
+                 )}
+              </div>
               <div className="flex bg-[#114022] rounded-xl p-1 border border-[#1b5e35]">
-                 <button disabled={isReadOnly} onClick={() => updateTariff(jenis, 'mode', 'progressif')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${localTariff[jenis].mode === 'progressif' ? 'bg-green-600 text-white shadow-sm' : 'text-green-300/50 hover:text-white'}`}>Progressif</button>
-                 <button disabled={isReadOnly} onClick={() => updateTariff(jenis, 'mode', 'flat')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${localTariff[jenis].mode === 'flat' ? 'bg-green-600 text-white shadow-sm' : 'text-green-300/50 hover:text-white'}`}>Flat</button>
+                 <button disabled={isReadOnly || locked[jenis]} onClick={() => updateTariff(jenis, 'mode', 'progressif')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed ${localTariff[jenis].mode === 'progressif' ? 'bg-green-600 text-white shadow-sm' : 'text-green-300/50 hover:text-white'}`}>Progressif</button>
+                 <button disabled={isReadOnly || locked[jenis]} onClick={() => updateTariff(jenis, 'mode', 'flat')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed ${localTariff[jenis].mode === 'flat' ? 'bg-green-600 text-white shadow-sm' : 'text-green-300/50 hover:text-white'}`}>Flat</button>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
               <div>
                 <label className="block text-xs text-green-200/70 mb-1">Jam Pertama (Rp)</label>
-                <input disabled={isReadOnly} type="number" value={localTariff[jenis].first} onChange={e => updateTariff(jenis, 'first', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-green-500" />
+                <input disabled={isReadOnly || locked[jenis]} type="number" value={localTariff[jenis].first} onChange={e => updateTariff(jenis, 'first', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" />
               </div>
               <div className={localTariff[jenis].mode === 'flat' ? 'opacity-50 pointer-events-none' : ''}>
                 <label className="block text-xs text-green-200/70 mb-1">Durasi Awal</label>
-                <select disabled={isReadOnly} value={localTariff[jenis].firstDuration} onChange={e => updateTariff(jenis, 'firstDuration', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-green-500">
+                <select disabled={isReadOnly || locked[jenis]} value={localTariff[jenis].firstDuration} onChange={e => updateTariff(jenis, 'firstDuration', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                   {[...Array(24).keys()].map(i => <option key={i+1} value={i+1}>{i+1} Jam</option>)}
                 </select>
               </div>
               <div className={localTariff[jenis].mode === 'flat' ? 'opacity-50 pointer-events-none' : ''}>
                 <label className="block text-xs text-green-200/70 mb-1">Jam Berikutnya (Rp)</label>
-                <input disabled={isReadOnly} type="number" value={localTariff[jenis].next} onChange={e => updateTariff(jenis, 'next', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-green-500" />
+                <input disabled={isReadOnly || locked[jenis]} type="number" value={localTariff[jenis].next} onChange={e => updateTariff(jenis, 'next', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" />
               </div>
               <div className={localTariff[jenis].mode === 'flat' ? 'opacity-50 pointer-events-none' : ''}>
                 <label className="block text-xs text-green-200/70 mb-1">Tarif Maksimal (Rp)</label>
-                <input disabled={isReadOnly} type="number" value={localTariff[jenis].max} onChange={e => updateTariff(jenis, 'max', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-green-500" />
+                <input disabled={isReadOnly || locked[jenis]} type="number" value={localTariff[jenis].max} onChange={e => updateTariff(jenis, 'max', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" />
               </div>
               <div className={localTariff[jenis].mode === 'flat' ? 'opacity-50 pointer-events-none' : ''}>
                 <label className="block text-xs text-green-200/70 mb-1">Tarif Inap/Hari (Rp)</label>
-                <input disabled={isReadOnly} type="number" value={localTariff[jenis].inap} onChange={e => updateTariff(jenis, 'inap', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-green-500" />
+                <input disabled={isReadOnly || locked[jenis]} type="number" value={localTariff[jenis].inap} onChange={e => updateTariff(jenis, 'inap', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" />
               </div>
             </div>
 
-            <div className="mt-4 pt-4 border-t border-[#1b5e35] flex items-center gap-4">
-               <label className="flex items-center gap-2 text-sm text-green-200/70 cursor-pointer">
-                  <input type="checkbox" disabled={isReadOnly} checked={localTariff[jenis].gracePeriodActive} onChange={e => updateTariff(jenis, 'gracePeriodActive', e.target.checked)} className="rounded accent-green-500 w-4 h-4" />
-                  Aktifkan Grace Periode
-               </label>
-               {localTariff[jenis].gracePeriodActive && (
-                  <div className="flex items-center gap-2 animate-in fade-in">
-                     <span className="text-xs text-green-200/70">Berapa menit?</span>
-                     <input disabled={isReadOnly} type="number" value={localTariff[jenis].gracePeriodMinutes} onChange={e => updateTariff(jenis, 'gracePeriodMinutes', e.target.value)} className="w-20 bg-[#114022] border border-[#1b5e35] rounded-lg px-2 py-1 text-sm text-white outline-none focus:border-green-500" />
-                  </div>
-               )}
+            <div className="mt-4 pt-4 border-t border-[#1b5e35] flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+               <div className="flex items-center gap-4">
+                   <label className={`flex items-center gap-2 text-sm cursor-pointer ${locked[jenis] ? 'text-green-200/40' : 'text-green-200/70'}`}>
+                      <input type="checkbox" disabled={isReadOnly || locked[jenis]} checked={localTariff[jenis].gracePeriodActive} onChange={e => updateTariff(jenis, 'gracePeriodActive', e.target.checked)} className="rounded accent-amber-500 w-4 h-4 disabled:opacity-50 disabled:cursor-not-allowed" />
+                      Aktifkan Grace Periode
+                   </label>
+                   {localTariff[jenis].gracePeriodActive && (
+                      <div className="flex items-center gap-2 animate-in fade-in">
+                         <span className={`text-xs ${locked[jenis] ? 'text-green-200/40' : 'text-green-200/70'}`}>Berapa menit?</span>
+                         <input disabled={isReadOnly || locked[jenis]} type="number" value={localTariff[jenis].gracePeriodMinutes} onChange={e => updateTariff(jenis, 'gracePeriodMinutes', e.target.value)} className="w-20 bg-[#114022] border border-[#1b5e35] rounded-lg px-2 py-1 text-sm text-white outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" />
+                      </div>
+                   )}
+               </div>
+
+               {/* TOMBOL KUNCI / SIMPAN PER JENIS */}
+               <div className="w-full md:w-auto flex justify-end">
+                   {!isReadOnly && (
+                       locked[jenis] ? (
+                           <button onClick={() => toggleEdit(jenis)} className="w-full md:w-auto bg-[#114022] border border-[#1b5e35] hover:bg-[#164d2b] text-white px-4 py-2 rounded-xl text-xs font-bold flex justify-center items-center gap-2 transition-all">
+                               <Lock size={14}/> Buka Kunci Edit
+                           </button>
+                       ) : (
+                           <button onClick={() => handleSaveJenis(jenis)} className="w-full md:w-auto bg-amber-600 hover:bg-amber-500 text-white px-5 py-2 rounded-xl text-xs font-bold flex justify-center items-center gap-2 shadow-lg shadow-amber-600/20 transition-all animate-in zoom-in-95">
+                               <CheckCircle2 size={16}/> Simpan & Kunci {jenis}
+                           </button>
+                       )
+                   )}
+               </div>
             </div>
           </div>
         ))}
       </div>
-      {!isReadOnly && <button onClick={handleSave} className="w-full bg-green-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-green-500 transition-all flex justify-center gap-2"><CheckCircle2 size={20}/> Simpan Pengaturan Tarif ({targetLokasi})</button>}
     </div>
   );
 }
