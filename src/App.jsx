@@ -102,11 +102,12 @@ const printDirectBluetooth = (type, data, settings) => {
 const PURE_LOCATIONS = ['ST. Cimahi Selatan', 'ST. Gadobangkong', 'ST. Cianjur', 'ST. Cibatu'];
 const LOCATIONS = [...PURE_LOCATIONS, 'All Lokasi'];
 
+// UPDATE DEFAULT SETTINGS SESUAI PERMINTAAN USER
 const DEFAULT_LOCATION_SETTINGS = {
   tariffs: {
-    'Motor': { mode: 'progressif', first: 2000, firstDuration: 1, next: 1000, max: 10000, inap: 5000, gracePeriodActive: true, gracePeriodMinutes: 10 },
-    'Mobil': { mode: 'progressif', first: 5000, firstDuration: 1, next: 2000, max: 25000, inap: 15000, gracePeriodActive: true, gracePeriodMinutes: 10 },
-    'Box/Truck': { mode: 'progressif', first: 10000, firstDuration: 2, next: 5000, max: 50000, inap: 25000, gracePeriodActive: false, gracePeriodMinutes: 10 },
+    'Motor': { mode: 'progressif', first: 2000, firstDuration: 1, next: 2000, max: 8000, inap: 10000, gracePeriodActive: false, gracePeriodMinutes: 0 },
+    'Mobil': { mode: 'progressif', first: 3000, firstDuration: 1, next: 3000, max: 15000, inap: 20000, gracePeriodActive: false, gracePeriodMinutes: 0 },
+    'Box/Truck': { mode: 'progressif', first: 5000, firstDuration: 1, next: 5000, max: 25000, inap: 25000, gracePeriodActive: false, gracePeriodMinutes: 0 },
     'Sepeda/Becak': { mode: 'flat', first: 1000, firstDuration: 1, next: 0, max: 1000, inap: 0, gracePeriodActive: false, gracePeriodMinutes: 0 }
   },
   shifts: [
@@ -127,8 +128,7 @@ const DEFAULT_SETTINGS = {
     title: 'Sistem Device Portable',
     subtitle: '',
     footerIn: 'SIMPAN TIKET INI',
-    footerOut: 'TERIMA KASIH',
-    logoUrl: ''
+    footerOut: 'TERIMA KASIH'
   },
   members: [],
   activeLogins: {},
@@ -273,7 +273,6 @@ const CameraModal = ({ facingMode, onCapture, onClose, title }) => {
 // --- COMPONENT: TICKET PREVIEW (SOP KONTROL) ---
 const TicketPreviewModal = ({ type, data, settings, onClose, showToast }) => {
   return (
-    // FIX CSS PRINT: Menghapus background dan membiarkan tampilan bersih saat print
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in zoom-in-95 print:bg-white print:p-0 print:block">
       <div className="bg-[#114022] p-6 rounded-[2rem] border border-[#1b5e35] shadow-2xl flex flex-col items-center max-w-sm w-full relative print:border-none print:shadow-none print:p-0 print:bg-white print:w-full print:max-w-none">
         
@@ -289,10 +288,10 @@ const TicketPreviewModal = ({ type, data, settings, onClose, showToast }) => {
         <div className="bg-white text-black font-mono w-full p-4 print:p-0 rounded shadow-inner text-sm leading-snug relative overflow-hidden print:shadow-none print:overflow-visible">
            
            <div className="text-center font-bold mb-2">
-              {/* BUG FIX LOGO PRINT: Dihapus filter grayscale mix-blend & ditambahkan inline-style agar Android Spooler bisa membacanya */}
-              {settings?.ticket?.logoUrl && (
+              {/* MENGGUNAKAN 1 MASTER LOGO DARI WEB SETTINGS */}
+              {settings?.web?.logoUrl && (
                  <div className="flex justify-center mb-1">
-                    <img src={settings.ticket.logoUrl} alt="Logo" className="mx-auto" style={{ display: 'block', maxHeight: '48px', width: 'auto' }} />
+                    <img src={settings.web.logoUrl} alt="Logo" className="mx-auto" style={{ display: 'block', maxHeight: '48px', width: 'auto' }} />
                  </div>
               )}
               
@@ -1926,41 +1925,31 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
   const [targetLokasi, setTargetLokasi] = useState(user.lokasi === 'All Lokasi' ? PURE_LOCATIONS[0] : user.lokasi);
   const [localTariff, setLocalTariff] = useState(getLocSettings(settings, targetLokasi).tariffs || DEFAULT_LOCATION_SETTINGS.tariffs);
 
-  // Kuncian per jenis kendaraan untuk mencegah salah tekan
-  const [locked, setLocked] = useState({
-     'Motor': true,
-     'Mobil': true,
-     'Box/Truck': true,
-     'Sepeda/Becak': true
-  });
+  // STATE BARU: Indikator field diedit dan belum disave
+  const [dirty, setDirty] = useState({ 'Motor': false, 'Mobil': false, 'Box/Truck': false, 'Sepeda/Becak': false });
 
-  // BUG FIX TARIFF RESET: Efek ini hanya akan me-replace input lokal dengan data DB 
-  // JIKA kolom tersebut statusnya sedang TERKUNCI (bukan sedang di-edit oleh user)
+  // Hanya perbarui dari database JIKA user belum mengedit kolom kendaraan tersebut (dirty = false)
   useEffect(() => { 
      const dbTariff = getLocSettings(settings, targetLokasi).tariffs || DEFAULT_LOCATION_SETTINGS.tariffs;
      setLocalTariff(prev => {
          const nextState = { ...prev };
          Object.keys(dbTariff).forEach(jenis => {
-             // Hanya timpa dari DB jika kuncinya aktif (user tidak sedang mengetik)
-             if (locked[jenis]) {
+             if (!dirty[jenis]) {
                  nextState[jenis] = dbTariff[jenis];
              }
          });
          return nextState;
      });
-  }, [settings, targetLokasi, locked]); 
+  }, [settings, targetLokasi, dirty]); 
 
-  // Reset kuncian saat ganti target lokasi di dropdown atas
+  // Bersihkan indikator saat ganti target lokasi di dropdown atas
   useEffect(() => {
-     setLocked({ 'Motor': true, 'Mobil': true, 'Box/Truck': true, 'Sepeda/Becak': true });
+     setDirty({ 'Motor': false, 'Mobil': false, 'Box/Truck': false, 'Sepeda/Becak': false });
   }, [targetLokasi]);
 
   const updateTariff = (jenis, field, val) => {
+    setDirty(prev => ({ ...prev, [jenis]: true }));
     setLocalTariff(prev => ({ ...prev, [jenis]: { ...prev[jenis], [field]: field === 'mode' || typeof val === 'boolean' ? val : Number(val) } }));
-  };
-
-  const toggleEdit = (jenis) => {
-     setLocked(prev => ({ ...prev, [jenis]: false }));
   };
 
   const handleSaveJenis = (jenis) => {
@@ -1975,10 +1964,8 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
          } 
      };
      
-     // Set state ke DB
      setSettings({ ...settings, locations: newLocations });
-     // Kunci kembali untuk memicu useEffect sinkronisasi
-     setLocked(prev => ({ ...prev, [jenis]: true }));
+     setDirty(prev => ({ ...prev, [jenis]: false })); // Hapus indikator edit
      showToast(`Tarif ${jenis} di lokasi ${targetLokasi} berhasil disimpan!`);
   };
 
@@ -1995,73 +1982,65 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
 
       <div className="space-y-6">
         {Object.keys(localTariff).map(jenis => (
-          <div key={jenis} className={`border ${locked[jenis] ? 'border-[#1b5e35]' : 'border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.15)]'} rounded-2xl p-5 bg-[#092613] transition-all duration-300`}>
+          <div key={jenis} className={`border ${dirty[jenis] ? 'border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.15)]' : 'border-[#1b5e35]'} rounded-2xl p-5 bg-[#092613] transition-all duration-300`}>
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
               <div className="flex items-center gap-3">
                  <h4 className="font-bold text-lg text-white border-b-2 border-green-500 pb-1">{jenis}</h4>
-                 {locked[jenis] ? (
-                     <span className="bg-[#114022] text-green-500 border border-[#1b5e35] text-[10px] px-2 py-1 rounded font-bold uppercase flex items-center gap-1"><Lock size={12}/> Terkunci</span>
-                 ) : (
-                     <span className="bg-amber-900/50 text-amber-400 border border-amber-500/50 text-[10px] px-2 py-1 rounded font-bold uppercase flex items-center gap-1"><Settings size={12}/> Mode Edit Aktif</span>
+                 {dirty[jenis] && (
+                     <span className="bg-amber-900/50 text-amber-400 border border-amber-500/50 text-[10px] px-2 py-1 rounded font-bold uppercase flex items-center gap-1"><Settings size={12}/> Belum Disimpan</span>
                  )}
               </div>
               <div className="flex bg-[#114022] rounded-xl p-1 border border-[#1b5e35]">
-                 <button disabled={isReadOnly || locked[jenis]} onClick={() => updateTariff(jenis, 'mode', 'progressif')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed ${localTariff[jenis].mode === 'progressif' ? 'bg-green-600 text-white shadow-sm' : 'text-green-300/50 hover:text-white'}`}>Progressif</button>
-                 <button disabled={isReadOnly || locked[jenis]} onClick={() => updateTariff(jenis, 'mode', 'flat')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed ${localTariff[jenis].mode === 'flat' ? 'bg-green-600 text-white shadow-sm' : 'text-green-300/50 hover:text-white'}`}>Flat</button>
+                 <button disabled={isReadOnly} onClick={() => updateTariff(jenis, 'mode', 'progressif')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed ${localTariff[jenis].mode === 'progressif' ? 'bg-green-600 text-white shadow-sm' : 'text-green-300/50 hover:text-white'}`}>Progressif</button>
+                 <button disabled={isReadOnly} onClick={() => updateTariff(jenis, 'mode', 'flat')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed ${localTariff[jenis].mode === 'flat' ? 'bg-green-600 text-white shadow-sm' : 'text-green-300/50 hover:text-white'}`}>Flat</button>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
               <div>
                 <label className="block text-xs text-green-200/70 mb-1">Jam Pertama (Rp)</label>
-                <input disabled={isReadOnly || locked[jenis]} type="number" value={localTariff[jenis].first} onChange={e => updateTariff(jenis, 'first', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" />
+                <input disabled={isReadOnly} type="number" value={localTariff[jenis].first} onChange={e => updateTariff(jenis, 'first', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" />
               </div>
               <div className={localTariff[jenis].mode === 'flat' ? 'opacity-50 pointer-events-none' : ''}>
                 <label className="block text-xs text-green-200/70 mb-1">Durasi Awal</label>
-                <select disabled={isReadOnly || locked[jenis]} value={localTariff[jenis].firstDuration} onChange={e => updateTariff(jenis, 'firstDuration', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                <select disabled={isReadOnly} value={localTariff[jenis].firstDuration} onChange={e => updateTariff(jenis, 'firstDuration', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                   {[...Array(24).keys()].map(i => <option key={i+1} value={i+1}>{i+1} Jam</option>)}
                 </select>
               </div>
               <div className={localTariff[jenis].mode === 'flat' ? 'opacity-50 pointer-events-none' : ''}>
                 <label className="block text-xs text-green-200/70 mb-1">Jam Berikutnya (Rp)</label>
-                <input disabled={isReadOnly || locked[jenis]} type="number" value={localTariff[jenis].next} onChange={e => updateTariff(jenis, 'next', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" />
+                <input disabled={isReadOnly} type="number" value={localTariff[jenis].next} onChange={e => updateTariff(jenis, 'next', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" />
               </div>
               <div className={localTariff[jenis].mode === 'flat' ? 'opacity-50 pointer-events-none' : ''}>
                 <label className="block text-xs text-green-200/70 mb-1">Tarif Maksimal (Rp)</label>
-                <input disabled={isReadOnly || locked[jenis]} type="number" value={localTariff[jenis].max} onChange={e => updateTariff(jenis, 'max', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" />
+                <input disabled={isReadOnly} type="number" value={localTariff[jenis].max} onChange={e => updateTariff(jenis, 'max', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" />
               </div>
               <div className={localTariff[jenis].mode === 'flat' ? 'opacity-50 pointer-events-none' : ''}>
                 <label className="block text-xs text-green-200/70 mb-1">Tarif Inap/Hari (Rp)</label>
-                <input disabled={isReadOnly || locked[jenis]} type="number" value={localTariff[jenis].inap} onChange={e => updateTariff(jenis, 'inap', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" />
+                <input disabled={isReadOnly} type="number" value={localTariff[jenis].inap} onChange={e => updateTariff(jenis, 'inap', e.target.value)} className="w-full bg-[#114022] border border-[#1b5e35] rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" />
               </div>
             </div>
 
             <div className="mt-4 pt-4 border-t border-[#1b5e35] flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                <div className="flex items-center gap-4">
-                   <label className={`flex items-center gap-2 text-sm cursor-pointer ${locked[jenis] ? 'text-green-200/40' : 'text-green-200/70'}`}>
-                      <input type="checkbox" disabled={isReadOnly || locked[jenis]} checked={localTariff[jenis].gracePeriodActive} onChange={e => updateTariff(jenis, 'gracePeriodActive', e.target.checked)} className="rounded accent-amber-500 w-4 h-4 disabled:opacity-50 disabled:cursor-not-allowed" />
+                   <label className="flex items-center gap-2 text-sm cursor-pointer text-green-200/70">
+                      <input type="checkbox" disabled={isReadOnly} checked={localTariff[jenis].gracePeriodActive} onChange={e => updateTariff(jenis, 'gracePeriodActive', e.target.checked)} className="rounded accent-amber-500 w-4 h-4 disabled:opacity-50 disabled:cursor-not-allowed" />
                       Aktifkan Grace Periode
                    </label>
                    {localTariff[jenis].gracePeriodActive && (
                       <div className="flex items-center gap-2 animate-in fade-in">
-                         <span className={`text-xs ${locked[jenis] ? 'text-green-200/40' : 'text-green-200/70'}`}>Berapa menit?</span>
-                         <input disabled={isReadOnly || locked[jenis]} type="number" value={localTariff[jenis].gracePeriodMinutes} onChange={e => updateTariff(jenis, 'gracePeriodMinutes', e.target.value)} className="w-20 bg-[#114022] border border-[#1b5e35] rounded-lg px-2 py-1 text-sm text-white outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" />
+                         <span className="text-xs text-green-200/70">Berapa menit?</span>
+                         <input disabled={isReadOnly} type="number" value={localTariff[jenis].gracePeriodMinutes} onChange={e => updateTariff(jenis, 'gracePeriodMinutes', e.target.value)} className="w-20 bg-[#114022] border border-[#1b5e35] rounded-lg px-2 py-1 text-sm text-white outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" />
                       </div>
                    )}
                </div>
 
-               {/* TOMBOL KUNCI / SIMPAN PER JENIS */}
+               {/* TOMBOL SIMPAN PER JENIS */}
                <div className="w-full md:w-auto flex justify-end">
                    {!isReadOnly && (
-                       locked[jenis] ? (
-                           <button onClick={() => toggleEdit(jenis)} className="w-full md:w-auto bg-[#114022] border border-[#1b5e35] hover:bg-[#164d2b] text-white px-4 py-2 rounded-xl text-xs font-bold flex justify-center items-center gap-2 transition-all">
-                               <Lock size={14}/> Buka Kunci Edit
-                           </button>
-                       ) : (
-                           <button onClick={() => handleSaveJenis(jenis)} className="w-full md:w-auto bg-amber-600 hover:bg-amber-500 text-white px-5 py-2 rounded-xl text-xs font-bold flex justify-center items-center gap-2 shadow-lg shadow-amber-600/20 transition-all animate-in zoom-in-95">
-                               <CheckCircle2 size={16}/> Simpan & Kunci {jenis}
-                           </button>
-                       )
+                      <button onClick={() => handleSaveJenis(jenis)} className={`w-full md:w-auto px-5 py-2 rounded-xl text-xs font-bold flex justify-center items-center gap-2 shadow-lg transition-all ${dirty[jenis] ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/20' : 'bg-[#114022] text-green-500 border border-[#1b5e35]'}`}>
+                         <CheckCircle2 size={16}/> {dirty[jenis] ? `Simpan Perubahan ${jenis}` : `Tarif ${jenis} Tersimpan`}
+                      </button>
                    )}
                </div>
             </div>
@@ -2158,7 +2137,7 @@ function SettingMember({ settings, setSettings, isReadOnly, user, showToast }) {
   );
 }
 
-// Sub-Setting: Web & Printer 
+// Sub-Setting: Web & Printer (SEKARANG MENJADI PENGATURAN LOGO UTAMA)
 function SettingWeb({ settings, setSettings, isReadOnly, showToast }) {
   const [form, setForm] = useState(settings.web || DEFAULT_SETTINGS.web);
   
@@ -2166,7 +2145,7 @@ function SettingWeb({ settings, setSettings, isReadOnly, showToast }) {
     processImageFile(e.target.files[0], (data) => setForm({...form, logoUrl: data}));
   };
 
-  const handleSave = (e) => { e.preventDefault(); setSettings({ ...settings, web: form }); showToast("Pengaturan Web Tersimpan!"); };
+  const handleSave = (e) => { e.preventDefault(); setSettings({ ...settings, web: form }); showToast("Pengaturan Web & Logo Tersimpan!"); };
 
   return (
     <form onSubmit={handleSave} className="space-y-6">
@@ -2182,12 +2161,12 @@ function SettingWeb({ settings, setSettings, isReadOnly, showToast }) {
       </div>
 
       <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35] flex flex-col items-center text-center">
-        <p className="text-sm font-bold text-green-200/70 mb-4 uppercase">Logo Perusahaan</p>
+        <p className="text-sm font-bold text-green-200/70 mb-4 uppercase">Master Logo Perusahaan (Tampil di Web & Cetakan Struk)</p>
         <img src={form.logoUrl} alt="Logo" className="h-20 bg-white/10 rounded-xl px-4 py-2 mb-4 object-contain" />
         {!isReadOnly && (
           <div>
             <input type="file" id="upload-logo" accept="image/*" className="hidden" onChange={handleLogoUpload} />
-            <label htmlFor="upload-logo" className="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-6 rounded-xl cursor-pointer inline-flex items-center gap-2"><UploadCloud size={16}/> Upload Logo</label>
+            <label htmlFor="upload-logo" className="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-6 rounded-xl cursor-pointer inline-flex items-center gap-2"><UploadCloud size={16}/> Upload Master Logo</label>
           </div>
         )}
       </div>
@@ -2204,16 +2183,10 @@ function SettingWeb({ settings, setSettings, isReadOnly, showToast }) {
   );
 }
 
-// Sub-Setting: Setting Struk / Tiket Parkir
+// Sub-Setting: Setting Struk / Tiket Parkir (HANYA MENGATUR TEKS)
 function SettingTiket({ settings, setSettings, isReadOnly, showToast }) {
-  const defaultTicketSettings = { title: 'Sistem Device Portable', subtitle: '', footerIn: 'SIMPAN TIKET INI', footerOut: 'TERIMA KASIH', logoUrl: '' };
+  const defaultTicketSettings = { title: 'Sistem Device Portable', subtitle: '', footerIn: 'SIMPAN TIKET INI', footerOut: 'TERIMA KASIH' };
   const [form, setForm] = useState(settings.ticket || defaultTicketSettings);
-
-  const handleLogoUpload = (e) => {
-    processImageFile(e.target.files[0], (data) => setForm({...form, logoUrl: data}));
-  };
-
-  const handleRemoveLogo = () => setForm({...form, logoUrl: ''});
 
   const handleSave = (e) => {
      e.preventDefault();
@@ -2225,26 +2198,7 @@ function SettingTiket({ settings, setSettings, isReadOnly, showToast }) {
     <form onSubmit={handleSave} className="space-y-6">
       <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35]">
          <h4 className="font-bold text-white mb-2 uppercase text-sm flex items-center gap-2"><Printer size={18} className="text-teal-400"/> Editor Konten Struk</h4>
-         <p className="text-xs text-green-200/70 leading-relaxed mb-4">Sesuaikan teks Header, Footer, dan Logo khusus untuk cetakan tiket masuk dan struk keluar (berlaku untuk print bluetooth dan preview).</p>
-      </div>
-
-      <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35] flex flex-col items-center text-center">
-        <p className="text-sm font-bold text-green-200/70 mb-4 uppercase">Logo Pada Struk (Mode Thermal)</p>
-        {form.logoUrl ? (
-           <div className="relative inline-block">
-              {/* Dihapus filter aneh agar lebih netral terlihat */}
-              <img src={form.logoUrl} alt="Logo Struk" className="h-24 bg-white rounded-xl px-4 py-2 mb-4 object-contain" />
-              {!isReadOnly && <button type="button" onClick={handleRemoveLogo} className="absolute -top-2 -right-2 bg-red-600 rounded-full p-1 text-white hover:bg-red-500 shadow-md"><X size={14}/></button>}
-           </div>
-        ) : (
-           <div className="h-24 w-24 bg-[#114022] rounded-xl mb-4 border border-[#1b5e35] flex items-center justify-center text-green-300/30"><FileImage size={32}/></div>
-        )}
-        {!isReadOnly && (
-          <div>
-            <input type="file" id="upload-logo-tiket" accept="image/*" className="hidden" onChange={handleLogoUpload} />
-            <label htmlFor="upload-logo-tiket" className="bg-teal-600 hover:bg-teal-500 text-white font-bold py-2 px-6 rounded-xl cursor-pointer inline-flex items-center gap-2"><UploadCloud size={16}/> Upload Logo Struk</label>
-          </div>
-        )}
+         <p className="text-xs text-green-200/70 leading-relaxed mb-4">Sesuaikan teks Header dan Footer khusus untuk cetakan tiket masuk dan struk keluar (berlaku untuk print bluetooth dan preview). <b>Catatan: Logo struk mengambil dari menu Web & Printer.</b></p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
