@@ -55,7 +55,7 @@ const printDirectBluetooth = (type, data, settings) => {
     const divider = '-'.repeat(32);
 
     let text = '';
-    text += center("PARKIR TERPADU") + '\n';
+    text += center("Sistem Device Portable") + '\n';
     text += center(loc) + '\n';
     text += divider + '\n';
     
@@ -274,9 +274,12 @@ const TicketPreviewModal = ({ type, data, settings, onClose }) => {
 
         {/* Simulasi Kertas Karcis Thermal */}
         <div className="bg-white text-black font-mono w-full p-4 rounded shadow-inner text-sm leading-snug relative overflow-hidden">
-           <div className="text-center font-bold mb-2">
-              <p>PARKIR TERPADU</p>
+           <div className="relative text-center font-bold mb-2 min-h-[36px]">
+              <p>Sistem Device Portable</p>
               <p className="text-xs">{data.lokasi}</p>
+              {settings?.web?.logoUrl && (
+                 <img src={settings.web.logoUrl} alt="Logo" className="absolute -top-1 -right-1 h-9 w-9 object-contain grayscale mix-blend-multiply" />
+              )}
            </div>
            <div className="border-b-2 border-dashed border-black/50 mb-2"></div>
            <div className="text-center font-bold mb-2">{type === 'IN' ? 'TIKET MASUK' : 'STRUK KELUAR'}</div>
