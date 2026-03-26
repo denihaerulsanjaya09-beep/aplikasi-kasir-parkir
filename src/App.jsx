@@ -405,7 +405,7 @@ export default function App() {
 
   const handleAddTransaction = async (newTx) => {
     if (!fbUser) return;
-    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', newTx.id), { ...newTx, waktuMasuk: newTx.waktuMasuk.toISOString(), waktuKeluar: null });
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', newTx.id), { ...newTx, waktuMasuk: newTx.waktuMasuk.toISOString(), waktuKeluar: newTx.waktuKeluar ? newTx.waktuKeluar.toISOString() : null });
   };
 
   const handleUpdateTransaction = async (id, updateData) => {
@@ -595,7 +595,7 @@ export default function App() {
         {canTransact && activeTab === 'masuk' && <KendaraanMasuk user={user} addTransaction={handleAddTransaction} showToast={showToast} settings={settings} setTicketPreview={setTicketPreview} />}
         {canTransact && activeTab === 'keluar' && <KendaraanKeluar user={user} transactions={transactions} updateTransaction={handleUpdateTransaction} settings={settings} showToast={showToast} setTicketPreview={setTicketPreview} />}
         {canViewArea && activeTab === 'area' && <KendaraanArea transactions={transactions} user={user} />}
-        {hasSettingsAccess && activeTab === 'settings' && <MasterSettings settings={settings} setSettings={handleUpdateSettings} user={user} transactions={transactions} updateTransaction={handleUpdateTransaction} showToast={showToast} setConfirmDialog={setConfirmDialog} />}
+        {hasSettingsAccess && activeTab === 'settings' && <MasterSettings settings={settings} setSettings={handleUpdateSettings} user={user} transactions={transactions} addTransaction={handleAddTransaction} updateTransaction={handleUpdateTransaction} showToast={showToast} setConfirmDialog={setConfirmDialog} />}
       </main>
 
       {/* Bottom Nav */}
@@ -1050,7 +1050,7 @@ function KendaraanArea({ transactions, user }) {
 }
 
 // --- MASTER SETTINGS & LAPORAN ---
-function MasterSettings({ settings, setSettings, user, transactions, updateTransaction, showToast, setConfirmDialog }) {
+function MasterSettings({ settings, setSettings, user, transactions, addTransaction, updateTransaction, showToast, setConfirmDialog }) {
   const [activeSetTab, setActiveSetTab] = useState('laporan');
   const isReadOnly = user.role !== 'master';
 
@@ -1073,6 +1073,9 @@ function MasterSettings({ settings, setSettings, user, transactions, updateTrans
         {user.role === 'master' && <button onClick={() => setActiveSetTab('users')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'users' ? 'bg-blue-600 text-white' : 'bg-[#114022] text-blue-400 hover:bg-[#164d2b]'}`}>Manajemen User</button>}
         <button onClick={() => setActiveSetTab('tiket')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'tiket' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Struk/Tiket Parkir</button>
         <button onClick={() => setActiveSetTab('web')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'web' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Web & Printer</button>
+        {(user.role === 'master' || user.role === 'korlap') && (
+           <button onClick={() => setActiveSetTab('manual')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'manual' ? 'bg-orange-600 text-white shadow-md' : 'bg-[#114022] text-orange-400 hover:bg-[#164d2b]'}`}>Setoran Manual</button>
+        )}
       </div>
 
       <div className="bg-[#114022] rounded-[2.5rem] p-8 shadow-2xl border border-[#1b5e35] print-a4-layout">
@@ -1084,8 +1087,83 @@ function MasterSettings({ settings, setSettings, user, transactions, updateTrans
         {activeSetTab === 'users' && user.role === 'master' && <SettingUser settings={settings} setSettings={setSettings} showToast={showToast} />}
         {activeSetTab === 'tiket' && <SettingTiket settings={settings} setSettings={setSettings} isReadOnly={isReadOnly} showToast={showToast} />}
         {activeSetTab === 'web' && <SettingWeb settings={settings} setSettings={setSettings} isReadOnly={isReadOnly} showToast={showToast} />}
+        {activeSetTab === 'manual' && (user.role === 'master' || user.role === 'korlap') && <SettingSetoranManual user={user} addTransaction={addTransaction} showToast={showToast} />}
       </div>
     </div>
+  );
+}
+
+// Sub-Setting: Setoran Manual
+function SettingSetoranManual({ user, addTransaction, showToast }) {
+  const [form, setForm] = useState({ motor: '', mobil: '', box: '', sepeda: '', nominal: '' });
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const nominalInt = parseInt(String(form.nominal).replace(/[^0-9]/g, ''), 10);
+    if (isNaN(nominalInt) || nominalInt <= 0) return showToast("Nominal wajib diisi dan lebih dari 0!", "error");
+
+    const newTx = {
+      id: `manual_${Date.now()}`,
+      isManual: true,
+      nopol: 'MANUAL',
+      jenis: 'Manual Backup',
+      waktuMasuk: new Date(),
+      waktuKeluar: new Date(),
+      status: 'OUT',
+      lokasi: user.lokasi === 'All Lokasi' ? PURE_LOCATIONS[0] : user.lokasi,
+      kasirMasuk: user.nama,
+      kasirKeluar: user.nama,
+      totalBiaya: nominalInt,
+      durasiJam: 1,
+      durasiText: 'Input Manual',
+      details: {
+        'Motor': parseInt(form.motor) || 0,
+        'Mobil': parseInt(form.mobil) || 0,
+        'Box/Truck': parseInt(form.box) || 0,
+        'Sepeda/Becak': parseInt(form.sepeda) || 0
+      }
+    };
+
+    await addTransaction(newTx);
+    showToast("Setoran Manual Berhasil Disimpan & Masuk Ke Pendapatan!");
+    setForm({ motor: '', mobil: '', box: '', sepeda: '', nominal: '' });
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6 animate-in fade-in">
+      <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35]">
+         <h4 className="font-bold text-white mb-2 uppercase text-sm flex items-center gap-2"><Database size={18} className="text-orange-400"/> Input Pendapatan Manual (Backup)</h4>
+         <p className="text-xs text-green-200/70 leading-relaxed mb-4">Gunakan form ini hanya jika terjadi gangguan sistem/jaringan. Pendapatan ini akan otomatis masuk ke laporan akhir shift Anda dengan status khusus "Pendapatan Manual".</p>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+         <div>
+            <label className="block text-xs font-bold text-green-200/70 ml-2 mb-2 uppercase tracking-wider">Qty Motor</label>
+            <input type="number" min="0" value={form.motor} onChange={e => setForm({...form, motor: e.target.value})} placeholder="0" className="w-full bg-[#092613] border border-[#1b5e35] rounded-xl px-4 py-3 text-white outline-none focus:border-orange-500" />
+         </div>
+         <div>
+            <label className="block text-xs font-bold text-green-200/70 ml-2 mb-2 uppercase tracking-wider">Qty Mobil</label>
+            <input type="number" min="0" value={form.mobil} onChange={e => setForm({...form, mobil: e.target.value})} placeholder="0" className="w-full bg-[#092613] border border-[#1b5e35] rounded-xl px-4 py-3 text-white outline-none focus:border-orange-500" />
+         </div>
+         <div>
+            <label className="block text-xs font-bold text-green-200/70 ml-2 mb-2 uppercase tracking-wider">Qty Box/Truck</label>
+            <input type="number" min="0" value={form.box} onChange={e => setForm({...form, box: e.target.value})} placeholder="0" className="w-full bg-[#092613] border border-[#1b5e35] rounded-xl px-4 py-3 text-white outline-none focus:border-orange-500" />
+         </div>
+         <div>
+            <label className="block text-xs font-bold text-green-200/70 ml-2 mb-2 uppercase tracking-wider">Qty Sepeda/Becak</label>
+            <input type="number" min="0" value={form.sepeda} onChange={e => setForm({...form, sepeda: e.target.value})} placeholder="0" className="w-full bg-[#092613] border border-[#1b5e35] rounded-xl px-4 py-3 text-white outline-none focus:border-orange-500" />
+         </div>
+      </div>
+
+      <div>
+         <label className="block text-sm font-bold text-green-200/70 ml-2 mb-2 uppercase tracking-wider">Total Nominal Rupiah (Rp)</label>
+         <input type="number" min="1" required value={form.nominal} onChange={e => setForm({...form, nominal: e.target.value})} placeholder="Cth: 150000" className="w-full bg-[#092613] border-2 border-orange-500/50 rounded-[1.5rem] px-5 py-4 text-2xl font-black text-white outline-none focus:border-orange-500" />
+      </div>
+
+      <button type="submit" className="w-full bg-orange-600 text-white font-black rounded-[1.5rem] px-6 py-4 shadow-xl hover:bg-orange-500 transition-all flex justify-center items-center gap-2 text-lg">
+         <CheckCircle2 size={24}/> Simpan Pendapatan Manual
+      </button>
+    </form>
   );
 }
 
@@ -1168,20 +1246,38 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
   const breakdown = { 'Motor': { qty: 0, nominal: 0 }, 'Mobil': { qty: 0, nominal: 0 }, 'Box/Truck': { qty: 0, nominal: 0 }, 'Sepeda/Becak': { qty: 0, nominal: 0 } };
   const durasiStats = { '1 Jam Awal': 0, '2 sd 5 Jam': 0, '6 sd 12 Jam': 0, '13 sd 24 Jam': 0, '> 24 Jam': 0 };
 
+  let hasManual = false;
+  let manualTotalQty = 0;
+  let manualTotalNominal = 0;
+
   completedTx.forEach(tx => {
-     if (tx.jenis && breakdown[tx.jenis] !== undefined) { 
+     if (tx.isManual) {
+         hasManual = true;
+         manualTotalQty += (tx.details?.['Motor'] || 0) + (tx.details?.['Mobil'] || 0) + (tx.details?.['Box/Truck'] || 0) + (tx.details?.['Sepeda/Becak'] || 0);
+         manualTotalNominal += (tx.totalBiaya || 0);
+     } else if (tx.jenis && breakdown[tx.jenis] !== undefined) { 
          breakdown[tx.jenis].qty += 1; 
          breakdown[tx.jenis].nominal += tx.totalBiaya || 0; 
      }
-     const jam = tx.durasiJam || 1;
-     if (jam <= 1) durasiStats['1 Jam Awal'] += 1;
-     else if (jam <= 5) durasiStats['2 sd 5 Jam'] += 1;
-     else if (jam <= 12) durasiStats['6 sd 12 Jam'] += 1;
-     else if (jam <= 24) durasiStats['13 sd 24 Jam'] += 1;
-     else durasiStats['> 24 Jam'] += 1;
+
+     // Durasi parkir tidak dihitung untuk transaksi manual
+     if (!tx.isManual) {
+        const jam = tx.durasiJam || 1;
+        if (jam <= 1) durasiStats['1 Jam Awal'] += 1;
+        else if (jam <= 5) durasiStats['2 sd 5 Jam'] += 1;
+        else if (jam <= 12) durasiStats['6 sd 12 Jam'] += 1;
+        else if (jam <= 24) durasiStats['13 sd 24 Jam'] += 1;
+        else durasiStats['> 24 Jam'] += 1;
+     }
   });
 
-  const totalQtySelesai = completedTx.length;
+  // Tambahkan data manual ke table breakdown jika ada
+  if (hasManual) {
+      breakdown['Pendapatan Manual (Backup)'] = { qty: manualTotalQty, nominal: manualTotalNominal };
+  }
+
+  // Hitung total unit kendaraan yang dihitung
+  const totalQtySelesai = Object.values(breakdown).reduce((sum, item) => sum + item.qty, 0);
 
   const requestCleanDatabase = () => {
     setConfirmDialog({
@@ -1334,7 +1430,7 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
                      <thead><tr className="text-green-200/70 print:text-black"><th className="py-2">Jenis Kendaraan</th><th className="py-2 text-center">Total Qty</th><th className="py-2 text-right">Nominal (Rp)</th></tr></thead>
                      <tbody className="text-white print:text-black">
                         {Object.keys(breakdown).map(jenis => (
-                           <tr key={jenis} className="border-b border-[#1b5e35]/50 print:border-gray-400">
+                           <tr key={jenis} className={`border-b border-[#1b5e35]/50 print:border-gray-400 ${jenis === 'Pendapatan Manual (Backup)' ? 'text-orange-400' : ''}`}>
                               <td className="py-2">{jenis}</td><td className="py-2 text-center font-bold text-teal-400 print:text-black">{breakdown[jenis].qty}</td><td className="py-2 text-right font-bold text-green-400 print:text-black">{breakdown[jenis].nominal.toLocaleString('id-ID')}</td>
                            </tr>
                         ))}
@@ -1347,7 +1443,7 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
                   <div className="space-y-4 print:space-y-3 mt-2">
                      {Object.keys(durasiStats).map(rentang => {
                         const count = durasiStats[rentang];
-                        const persentase = totalQtySelesai > 0 ? ((count / totalQtySelesai) * 100).toFixed(1) : 0;
+                        const persentase = (totalQtySelesai - manualTotalQty) > 0 ? ((count / (totalQtySelesai - manualTotalQty)) * 100).toFixed(1) : 0;
                         return (
                            <div key={rentang} className="relative">
                               <div className="flex justify-between text-xs print:text-xs font-bold text-green-100 mb-1 print:text-black"><span>{rentang}</span><span className="text-teal-400 print:text-black">{count} Unit ({persentase}%)</span></div>
@@ -1391,12 +1487,12 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
                      <tr key={tx.id} className="hover:bg-[#114022] print:bg-transparent border-b border-[#1b5e35]/50 transition-colors">
                        <td className="p-2 text-center text-green-200/70 print:text-black">{i+1}</td>
                        <td className="p-2 font-bold">{tx.nopol}</td>
-                       <td className="p-2">{tx.jenis}</td>
+                       <td className={`p-2 ${tx.isManual ? 'text-orange-400 font-bold' : ''}`}>{tx.jenis}</td>
                        <td className="p-2 text-center">
                           {tx.status === 'IN' ? (
                             <span className="bg-amber-900/50 text-amber-400 print:bg-transparent print:text-black print:font-bold px-2 py-0.5 rounded text-[10px]">Di Area</span>
                           ) : (
-                            <span className="bg-green-900/50 text-green-400 print:bg-transparent print:text-black px-2 py-0.5 rounded text-[10px]">Selesai</span>
+                            <span className={`${tx.isManual ? 'bg-orange-900/50 text-orange-400' : 'bg-green-900/50 text-green-400'} print:bg-transparent print:text-black px-2 py-0.5 rounded text-[10px]`}>{tx.isManual ? 'Manual Backup' : 'Selesai'}</span>
                           )}
                        </td>
                        <td className="p-2">{tx.waktuMasuk.toLocaleString('id-ID')}</td>
@@ -1440,14 +1536,14 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
                <thead><tr className="bg-[#0c331a] text-green-300/70 text-xs uppercase"><th className="p-4 border-b border-[#1b5e35]">Nopol</th><th className="p-4 border-b border-[#1b5e35]">Waktu</th><th className="p-4 border-b border-[#1b5e35]">Foto Masuk vs Keluar</th><th className="p-4 border-b border-[#1b5e35]">Biaya</th></tr></thead>
                <tbody>
                  {completedTx.slice().reverse().map(tx => (
-                   <tr key={tx.id} className="hover:bg-[#114022] border-b border-[#1b5e35]/50 text-sm transition-colors text-white">
-                     <td className="p-4 font-bold">{tx.nopol} <span className="block text-xs text-green-400/50 mt-1">{tx.jenis}</span></td>
+                   <tr key={tx.id} className={`hover:bg-[#114022] border-b border-[#1b5e35]/50 text-sm transition-colors text-white ${tx.isManual ? 'bg-orange-900/10' : ''}`}>
+                     <td className="p-4 font-bold">{tx.nopol} <span className={`block text-xs mt-1 ${tx.isManual ? 'text-orange-400' : 'text-green-400/50'}`}>{tx.jenis}</span></td>
                      <td className="p-4 text-xs text-green-200/70"><p>IN: {tx.waktuMasuk.toLocaleString('id-ID')}</p><p>OUT: {tx.waktuKeluar.toLocaleString('id-ID')}</p></td>
                      <td className="p-4 flex gap-2">
                         {tx.fotoMasuk ? <img src={tx.fotoMasuk} onClick={()=>setZoomImg(tx.fotoMasuk)} className="w-16 h-12 object-cover rounded cursor-pointer border border-[#1b5e35]" alt="In"/> : <div className="w-16 h-12 bg-black/50 border border-[#1b5e35] rounded flex items-center justify-center text-[8px] text-green-200/30">N/A</div>}
                         {tx.fotoKeluar ? <img src={tx.fotoKeluar} onClick={()=>setZoomImg(tx.fotoKeluar)} className="w-16 h-12 object-cover rounded cursor-pointer border border-[#1b5e35]" alt="Out"/> : <div className="w-16 h-12 bg-black/50 border border-[#1b5e35] rounded flex items-center justify-center text-[8px] text-green-200/30">N/A</div>}
                      </td>
-                     <td className="p-4 font-bold text-green-400">Rp {tx.totalBiaya.toLocaleString('id-ID')} {tx.tiketHilang && <span className="text-red-500 block text-xs">(Denda Hilang Tiket)</span>}</td>
+                     <td className="p-4 font-bold text-green-400">Rp {tx.totalBiaya.toLocaleString('id-ID')} {tx.tiketHilang && <span className="text-red-500 block text-xs">(Denda Hilang Tiket)</span>} {tx.isManual && <span className="text-orange-400 block text-xs">(Backup Sistem)</span>}</td>
                    </tr>
                  ))}
                </tbody>
@@ -1565,7 +1661,7 @@ function RekapanLaporan({ transactions, user, settings }) {
     completed.forEach(t => {
       const wMasuk = t.waktuMasuk ? t.waktuMasuk.toLocaleString('id-ID').replace(/,/g, '') : '-';
       const wKeluar = t.waktuKeluar ? t.waktuKeluar.toLocaleString('id-ID').replace(/,/g, '') : '-';
-      const row = [t.id, t.lokasi, t.nopol, t.jenis, t.status, wMasuk, wKeluar, t.durasiText || '-', t.totalBiaya || 0, t.kasirKeluar || '-', t.tiketHilang ? 'YA' : 'TIDAK'].map(v => `"${v}"`).join(",");
+      const row = [t.id, t.lokasi, t.nopol, t.isManual ? 'Manual Backup' : t.jenis, t.status, wMasuk, wKeluar, t.durasiText || '-', t.totalBiaya || 0, t.kasirKeluar || '-', t.tiketHilang ? 'YA' : 'TIDAK'].map(v => `"${v}"`).join(",");
       csvContent += row + "\n";
     });
     const link = document.createElement("a");
@@ -1660,7 +1756,7 @@ function RekapanLaporan({ transactions, user, settings }) {
                    <tr key={tx.id} className="hover:bg-[#114022] print:bg-transparent border-b border-[#1b5e35]/50 transition-colors">
                       <td className="p-2 text-teal-400 print:text-black font-bold">{tx.lokasi}</td>
                       <td className="p-2 font-bold">{tx.nopol}</td>
-                      <td className="p-2">{tx.jenis}</td>
+                      <td className={`p-2 ${tx.isManual ? 'text-orange-400 font-bold' : ''}`}>{tx.isManual ? 'Manual Backup' : tx.jenis}</td>
                       <td className="p-2 text-green-200/70 print:text-black">{tx.waktuKeluar.toLocaleString('id-ID')}</td>
                       <td className="p-2 text-right font-bold text-teal-400 print:text-black">{tx.totalBiaya.toLocaleString('id-ID')}</td>
                    </tr>
@@ -2155,7 +2251,10 @@ function ShiftEndModal({ user, transactions, shiftName, onClose, settings }) {
   const shiftTx = transactions.filter(t => t.kasirKeluar === user.nama && t.waktuKeluar && t.waktuKeluar >= (user.loginTime || new Date()));
   const totalNominal = shiftTx.reduce((sum, t) => sum + (t.totalBiaya || 0), 0);
   
-  const statsPerType = shiftTx.reduce((acc, tx) => { 
+  const regularTx = shiftTx.filter(t => !t.isManual);
+  const manualTx = shiftTx.filter(t => t.isManual);
+
+  const statsPerType = regularTx.reduce((acc, tx) => { 
      if (!acc[tx.jenis]) acc[tx.jenis] = { qty: 0, nominal: 0 };
      acc[tx.jenis].qty += 1;
      acc[tx.jenis].nominal += (tx.totalBiaya || 0);
@@ -2163,13 +2262,32 @@ function ShiftEndModal({ user, transactions, shiftName, onClose, settings }) {
   }, {});
   const allTypes = ['Motor', 'Mobil', 'Box/Truck', 'Sepeda/Becak'];
 
+  const manualStats = manualTx.reduce((acc, tx) => {
+     acc.nominal += (tx.totalBiaya || 0);
+     acc.qtyMotor += (tx.details?.['Motor'] || 0);
+     acc.qtyMobil += (tx.details?.['Mobil'] || 0);
+     acc.qtyBox += (tx.details?.['Box/Truck'] || 0);
+     acc.qtySepeda += (tx.details?.['Sepeda/Becak'] || 0);
+     return acc;
+  }, { nominal: 0, qtyMotor: 0, qtyMobil: 0, qtyBox: 0, qtySepeda: 0 });
+
   const exportWA = () => {
-    let text = `*LAPORAN PENDAPATAN SHIFT*\n🏢 *Lokasi:* ${user.lokasi}\n👤 *Petugas:* ${user.nama}\n🕒 *Shift:* ${shiftName}\n📅 *Tanggal:* ${new Date().toLocaleDateString('id-ID')}\n\n*RINCIAN PENDAPATAN:*\n`;
+    let text = `*LAPORAN PENDAPATAN SHIFT*\n🏢 *Lokasi:* ${user.lokasi}\n👤 *Petugas:* ${user.nama}\n🕒 *Shift:* ${shiftName}\n📅 *Tanggal:* ${new Date().toLocaleDateString('id-ID')}\n\n*RINCIAN PENDAPATAN SYSTEM:*\n`;
     allTypes.forEach(jenis => {
        if(statsPerType[jenis]) {
            text += `▪️ ${jenis}: ${statsPerType[jenis].qty} unit (Rp ${statsPerType[jenis].nominal.toLocaleString('id-ID')})\n`;
        }
     });
+
+    if (manualStats.nominal > 0) {
+        text += `\n*PENDAPATAN MANUAL (BACKUP):*\n`;
+        if (manualStats.qtyMotor > 0) text += `▪️ Motor: ${manualStats.qtyMotor} unit\n`;
+        if (manualStats.qtyMobil > 0) text += `▪️ Mobil: ${manualStats.qtyMobil} unit\n`;
+        if (manualStats.qtyBox > 0) text += `▪️ Box/Truck: ${manualStats.qtyBox} unit\n`;
+        if (manualStats.qtySepeda > 0) text += `▪️ Sepeda/Becak: ${manualStats.qtySepeda} unit\n`;
+        text += `▪️ Nominal Manual: Rp ${manualStats.nominal.toLocaleString('id-ID')}\n`;
+    }
+
     text += `\n========================\n💰 *TOTAL SETORAN: Rp ${totalNominal.toLocaleString('id-ID')}*\n========================\n\n_System Generated by Device Portable_`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
     setWaSent(true);
@@ -2217,7 +2335,7 @@ function ShiftEndModal({ user, transactions, shiftName, onClose, settings }) {
                 <p className="font-bold text-white print:text-black mb-3 text-center uppercase tracking-widest">Rincian Transaksi</p>
                 <table className="w-full text-left">
                    <tbody>
-                      {Object.keys(statsPerType).length === 0 && <tr><td colSpan="2" className="text-green-400/30 text-center py-2">Tidak ada transaksi tercatat pada shift ini.</td></tr>}
+                      {Object.keys(statsPerType).length === 0 && manualStats.nominal === 0 && <tr><td colSpan="2" className="text-green-400/30 text-center py-2">Tidak ada transaksi tercatat pada shift ini.</td></tr>}
                       {allTypes.map(jenis => {
                          if (!statsPerType[jenis]) return null;
                          return (
@@ -2227,6 +2345,24 @@ function ShiftEndModal({ user, transactions, shiftName, onClose, settings }) {
                            </tr>
                          )
                       })}
+                      {manualStats.nominal > 0 && (
+                         <>
+                           <tr className="border-t-[2px] border-[#1b5e35] print:border-black text-orange-400 print:text-black font-bold mt-2">
+                              <td colSpan="2" className="pt-3 pb-1 uppercase">Pendapatan Manual (Backup)</td>
+                           </tr>
+                           <tr className="border-b border-[#1b5e35]/50 print:border-black text-orange-200/80 print:text-black">
+                              <td className="py-2 leading-relaxed">
+                                 <span className="text-[11px] font-mono">
+                                   {manualStats.qtyMotor > 0 && `Motor:${manualStats.qtyMotor} `}
+                                   {manualStats.qtyMobil > 0 && `Mobil:${manualStats.qtyMobil} `}
+                                   {manualStats.qtyBox > 0 && `Box:${manualStats.qtyBox} `}
+                                   {manualStats.qtySepeda > 0 && `Sepeda:${manualStats.qtySepeda}`}
+                                 </span>
+                              </td>
+                              <td className="py-2 text-right font-bold text-white print:text-black">Rp {manualStats.nominal.toLocaleString('id-ID')}</td>
+                           </tr>
+                         </>
+                      )}
                    </tbody>
                 </table>
              </div>
