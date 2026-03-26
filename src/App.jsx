@@ -54,8 +54,12 @@ const printDirectBluetooth = (type, data, settings) => {
     const jenis = data.jenis || '';
     const divider = '-'.repeat(32);
 
+    const ticketTitle = settings?.ticket?.title || "Sistem Device Portable";
+    const ticketSubtitle = settings?.ticket?.subtitle || "";
+
     let text = '';
-    text += center("Sistem Device Portable") + '\n';
+    text += center(ticketTitle) + '\n';
+    if (ticketSubtitle) text += center(ticketSubtitle) + '\n';
     text += center(loc) + '\n';
     text += divider + '\n';
     
@@ -67,7 +71,7 @@ const printDirectBluetooth = (type, data, settings) => {
         text += `MASUK : ${data.waktuMasuk.toLocaleString('id-ID')}\n`;
         text += `KASIR : ${nip}\n`;
         text += divider + '\n';
-        text += center("SIMPAN TIKET INI") + '\n';
+        text += center(settings?.ticket?.footerIn || "SIMPAN TIKET INI") + '\n';
     } else {
         text += center("STRUK KELUAR") + '\n';
         text += divider + '\n';
@@ -79,7 +83,7 @@ const printDirectBluetooth = (type, data, settings) => {
         text += divider + '\n';
         text += right("TOTAL:", `Rp ${data.totalBiaya.toLocaleString('id-ID')}`) + '\n';
         text += divider + '\n';
-        text += center("TERIMA KASIH") + '\n';
+        text += center(settings?.ticket?.footerOut || "TERIMA KASIH") + '\n';
     }
     text += '\n\n';
 
@@ -118,6 +122,13 @@ const DEFAULT_SETTINGS = {
     runningText: 'Selamat Datang di Sistem Parkir Terpadu - Utamakan Pelayanan yang Ramah dan Senyum kepada Pelanggan.',
     printerConnected: false,
     appVersion: 'v.1.3.26'
+  },
+  ticket: {
+    title: 'Sistem Device Portable',
+    subtitle: '',
+    footerIn: 'SIMPAN TIKET INI',
+    footerOut: 'TERIMA KASIH',
+    logoUrl: ''
   },
   members: [],
   activeLogins: {},
@@ -275,10 +286,11 @@ const TicketPreviewModal = ({ type, data, settings, onClose }) => {
         {/* Simulasi Kertas Karcis Thermal */}
         <div className="bg-white text-black font-mono w-full p-4 rounded shadow-inner text-sm leading-snug relative overflow-hidden">
            <div className="relative text-center font-bold mb-2 min-h-[36px]">
-              <p>Sistem Device Portable</p>
-              <p className="text-xs">{data.lokasi}</p>
-              {settings?.web?.logoUrl && (
-                 <img src={settings.web.logoUrl} alt="Logo" className="absolute -top-1 -right-1 h-9 w-9 object-contain grayscale mix-blend-multiply" />
+              <p>{settings?.ticket?.title || 'Sistem Device Portable'}</p>
+              {settings?.ticket?.subtitle && <p className="text-[10px] leading-tight mt-0.5">{settings.ticket.subtitle}</p>}
+              <p className="text-xs mt-1">{data.lokasi}</p>
+              {settings?.ticket?.logoUrl && (
+                 <img src={settings.ticket.logoUrl} alt="Logo" className="absolute -top-1 -right-1 h-9 w-9 object-contain grayscale mix-blend-multiply" />
               )}
            </div>
            <div className="border-b-2 border-dashed border-black/50 mb-2"></div>
@@ -304,7 +316,7 @@ const TicketPreviewModal = ({ type, data, settings, onClose }) => {
            )}
 
            <div className="border-b-2 border-dashed border-black/50 my-2"></div>
-           <div className="text-center text-xs mt-2 font-bold">{type === 'IN' ? 'SIMPAN TIKET INI' : 'TERIMA KASIH'}</div>
+           <div className="text-center text-xs mt-2 font-bold">{type === 'IN' ? (settings?.ticket?.footerIn || 'SIMPAN TIKET INI') : (settings?.ticket?.footerOut || 'TERIMA KASIH')}</div>
            
            {/* Zig-zag bottom edge effect */}
            <div className="absolute bottom-0 left-0 w-full h-2 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPjxwb2x5Z29uIHBvaW50cz0iMCw4IDQsMCA4LDgiIGZpbGw9IiMxMTQwMjIiLz48L3N2Zz4=')] bg-repeat-x"></div>
@@ -1059,6 +1071,7 @@ function MasterSettings({ settings, setSettings, user, transactions, updateTrans
         <button onClick={() => setActiveSetTab('member')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'member' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Member Parkir</button>
         <button onClick={() => setActiveSetTab('shift')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'shift' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Setting Shift</button>
         {user.role === 'master' && <button onClick={() => setActiveSetTab('users')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'users' ? 'bg-blue-600 text-white' : 'bg-[#114022] text-blue-400 hover:bg-[#164d2b]'}`}>Manajemen User</button>}
+        <button onClick={() => setActiveSetTab('tiket')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'tiket' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Struk/Tiket Parkir</button>
         <button onClick={() => setActiveSetTab('web')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'web' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Web & Printer</button>
       </div>
 
@@ -1069,6 +1082,7 @@ function MasterSettings({ settings, setSettings, user, transactions, updateTrans
         {activeSetTab === 'member' && <SettingMember settings={settings} setSettings={setSettings} isReadOnly={isReadOnly} user={user} showToast={showToast} />}
         {activeSetTab === 'shift' && <SettingShift settings={settings} setSettings={setSettings} isReadOnly={isReadOnly} user={user} showToast={showToast} />}
         {activeSetTab === 'users' && user.role === 'master' && <SettingUser settings={settings} setSettings={setSettings} showToast={showToast} />}
+        {activeSetTab === 'tiket' && <SettingTiket settings={settings} setSettings={setSettings} isReadOnly={isReadOnly} showToast={showToast} />}
         {activeSetTab === 'web' && <SettingWeb settings={settings} setSettings={setSettings} isReadOnly={isReadOnly} showToast={showToast} />}
       </div>
     </div>
@@ -2013,6 +2027,72 @@ function SettingWeb({ settings, setSettings, isReadOnly, showToast }) {
         <input disabled={isReadOnly} type="text" value={form.appVersion || 'v.1.3.26'} onChange={e => setForm({...form, appVersion: e.target.value})} className="w-full bg-[#092613] border border-[#1b5e35] rounded-[1.5rem] px-5 py-4 text-white outline-none focus:border-green-500" />
       </div>
       {!isReadOnly && <button type="submit" className="w-full bg-green-600 text-white font-bold rounded-[1.5rem] px-6 py-4 shadow-xl hover:bg-green-500 transition-all flex justify-center gap-2">Simpan Semua Setingan</button>}
+    </form>
+  );
+}
+
+// Sub-Setting: Setting Struk / Tiket Parkir
+function SettingTiket({ settings, setSettings, isReadOnly, showToast }) {
+  const defaultTicketSettings = { title: 'Sistem Device Portable', subtitle: '', footerIn: 'SIMPAN TIKET INI', footerOut: 'TERIMA KASIH', logoUrl: '' };
+  const [form, setForm] = useState(settings.ticket || defaultTicketSettings);
+
+  const handleLogoUpload = (e) => {
+    processImageFile(e.target.files[0], (data) => setForm({...form, logoUrl: data}));
+  };
+
+  const handleRemoveLogo = () => setForm({...form, logoUrl: ''});
+
+  const handleSave = (e) => {
+     e.preventDefault();
+     setSettings({ ...settings, ticket: form });
+     showToast("Pengaturan Struk/Tiket Tersimpan!");
+  };
+
+  return (
+    <form onSubmit={handleSave} className="space-y-6">
+      <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35]">
+         <h4 className="font-bold text-white mb-2 uppercase text-sm flex items-center gap-2"><Printer size={18} className="text-teal-400"/> Editor Konten Struk</h4>
+         <p className="text-xs text-green-200/70 leading-relaxed mb-4">Sesuaikan teks Header, Footer, dan Logo khusus untuk cetakan tiket masuk dan struk keluar (berlaku untuk print bluetooth dan preview).</p>
+      </div>
+
+      <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35] flex flex-col items-center text-center">
+        <p className="text-sm font-bold text-green-200/70 mb-4 uppercase">Logo Pada Struk (Mode Thermal)</p>
+        {form.logoUrl ? (
+           <div className="relative inline-block">
+              <img src={form.logoUrl} alt="Logo Struk" className="h-24 bg-white rounded-xl px-4 py-2 mb-4 object-contain grayscale mix-blend-screen" />
+              {!isReadOnly && <button type="button" onClick={handleRemoveLogo} className="absolute -top-2 -right-2 bg-red-600 rounded-full p-1 text-white hover:bg-red-500 shadow-md"><X size={14}/></button>}
+           </div>
+        ) : (
+           <div className="h-24 w-24 bg-[#114022] rounded-xl mb-4 border border-[#1b5e35] flex items-center justify-center text-green-300/30"><FileImage size={32}/></div>
+        )}
+        {!isReadOnly && (
+          <div>
+            <input type="file" id="upload-logo-tiket" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+            <label htmlFor="upload-logo-tiket" className="bg-teal-600 hover:bg-teal-500 text-white font-bold py-2 px-6 rounded-xl cursor-pointer inline-flex items-center gap-2"><UploadCloud size={16}/> Upload Logo Struk</label>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+         <div>
+            <label className="block text-sm font-bold text-green-200/70 ml-2 mb-2 uppercase tracking-wider">Judul Utama / Header</label>
+            <input disabled={isReadOnly} type="text" value={form.title} onChange={e => setForm({...form, title: e.target.value})} placeholder="Sistem Device Portable" className="w-full bg-[#092613] border border-[#1b5e35] rounded-[1.5rem] px-5 py-4 text-white outline-none focus:border-green-500" />
+         </div>
+         <div>
+            <label className="block text-sm font-bold text-green-200/70 ml-2 mb-2 uppercase tracking-wider">Sub-Judul (Opsional)</label>
+            <input disabled={isReadOnly} type="text" value={form.subtitle} onChange={e => setForm({...form, subtitle: e.target.value})} placeholder="Cth: PT. Parkir Jaya Abadi" className="w-full bg-[#092613] border border-[#1b5e35] rounded-[1.5rem] px-5 py-4 text-white outline-none focus:border-green-500" />
+         </div>
+         <div>
+            <label className="block text-sm font-bold text-green-200/70 ml-2 mb-2 uppercase tracking-wider">Footer Tiket Masuk</label>
+            <input disabled={isReadOnly} type="text" value={form.footerIn} onChange={e => setForm({...form, footerIn: e.target.value})} placeholder="SIMPAN TIKET INI" className="w-full bg-[#092613] border border-[#1b5e35] rounded-[1.5rem] px-5 py-4 text-white outline-none focus:border-green-500" />
+         </div>
+         <div>
+            <label className="block text-sm font-bold text-green-200/70 ml-2 mb-2 uppercase tracking-wider">Footer Struk Keluar</label>
+            <input disabled={isReadOnly} type="text" value={form.footerOut} onChange={e => setForm({...form, footerOut: e.target.value})} placeholder="TERIMA KASIH" className="w-full bg-[#092613] border border-[#1b5e35] rounded-[1.5rem] px-5 py-4 text-white outline-none focus:border-green-500" />
+         </div>
+      </div>
+
+      {!isReadOnly && <button type="submit" className="w-full bg-green-600 text-white font-bold rounded-[1.5rem] px-6 py-4 shadow-xl hover:bg-green-500 transition-all flex justify-center gap-2">Simpan Setting Struk/Tiket</button>}
     </form>
   );
 }
