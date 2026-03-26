@@ -4,7 +4,7 @@ import {
   MapPin, Clock, FileText, Search, Car, Truck, Bike, Download, Share2,
   ChevronDown, Bluetooth, Users, Monitor, ShieldCheck, FileImage,
   UploadCloud, AlertTriangle, X, Lock, Trash2, Database,
-  ArrowRight, ArrowLeft, Building
+  ArrowRight, ArrowLeft, Building, Printer
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -38,7 +38,6 @@ const processImageFile = (file, callback) => {
 };
 
 // --- HELPER FUNCTION: Direct Bluetooth Print (RawBT / ESC-POS) ---
-// SEAMLESS BACKGROUND PRINTING: Menggunakan hidden iframe agar state browser tidak terpotong
 const printDirectBluetooth = (type, data, settings) => {
     const center = (str) => {
         const spaces = Math.max(0, Math.floor((32 - str.length) / 2));
@@ -84,14 +83,12 @@ const printDirectBluetooth = (type, data, settings) => {
     }
     text += '\n\n';
 
-    // TRIGGER BACKGROUND INTENT (Mencegah bug reload/data hilang)
     const intentUrl = `intent:${encodeURI(text)}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
     const iframe = document.createElement('iframe');
     iframe.style.display = 'none';
     iframe.src = intentUrl;
     document.body.appendChild(iframe);
     
-    // Auto Remove Iframe
     setTimeout(() => {
         if (document.body.contains(iframe)) document.body.removeChild(iframe);
     }, 2000);
@@ -160,7 +157,7 @@ const getActiveShift = (shifts) => {
   return 'Shift Tidak Diketahui';
 };
 
-// --- FIREBASE INITIALIZATION (DENGAN CONFIG MILIK ANDA) ---
+// --- FIREBASE INITIALIZATION ---
 const MY_FIREBASE_CONFIG = {
   apiKey: "AIzaSyDdY7ZlT8NqWf7aPckiIQIvOsjFaBsOcK4",
   authDomain: "aplikasi-parkir-ku.firebaseapp.com",
@@ -170,13 +167,10 @@ const MY_FIREBASE_CONFIG = {
   appId: "1:80401749338:web:87b4418d98e86a1d3d0f63"
 };
 
-// Cegah crash dengan mengecek environment, fallback aman ke config Anda jika di-build lokal/production
 const fbConfig = (typeof __firebase_config !== 'undefined' && __firebase_config) ? JSON.parse(__firebase_config) : MY_FIREBASE_CONFIG;
 const app = !getApps().length ? initializeApp(fbConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
-
-// Pengaturan ID Project untuk struktur koleksi di Firebase
 const appId = (typeof __app_id !== 'undefined' && __app_id) ? __app_id : MY_FIREBASE_CONFIG.projectId;
 
 // --- UI COMPONENTS ---
@@ -211,7 +205,7 @@ const CameraModal = ({ facingMode, onCapture, onClose, title }) => {
     const startCamera = async () => {
       try {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          throw new Error("Kamera tidak didukung di browser/sandbox ini.");
+          throw new Error("Kamera tidak didukung.");
         }
         const mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facingMode } });
         if (videoRef.current) videoRef.current.srcObject = mediaStream;
@@ -243,7 +237,6 @@ const CameraModal = ({ facingMode, onCapture, onClose, title }) => {
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-md">
       <div className="bg-[#114022] p-6 rounded-[2rem] border border-[#1b5e35] shadow-2xl flex flex-col items-center max-w-md w-full mx-4">
         <h3 className="text-xl font-bold text-white mb-4">{title}</h3>
-        
         {error ? (
            <div className="w-full aspect-video bg-red-900/20 border border-red-500/50 rounded-3xl flex flex-col items-center justify-center text-red-400 p-4 text-center mb-6">
              <AlertTriangle size={32} className="mb-2"/>
@@ -256,7 +249,6 @@ const CameraModal = ({ facingMode, onCapture, onClose, title }) => {
              <canvas ref={canvasRef} className="hidden" />
            </div>
         )}
-
         <div className="flex gap-4 w-full">
           <button onClick={onClose} className="flex-1 py-4 rounded-2xl bg-[#092613] text-white font-bold hover:bg-black/20 transition-all">Batal</button>
           {!error && <button onClick={handleCapture} className="flex-1 py-4 rounded-2xl bg-teal-600 text-white font-bold hover:bg-teal-500 transition-all shadow-lg flex justify-center gap-2"><Camera size={20} /> Ambil Foto</button>}
@@ -266,6 +258,68 @@ const CameraModal = ({ facingMode, onCapture, onClose, title }) => {
   );
 };
 
+// --- COMPONENT: TICKET PREVIEW (SOP KONTROL) ---
+const TicketPreviewModal = ({ type, data, settings, onClose }) => {
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in zoom-in-95">
+      <div className="bg-[#114022] p-6 rounded-[2rem] border border-[#1b5e35] shadow-2xl flex flex-col items-center max-w-sm w-full relative">
+        <div className="absolute -top-5 bg-teal-500 text-white px-4 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-2">
+          <CheckCircle2 size={14}/> Tercetak Otomatis
+        </div>
+        
+        <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+          <FileText className="text-teal-400"/> SOP Preview Karcis
+        </h3>
+
+        {/* Simulasi Kertas Karcis Thermal */}
+        <div className="bg-white text-black font-mono w-full p-4 rounded shadow-inner text-sm leading-snug relative overflow-hidden">
+           <div className="text-center font-bold mb-2">
+              <p>PARKIR TERPADU</p>
+              <p className="text-xs">{data.lokasi}</p>
+           </div>
+           <div className="border-b-2 border-dashed border-black/50 mb-2"></div>
+           <div className="text-center font-bold mb-2">{type === 'IN' ? 'TIKET MASUK' : 'STRUK KELUAR'}</div>
+           <div className="border-b-2 border-dashed border-black/50 mb-2"></div>
+           
+           <div className="flex justify-between mb-1"><span>NOPOL:</span><span className="font-bold">{data.nopol}</span></div>
+           <div className="flex justify-between mb-1"><span>JENIS:</span><span>{data.jenis}</span></div>
+           <div className="flex justify-between mb-1"><span>MASUK:</span><span>{data.waktuMasuk.toLocaleString('id-ID')}</span></div>
+           
+           {type === 'OUT' && (
+              <>
+                <div className="flex justify-between mb-1"><span>KELUAR:</span><span>{data.waktuKeluar.toLocaleTimeString('id-ID')}</span></div>
+                <div className="flex justify-between mb-1"><span>DURASI:</span><span>{data.durasiText}</span></div>
+                {data.tiketHilang && <div className="text-center text-xs mt-1">*Termasuk Denda Kehilangan</div>}
+                <div className="border-b-2 border-dashed border-black/50 my-2"></div>
+                <div className="flex justify-between font-black text-base"><span>TOTAL:</span><span>Rp {data.totalBiaya?.toLocaleString('id-ID')}</span></div>
+              </>
+           )}
+           
+           {type === 'IN' && (
+              <div className="flex justify-between mt-1 text-xs"><span>KASIR:</span><span>{data.kasirMasuk}</span></div>
+           )}
+
+           <div className="border-b-2 border-dashed border-black/50 my-2"></div>
+           <div className="text-center text-xs mt-2 font-bold">{type === 'IN' ? 'SIMPAN TIKET INI' : 'TERIMA KASIH'}</div>
+           
+           {/* Zig-zag bottom edge effect */}
+           <div className="absolute bottom-0 left-0 w-full h-2 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPjxwb2x5Z29uIHBvaW50cz0iMCw4IDQsMCA4LDgiIGZpbGw9IiMxMTQwMjIiLz48L3N2Zz4=')] bg-repeat-x"></div>
+        </div>
+
+        <p className="text-[10px] text-green-200/50 mt-4 text-center">Data telah tersimpan dan perintah cetak telah dikirim ke printer bluetooth.</p>
+
+        <div className="flex gap-3 mt-4 w-full">
+           <button onClick={() => { printDirectBluetooth(type, data, settings); showToast("Mengirim ulang perintah cetak..."); }} className="py-3 px-4 rounded-xl bg-[#092613] border border-[#1b5e35] text-white hover:bg-[#164d2b] transition-all flex justify-center items-center gap-2">
+             <Printer size={16}/> Print Ulang
+           </button>
+           <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-teal-600 text-white font-bold hover:bg-teal-500 transition-all shadow-lg">
+             Tutup (Lanjut)
+           </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // --- MAIN APP COMPONENT ---
 export default function App() {
@@ -279,8 +333,8 @@ export default function App() {
 
   const [toast, setToast] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
+  const [ticketPreview, setTicketPreview] = useState(null);
   
-  // Unique Device ID for session handling
   const [deviceId] = useState(() => {
     let id = localStorage.getItem('device_session_id');
     if (!id) { id = Math.random().toString(36).substr(2, 9); localStorage.setItem('device_session_id', id); }
@@ -350,16 +404,13 @@ export default function App() {
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), newSettings);
   };
 
-  // Heartbeat to keep session alive and check shift
   useEffect(() => {
     if (!user) return;
     const interval = setInterval(() => {
-      // 1. Shift Check
       const userLocShifts = getLocSettings(settings, user.lokasi).shifts;
       const active = getActiveShift(userLocShifts);
       if (active !== shiftData.current) setShiftData({ current: active, showSummary: true });
 
-      // 2. Heartbeat Session
       const activeLogins = settings.activeLogins || {};
       if (activeLogins[user.nipp]?.deviceId === deviceId) {
          handleUpdateSettings({
@@ -376,7 +427,6 @@ export default function App() {
        const userLocShifts = getLocSettings(settings, user.lokasi).shifts;
        setShiftData({ current: getActiveShift(userLocShifts), showSummary: false }); 
        
-       // Remove from active sessions
        const activeLogins = settings.activeLogins || {};
        const newLogins = { ...activeLogins };
        delete newLogins[user.nipp];
@@ -414,40 +464,72 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#092613] text-green-50 font-sans selection:bg-green-500 selection:text-white pb-28">
-      {/* CSS KHUSUS PRINT 1 LEMBAR A4 */}
+      {/* CSS KHUSUS PRINT A4 (Hemat Kertas, Formal, Rapi) */}
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 10mm; }
-          body { background: white; -webkit-print-color-adjust: exact; margin: 0; padding: 0; }
-          .hide-on-print { display: none !important; }
-          .show-on-print { display: block !important; }
-          
-          /* Memaksa elemen muat di 1 halaman */
-          .print-1-lembar {
-            page-break-after: avoid;
-            page-break-inside: avoid;
-            max-height: 277mm; 
-            overflow: hidden; 
+          @page { size: A4 portrait; margin: 15mm 10mm; }
+          body { 
+            background: white !important; 
+            color: black !important;
+            -webkit-print-color-adjust: exact; 
+            print-color-adjust: exact;
           }
           
-          /* Mengecilkan tabel agar muat banyak data */
+          /* Menyembunyikan elemen UI yang tidak perlu dicetak */
+          #root > div > header,
+          .fixed.bottom-6,
+          .hide-on-print { 
+            display: none !important; 
+          }
+
+          /* Memaksa elemen Laporan untuk mengambil alih halaman secara bersih */
+          .print-a4-layout {
+            display: block !important;
+            background: white !important;
+            color: black !important;
+            width: 100% !important;
+            box-shadow: none !important;
+            border: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+
+          /* Styling Rapat untuk Tabel Laporan Master (Hemat Kertas) */
           .dense-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 9px !important;
+            font-size: 10px !important;
             margin-top: 10px;
+            page-break-inside: auto;
           }
+          .dense-table tr { page-break-inside: avoid; page-break-after: auto; }
           .dense-table th, .dense-table td {
-            border: 1px solid #000 !important;
-            padding: 3px 4px !important;
-            color: #000 !important;
+            border: 1px solid #333 !important;
+            padding: 4px 6px !important;
+            color: black !important;
           }
-          .dense-table th { background-color: #f1f5f9 !important; font-weight: bold; }
+          .dense-table th { background-color: #f1f5f9 !important; font-weight: bold; text-align: center; }
+          .dense-table td { background-color: white !important; }
+
+          /* Layout Khusus Laporan Kasir (Shift End) */
+          .shift-report-print {
+            width: 100%;
+            font-family: 'Times New Roman', serif, sans-serif !important;
+          }
+          .shift-report-print h3 { font-size: 16pt !important; margin-bottom: 2px; text-align: center; font-weight: bold; }
+          .shift-report-print p { font-size: 10pt !important; color: black !important; margin: 2px 0;}
+          
+          .print-border-black { border-color: black !important; border-width: 1px !important; }
+          .print-text-black { color: black !important; }
+          .print-bg-transparent { background-color: transparent !important; }
         }
       `}</style>
 
       {toast && <Toast message={toast.msg} type={toast.type} />}
       {confirmDialog && <ConfirmModal {...confirmDialog} />}
+      
+      {/* TICKET PREVIEW MODAL */}
+      {ticketPreview && <TicketPreviewModal type={ticketPreview.type} data={ticketPreview.data} settings={settings} onClose={() => setTicketPreview(null)} />}
 
       {/* Header */}
       <header className="fixed top-0 w-full z-40 bg-[#0c331a]/90 backdrop-blur-xl border-b border-[#1b5e35] shadow-lg px-6 py-3 flex items-center justify-between hide-on-print">
@@ -482,7 +564,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="pt-28 px-4 md:px-6 max-w-6xl mx-auto">
+      <main className="pt-28 px-4 md:px-6 max-w-6xl mx-auto print-a4-layout">
         {canTransact && !['area', 'settings'].includes(activeTab) && (
           <div className="flex gap-4 mb-8 hide-on-print">
             <button onClick={() => setActiveTab('masuk')} className={`flex-1 py-6 md:py-8 rounded-[2rem] flex flex-col items-center justify-center gap-2 transition-all duration-300 shadow-xl border-2 ${activeTab === 'masuk' ? 'bg-green-600 border-green-400 text-white scale-[1.02]' : 'bg-[#114022] border-[#1b5e35] text-green-200/50 hover:bg-[#164d2b]'}`}>
@@ -497,8 +579,8 @@ export default function App() {
         )}
 
         {/* Routers */}
-        {canTransact && activeTab === 'masuk' && <KendaraanMasuk user={user} addTransaction={handleAddTransaction} showToast={showToast} settings={settings} />}
-        {canTransact && activeTab === 'keluar' && <KendaraanKeluar user={user} transactions={transactions} updateTransaction={handleUpdateTransaction} settings={settings} showToast={showToast} />}
+        {canTransact && activeTab === 'masuk' && <KendaraanMasuk user={user} addTransaction={handleAddTransaction} showToast={showToast} settings={settings} setTicketPreview={setTicketPreview} />}
+        {canTransact && activeTab === 'keluar' && <KendaraanKeluar user={user} transactions={transactions} updateTransaction={handleUpdateTransaction} settings={settings} showToast={showToast} setTicketPreview={setTicketPreview} />}
         {canViewArea && activeTab === 'area' && <KendaraanArea transactions={transactions} user={user} />}
         {hasSettingsAccess && activeTab === 'settings' && <MasterSettings settings={settings} setSettings={handleUpdateSettings} user={user} transactions={transactions} updateTransaction={handleUpdateTransaction} showToast={showToast} setConfirmDialog={setConfirmDialog} />}
       </main>
@@ -535,20 +617,17 @@ function LoginScreen({ onLogin, usersList, settings, updateSettings, deviceId, s
        return showToast("Hanya Master/Audit yang dapat mengakses 'All Lokasi'.", "error");
     }
 
-    // CEK SESSION BERSAMAAN (Hanya di lokasi yang sama - MASTER KEBAL BLOKIR)
     if (matchedUser.role !== 'master') {
         const activeLogins = settings.activeLogins || {};
         const userActive = activeLogins[matchedUser.nipp];
 
         if (userActive && userActive.lokasi === formData.lokasi && userActive.deviceId !== deviceId) {
-           // Cek apakah masih aktif dalam 5 menit terakhir
            if (Date.now() - userActive.timestamp < 300000) {
                return showToast(`Akun ini sedang online di ${formData.lokasi} oleh perangkat lain! Gunakan akun/lokasi berbeda.`, "error");
            }
         }
     }
 
-    // Set Active Login ke Global Firebase
     updateSettings({
        ...settings,
        activeLogins: {
@@ -558,7 +637,7 @@ function LoginScreen({ onLogin, usersList, settings, updateSettings, deviceId, s
     });
 
     setTempUser({ ...matchedUser, lokasi: formData.lokasi });
-    setShowCamera(true); // Minta foto kasir
+    setShowCamera(true); 
   };
 
   const processLogin = (photoData) => {
@@ -618,7 +697,7 @@ function NavButton({ active, onClick, icon, label, color }) {
 }
 
 // --- KENDARAAN MASUK ---
-function KendaraanMasuk({ user, addTransaction, showToast, settings }) {
+function KendaraanMasuk({ user, addTransaction, showToast, settings, setTicketPreview }) {
   const [nopol, setNopol] = useState('');
   const [jenis, setJenis] = useState('Motor');
   const [showCamera, setShowCamera] = useState(false);
@@ -646,15 +725,16 @@ function KendaraanMasuk({ user, addTransaction, showToast, settings }) {
       kasirMasuk: user.nama, gps
     };
     
-    // TUNGGU DATA TERSIMPAN SEBELUM PERINTAH CETAK KELUAR (Bug Fix)
+    // Simpan ke DB dulu agar tidak hilang
     await addTransaction(newTx);
     
-    // AUTO DIRECT PRINT TANPA POP-UP UI UNTUK MEMPERCEPAT TRANSAKSI
+    // Print background langsung jalan
     printDirectBluetooth('IN', newTx, settings);
     
-    // UI LANGSUNG BERSIH & SIAP KENDARAAN BERIKUTNYA
+    // Tampilkan SOP Preview Modal ke UI
+    setTicketPreview({ type: 'IN', data: newTx });
+    
     setNopol('');
-    showToast("Data Tersimpan! Tiket Sedang Dicetak...");
   };
 
   return (
@@ -683,7 +763,7 @@ function KendaraanMasuk({ user, addTransaction, showToast, settings }) {
           </div>
 
           <button type="submit" className="w-full bg-green-600 hover:bg-green-500 text-white font-black rounded-[1.5rem] px-6 py-6 shadow-xl shadow-green-600/20 text-xl transition-all active:scale-95 flex justify-center items-center gap-3">
-            <Camera size={28} /> PROSES TIKET (DIRECT PRINT)
+            <Camera size={28} /> PROSES TIKET MASUK
           </button>
         </form>
       </div>
@@ -693,7 +773,7 @@ function KendaraanMasuk({ user, addTransaction, showToast, settings }) {
 }
 
 // --- KENDARAAN KELUAR ---
-function KendaraanKeluar({ user, transactions, updateTransaction, settings, showToast }) {
+function KendaraanKeluar({ user, transactions, updateTransaction, settings, showToast, setTicketPreview }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTx, setSelectedTx] = useState(null);
   const [showCamera, setShowCamera] = useState(false);
@@ -771,17 +851,16 @@ function KendaraanKeluar({ user, transactions, updateTransaction, settings, show
       isMember, tiketHilang, denda, fotoKTP, fotoSTNK
     };
     
-    // TUNGGU DATA TERSIMPAN SEBELUM PERINTAH CETAK KELUAR
     await updateTransaction(selectedTx.id, updateData);
     
     const locSettings = getLocSettings(settings, selectedTx.lokasi);
     const finalData = { ...selectedTx, ...updateData, petugasPhoto: user.photo, locSettings };
 
-    // AUTO DIRECT PRINT TANPA POP-UP UI
     printDirectBluetooth('OUT', finalData, settings);
 
-    // UI LANGSUNG BERSIH
-    showToast(`Transaksi Selesai. Total Biaya: Rp ${total.toLocaleString('id-ID')}`);
+    // Tampilkan SOP Preview Modal ke UI
+    setTicketPreview({ type: 'OUT', data: finalData });
+
     setSelectedTx(null);
     setSearchQuery('');
     setTiketHilang(false); setFotoKTP(null); setFotoSTNK(null);
@@ -961,7 +1040,7 @@ function MasterSettings({ settings, setSettings, user, transactions, updateTrans
   const isReadOnly = user.role !== 'master';
 
   return (
-    <div className="fade-in max-w-5xl mx-auto">
+    <div className="fade-in max-w-5xl mx-auto print-a4-layout">
       <div className="flex items-center gap-4 mb-8 hide-on-print">
         <div className="w-14 h-14 bg-[#114022] text-green-400 border border-[#1b5e35] rounded-2xl flex items-center justify-center"><Settings size={28} /></div>
         <div>
@@ -980,7 +1059,7 @@ function MasterSettings({ settings, setSettings, user, transactions, updateTrans
         <button onClick={() => setActiveSetTab('web')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'web' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Web & Printer</button>
       </div>
 
-      <div className="bg-[#114022] rounded-[2.5rem] p-8 shadow-2xl border border-[#1b5e35] print:bg-white print:border-none print:shadow-none print:p-0">
+      <div className="bg-[#114022] rounded-[2.5rem] p-8 shadow-2xl border border-[#1b5e35] print-a4-layout">
         {activeSetTab === 'laporan' && <Laporan transactions={transactions} user={user} updateTransaction={updateTransaction} showToast={showToast} setConfirmDialog={setConfirmDialog} settings={settings} />}
         {activeSetTab === 'rekapan' && user.role === 'master' && <RekapanLaporan transactions={transactions} user={user} settings={settings} />}
         {activeSetTab === 'tarif' && <SettingTarif settings={settings} setSettings={setSettings} isReadOnly={isReadOnly} user={user} showToast={showToast} />}
@@ -995,7 +1074,6 @@ function MasterSettings({ settings, setSettings, user, transactions, updateTrans
 
 // Sub-Component Laporan Visual (Dilengkapi fitur print 1 lembar)
 function Laporan({ transactions, user, updateTransaction, showToast, setConfirmDialog, settings }) {
-  const [filterType, setFilterType] = useState('shift'); 
   const [lapTab, setLapTab] = useState('ringkasan');
   const [zoomImg, setZoomImg] = useState(null);
   const [isCleaning, setIsCleaning] = useState(false);
@@ -1045,7 +1123,7 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
   };
 
   return (
-    <div className="space-y-6 print:space-y-2">
+    <div className="space-y-6 print:space-y-2 print-a4-layout">
       {user.role === 'master' && (
         <div className="bg-red-900/20 border border-red-500/30 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4 hide-on-print">
            <div className="flex items-center gap-3">
@@ -1074,25 +1152,25 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
       </div>
 
       {lapTab === 'ringkasan' && (
-         <div className="animate-in fade-in space-y-6 print-1-lembar">
+         <div className="animate-in fade-in space-y-6 print-a4-layout">
             {/* Header Laporan Khusus Print */}
-            <div className="hidden-screen show-on-print border-b-2 border-black pb-2 mb-4">
-                {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-10 mb-2" alt="Logo"/>}
-                <h1 className="text-xl font-bold uppercase">Ringkasan Pendapatan Bisnis</h1>
-                <p className="text-[10px] text-gray-600">Lokasi: {user.lokasi} | Dicetak: {new Date().toLocaleString('id-ID')} | Oleh: {user.nama}</p>
+            <div className="hidden-screen show-on-print border-b-2 border-black pb-4 mb-6">
+                {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-12 mb-2" alt="Logo"/>}
+                <h1 className="text-2xl font-black uppercase tracking-tight">Ringkasan Pendapatan Bisnis</h1>
+                <p className="text-sm text-gray-700 font-medium mt-1">Lokasi: {user.lokasi} | Dicetak: {new Date().toLocaleString('id-ID')} | Petugas Audit: {user.nama}</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 print:grid-cols-3">
-              <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35] print:border-black print:bg-white print:text-black print:p-3"><p className="text-green-300/50 print:text-gray-600 text-xs font-bold mb-1">Total Pendapatan</p><h3 className="text-2xl print:text-lg font-black text-green-400 print:text-black">Rp {totalPendapatan.toLocaleString('id-ID')}</h3></div>
-              <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35] print:border-black print:bg-white print:text-black print:p-3"><p className="text-green-300/50 print:text-gray-600 text-xs font-bold mb-1">Total Kendaraan (Masuk)</p><h3 className="text-2xl print:text-lg font-black text-teal-400 print:text-black">{filteredTx.length}</h3></div>
-              <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35] print:border-black print:bg-white print:text-black print:p-3"><p className="text-green-300/50 print:text-gray-600 text-xs font-bold mb-1">Transaksi Selesai</p><h3 className="text-2xl print:text-lg font-black text-orange-400 print:text-black">{totalQtySelesai}</h3></div>
+              <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35] print:border-black print:bg-white print:text-black print:p-4"><p className="text-green-300/50 print:text-gray-600 text-xs font-bold mb-1">Total Pendapatan</p><h3 className="text-2xl print:text-xl font-black text-green-400 print:text-black">Rp {totalPendapatan.toLocaleString('id-ID')}</h3></div>
+              <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35] print:border-black print:bg-white print:text-black print:p-4"><p className="text-green-300/50 print:text-gray-600 text-xs font-bold mb-1">Total Kendaraan (Masuk)</p><h3 className="text-2xl print:text-xl font-black text-teal-400 print:text-black">{filteredTx.length}</h3></div>
+              <div className="bg-[#092613] p-6 rounded-2xl border border-[#1b5e35] print:border-black print:bg-white print:text-black print:p-4"><p className="text-green-300/50 print:text-gray-600 text-xs font-bold mb-1">Transaksi Selesai</p><h3 className="text-2xl print:text-xl font-black text-orange-400 print:text-black">{totalQtySelesai}</h3></div>
             </div>
             
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 printable-report print:grid-cols-2">
-               <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35] print:border-black print:text-black print:p-3">
-                  <h4 className="font-bold text-white print:text-black mb-4 print:mb-2 border-b border-[#1b5e35] print:border-black pb-2 print:text-sm">Breakdown Jenis Kendaraan</h4>
-                  <table className="w-full text-sm print:text-[10px] text-left border-collapse">
-                     <thead><tr className="text-green-200/70 print:text-black border-b border-[#1b5e35] print:border-black"><th className="py-2">Jenis Kendaraan</th><th className="py-2 text-center">Total Qty</th><th className="py-2 text-right">Nominal (Rp)</th></tr></thead>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print:grid-cols-2 mt-4 print:mt-8">
+               <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35] print:border-black print:text-black print:p-0 print:border-0">
+                  <h4 className="font-bold text-white print:text-black mb-4 print:mb-2 border-b border-[#1b5e35] print:border-black pb-2 print:text-lg">Breakdown Jenis Kendaraan</h4>
+                  <table className="w-full text-sm print:text-sm text-left border-collapse dense-table">
+                     <thead><tr className="text-green-200/70 print:text-black"><th className="py-2">Jenis Kendaraan</th><th className="py-2 text-center">Total Qty</th><th className="py-2 text-right">Nominal (Rp)</th></tr></thead>
                      <tbody className="text-white print:text-black">
                         {Object.keys(breakdown).map(jenis => (
                            <tr key={jenis} className="border-b border-[#1b5e35]/50 print:border-gray-400">
@@ -1103,16 +1181,16 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
                      </tbody>
                   </table>
                </div>
-               <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35] print:border-black print:text-black print:p-3">
-                  <h4 className="font-bold text-white print:text-black mb-4 print:mb-2 border-b border-[#1b5e35] print:border-black pb-2 print:text-sm">Persentase Lama Parkir</h4>
-                  <div className="space-y-4 print:space-y-2 mt-2">
+               <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35] print:border-black print:text-black print:p-4 print:border">
+                  <h4 className="font-bold text-white print:text-black mb-4 print:mb-2 border-b border-[#1b5e35] print:border-black pb-2 print:text-lg">Persentase Lama Parkir</h4>
+                  <div className="space-y-4 print:space-y-3 mt-2">
                      {Object.keys(durasiStats).map(rentang => {
                         const count = durasiStats[rentang];
                         const persentase = totalQtySelesai > 0 ? ((count / totalQtySelesai) * 100).toFixed(1) : 0;
                         return (
                            <div key={rentang} className="relative">
-                              <div className="flex justify-between text-xs print:text-[9px] font-bold text-green-100 mb-1 print:text-black"><span>{rentang}</span><span className="text-teal-400 print:text-black">{count} Unit ({persentase}%)</span></div>
-                              <div className="w-full bg-[#114022] print:bg-gray-200 h-2.5 print:h-1.5 rounded-full overflow-hidden border print:border-black"><div className="bg-teal-500 print:bg-black h-full rounded-full" style={{ width: `${persentase}%` }}></div></div>
+                              <div className="flex justify-between text-xs print:text-xs font-bold text-green-100 mb-1 print:text-black"><span>{rentang}</span><span className="text-teal-400 print:text-black">{count} Unit ({persentase}%)</span></div>
+                              <div className="w-full bg-[#114022] print:bg-gray-200 h-2.5 print:h-2.5 rounded-full overflow-hidden border print:border-black print:border-opacity-30"><div className="bg-teal-500 print:bg-slate-700 h-full rounded-full" style={{ width: `${persentase}%` }}></div></div>
                            </div>
                         );
                      })}
@@ -1124,17 +1202,17 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
 
       {/* TAB MASTER LIST (SEMUA TRANSAKSI - IN & OUT UNTUK PRINT 1 LEMBAR) */}
       {lapTab === 'semua' && (
-         <div className="print-1-lembar bg-[#092613] rounded-2xl border border-[#1b5e35] print:border-none print:bg-transparent animate-in fade-in flex flex-col h-full">
-            <div className="hidden-screen show-on-print border-b-2 border-black pb-2 mb-2">
-                {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-8 mb-1" alt="Logo"/>}
-                <h1 className="text-sm font-bold uppercase">Audit Keseluruhan Transaksi Area (In & Out)</h1>
-                <p className="text-[8px] text-gray-600">Dicetak pada: {new Date().toLocaleString('id-ID')} | Oleh: {user.nama} ({user.lokasi}) | Total Item: {filteredTx.length}</p>
+         <div className="print-a4-layout bg-[#092613] rounded-2xl border border-[#1b5e35] print:border-none print:bg-transparent animate-in fade-in flex flex-col h-full">
+            <div className="hidden-screen show-on-print border-b-2 border-black pb-2 mb-4">
+                {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-10 mb-2" alt="Logo"/>}
+                <h1 className="text-xl font-bold uppercase">Audit Keseluruhan Transaksi Area (In & Out)</h1>
+                <p className="text-[10px] text-gray-600">Dicetak pada: {new Date().toLocaleString('id-ID')} | Oleh: {user.nama} ({user.lokasi}) | Total Item: {filteredTx.length}</p>
             </div>
             
-            <div className="overflow-x-auto hide-scrollbar flex-1">
+            <div className="overflow-x-auto hide-scrollbar flex-1 w-full">
                <table className="dense-table print:text-black text-white text-sm w-full">
                  <thead>
-                   <tr className="bg-[#0c331a] print:bg-gray-200 text-green-300/70 print:text-black text-xs print:text-[8px] uppercase">
+                   <tr className="bg-[#0c331a] print:bg-gray-200 text-green-300/70 print:text-black text-xs uppercase">
                      <th className="p-3 border-b border-[#1b5e35]">No</th>
                      <th className="p-3 border-b border-[#1b5e35]">Nopol</th>
                      <th className="p-3 border-b border-[#1b5e35]">Jenis</th>
@@ -1146,15 +1224,15 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
                  </thead>
                  <tbody>
                    {filteredTx.slice().reverse().map((tx, i) => (
-                     <tr key={tx.id} className="hover:bg-[#114022] border-b border-[#1b5e35]/50 print:border-black transition-colors print:text-[8px]">
+                     <tr key={tx.id} className="hover:bg-[#114022] border-b border-[#1b5e35]/50 transition-colors">
                        <td className="p-2 text-center text-green-200/70 print:text-black">{i+1}</td>
                        <td className="p-2 font-bold">{tx.nopol}</td>
                        <td className="p-2">{tx.jenis}</td>
                        <td className="p-2 text-center">
                           {tx.status === 'IN' ? (
-                            <span className="bg-amber-900/50 text-amber-400 print:bg-transparent print:text-black print:font-bold px-2 py-0.5 rounded text-[10px] print:text-[8px]">Di Area</span>
+                            <span className="bg-amber-900/50 text-amber-400 print:bg-transparent print:text-black print:font-bold px-2 py-0.5 rounded text-[10px]">Di Area</span>
                           ) : (
-                            <span className="bg-green-900/50 text-green-400 print:bg-transparent print:text-black px-2 py-0.5 rounded text-[10px] print:text-[8px]">Selesai</span>
+                            <span className="bg-green-900/50 text-green-400 print:bg-transparent print:text-black px-2 py-0.5 rounded text-[10px]">Selesai</span>
                           )}
                        </td>
                        <td className="p-2">{tx.waktuMasuk.toLocaleString('id-ID')}</td>
@@ -1165,11 +1243,11 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
                  </tbody>
                </table>
             </div>
-            <p className="hidden-screen show-on-print text-[8px] mt-2 italic text-center">~ Akhir dari dokumen laporan ~</p>
+            <p className="hidden-screen show-on-print text-[10px] mt-4 italic text-center text-gray-500">~ Akhir dari dokumen laporan audit ~</p>
          </div>
       )}
 
-      {/* Tampilan Audit Area / Out Area tetap (Sembunyikan saat di print untuk kepraktisan) */}
+      {/* Tampilan Audit Area / Out Area tetap */}
       {lapTab === 'in_area' && (
          <div className="bg-[#092613] rounded-2xl border border-[#1b5e35] overflow-x-auto hide-on-print animate-in fade-in">
              <table className="w-full text-left border-collapse">
@@ -1242,25 +1320,25 @@ function RekapanLaporan({ transactions, user, settings }) {
   };
 
   return (
-    <div className="space-y-6 print-1-lembar">
-       <div className="hidden-screen show-on-print border-b-2 border-black pb-2 mb-2">
-           {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-8 mb-1" alt="Logo"/>}
-           <h1 className="text-sm font-bold uppercase">Rekapan Global Semua Lokasi</h1>
-           <p className="text-[8px] text-gray-600">Dicetak: {new Date().toLocaleString('id-ID')} | Master: {user.nama} | Total Item: {completed.length}</p>
+    <div className="space-y-6 print-a4-layout">
+       <div className="hidden-screen show-on-print border-b-2 border-black pb-4 mb-4">
+           {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-10 mb-2" alt="Logo"/>}
+           <h1 className="text-xl font-bold uppercase">Rekapan Global Semua Lokasi</h1>
+           <p className="text-xs text-gray-600">Dicetak: {new Date().toLocaleString('id-ID')} | Master: {user.nama} | Total Item: {completed.length}</p>
        </div>
 
-       <div className="bg-teal-900/30 border border-teal-500/30 p-6 print:p-2 print:border-black rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div><p className="text-sm print:text-[10px] font-bold text-teal-400 print:text-black">Total Pendapatan Global Semua Lokasi</p><h2 className="text-4xl print:text-xl font-black text-white print:text-black">Rp {total.toLocaleString('id-ID')}</h2></div>
+       <div className="bg-teal-900/30 border border-teal-500/30 p-6 print:p-4 print:border-black print:border-2 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div><p className="text-sm print:text-xs font-bold text-teal-400 print:text-black">Total Pendapatan Global Semua Lokasi</p><h2 className="text-4xl print:text-2xl font-black text-white print:text-black">Rp {total.toLocaleString('id-ID')}</h2></div>
           <div className="flex gap-2 hide-on-print">
             <button onClick={() => window.print()} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-bold shadow-lg"><Download size={16} /> Print 1 Lembar A4</button>
             <button onClick={handleExportExcel} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-bold shadow-lg"><FileText size={16} /> XLSX/CSV</button>
           </div>
        </div>
 
-       <div className="overflow-x-auto hide-scrollbar flex-1">
+       <div className="overflow-x-auto hide-scrollbar flex-1 w-full">
           <table className="dense-table print:text-black text-white text-sm w-full">
              <thead>
-                <tr className="bg-[#0c331a] print:bg-gray-200 text-green-300/70 print:text-black text-xs print:text-[8px] uppercase">
+                <tr className="bg-[#0c331a] print:bg-gray-200 text-green-300/70 print:text-black text-xs uppercase">
                    <th className="p-3 border-b border-[#1b5e35]">Lokasi</th>
                    <th className="p-3 border-b border-[#1b5e35]">Nopol</th>
                    <th className="p-3 border-b border-[#1b5e35]">Jenis</th>
@@ -1270,7 +1348,7 @@ function RekapanLaporan({ transactions, user, settings }) {
              </thead>
              <tbody>
                 {completed.slice().reverse().map((tx) => (
-                   <tr key={tx.id} className="hover:bg-[#114022] border-b border-[#1b5e35]/50 print:border-black transition-colors print:text-[8px]">
+                   <tr key={tx.id} className="hover:bg-[#114022] border-b border-[#1b5e35]/50 transition-colors">
                       <td className="p-2 text-teal-400 print:text-black font-bold">{tx.lokasi}</td>
                       <td className="p-2 font-bold">{tx.nopol}</td>
                       <td className="p-2">{tx.jenis}</td>
@@ -1345,7 +1423,6 @@ function SettingUser({ settings, setSettings, showToast }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ id: '', nipp: '', nama: '', password: '', role: 'kasir', canViewArea: false });
 
-  // BUG FIX: Hapus tombol manual "Simpan", buat proses otomatis begitu disubmit/hapus.
   const submitForm = (e) => {
     e.preventDefault();
     let newList;
@@ -1356,7 +1433,7 @@ function SettingUser({ settings, setSettings, showToast }) {
     }
     
     setUsersList(newList);
-    setSettings({ ...settings, users: newList }); // AUTO-SAVE KE FIREBASE
+    setSettings({ ...settings, users: newList });
     
     setShowForm(false);
     setForm({ id: '', nipp: '', nama: '', password: '', role: 'kasir', canViewArea: false });
@@ -1368,7 +1445,7 @@ function SettingUser({ settings, setSettings, showToast }) {
     const newList = usersList.filter(u => u.id !== id);
     
     setUsersList(newList);
-    setSettings({ ...settings, users: newList }); // AUTO-SAVE KE FIREBASE
+    setSettings({ ...settings, users: newList });
     showToast("Akun berhasil dihapus!");
   };
 
@@ -1669,38 +1746,90 @@ function ShiftEndModal({ user, transactions, shiftName, onClose, settings }) {
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-       <div className="bg-[#114022] rounded-3xl p-6 md:p-8 max-w-md w-full border border-[#1b5e35] shadow-2xl text-center hide-on-print max-h-[95vh] overflow-y-auto custom-scrollbar">
-          <div className="w-16 h-16 md:w-20 md:h-20 bg-orange-500/20 text-orange-400 rounded-full flex items-center justify-center mx-auto mb-4"><Clock size={36}/></div>
-          <h2 className="text-xl md:text-2xl font-black text-white mb-2">Shift Telah Berakhir</h2>
-          <p className="text-green-200/70 text-xs md:text-sm mb-6">Waktu shift Anda telah selesai. Berikut rekapan pendapatan Anda pada sesi ini.</p>
+       {/* Mengubah menjadi layout yang lebih pantas untuk di-print PDF */}
+       <div className="bg-[#114022] rounded-3xl p-6 md:p-8 max-w-lg w-full border border-[#1b5e35] shadow-2xl hide-on-print max-h-[95vh] overflow-y-auto custom-scrollbar print-a4-layout">
           
-          <div className="print-area bg-[#092613] border border-[#1b5e35] p-4 rounded-2xl text-left mb-6 font-mono text-xs md:text-sm print-1-lembar">
-             <div className="hidden-screen show-on-print border-b-2 border-black pb-2 mb-4 bg-white text-black text-center">
-                {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-10 mb-2 mx-auto" alt="Logo" />}
-                <h3 className="font-bold text-lg leading-tight uppercase">Rekapan Laporan Shift</h3>
-                <p className="text-xs text-slate-600">Dicetak: {new Date().toLocaleString('id-ID')}</p>
+          <div className="text-center hide-on-print">
+            <div className="w-16 h-16 bg-orange-500/20 text-orange-400 rounded-full flex items-center justify-center mx-auto mb-4"><Clock size={36}/></div>
+            <h2 className="text-2xl font-black text-white mb-2">Shift Telah Berakhir</h2>
+            <p className="text-green-200/70 text-sm mb-6">Waktu shift Anda telah selesai. Berikut rekapan pendapatan Anda pada sesi ini.</p>
+          </div>
+          
+          <div className="shift-report-print bg-[#092613] border border-[#1b5e35] p-6 rounded-2xl text-left mb-6 font-mono text-sm">
+             <div className="hidden-screen show-on-print border-b-[3px] border-black pb-4 mb-6 bg-white text-black text-center">
+                {webSettings.logoUrl && <img src={webSettings.logoUrl} className="h-16 mb-2 mx-auto" alt="Logo" />}
+                <h3 className="font-black text-xl leading-tight uppercase tracking-widest mt-2">Laporan Pendapatan Shift</h3>
+                <p className="text-sm font-semibold mt-1">Sistem Parkir Terpadu</p>
              </div>
 
-             <p className="text-center font-bold text-white border-b border-[#1b5e35] pb-2 mb-2 hide-on-print">REKAPAN {shiftName.toUpperCase()}</p>
-             <p className="text-green-300/50 print:text-black print:font-bold">Kasir: <span className="text-white print:text-black font-bold float-right">{user.nama}</span></p>
-             <p className="text-green-300/50 print:text-black print:font-bold mb-2">Lokasi: <span className="text-white print:text-black font-bold float-right">{user.lokasi}</span></p>
-             
-             <div className="border-t border-[#1b5e35] print:border-black my-2 pt-2 print:text-black">
-                <p className="font-bold text-white print:text-black mb-2">Rincian Pendapatan:</p>
-                {Object.keys(statsPerType).length === 0 && <p className="text-green-400/30 text-xs text-center py-2">Tidak ada transaksi keluar</p>}
-                {allTypes.map(jenis => {
-                   if (!statsPerType[jenis]) return null;
-                   return (
-                     <div key={jenis} className="flex justify-between items-center text-green-200/70 print:text-black mb-1">
-                        <span>- {jenis} ({statsPerType[jenis].qty})</span>
-                        <span className="text-white print:text-black">Rp {statsPerType[jenis].nominal.toLocaleString('id-ID')}</span>
-                     </div>
-                   )
-                })}
+             <div className="grid grid-cols-2 gap-4 mb-4 text-green-300/80 print-text-black border-b border-[#1b5e35] print-border-black pb-4">
+                <div>
+                   <p className="font-bold text-white print-text-black">LOKASI TUGAS:</p>
+                   <p>{user.lokasi}</p>
+                </div>
+                <div className="text-right">
+                   <p className="font-bold text-white print-text-black">KASIR / PETUGAS:</p>
+                   <p>{user.nama} ({user.nipp})</p>
+                </div>
+                <div>
+                   <p className="font-bold text-white print-text-black">SHIFT:</p>
+                   <p>{shiftName.toUpperCase()}</p>
+                </div>
+                <div className="text-right">
+                   <p className="font-bold text-white print-text-black">TANGGAL CETAK:</p>
+                   <p>{new Date().toLocaleString('id-ID')}</p>
+                </div>
              </div>
-             <div className="border-t border-[#1b5e35] print:border-black mt-3 pt-3 bg-black/30 print:bg-transparent print:border-2 p-3 rounded text-center">
-                <p className="text-xs text-green-300/50 print:text-black print:font-bold mb-1">TOTAL SETORAN</p>
-                <h3 className="text-2xl font-black text-green-400 print:text-black">Rp {totalNominal.toLocaleString('id-ID')}</h3>
+             
+             <div className="mb-4">
+                <p className="font-bold text-white print-text-black mb-3 text-center uppercase tracking-widest">Rincian Transaksi</p>
+                <table className="w-full text-left">
+                   <tbody>
+                      {Object.keys(statsPerType).length === 0 && <tr><td colSpan="2" className="text-green-400/30 text-center py-2">Tidak ada transaksi tercatat pada shift ini.</td></tr>}
+                      {allTypes.map(jenis => {
+                         if (!statsPerType[jenis]) return null;
+                         return (
+                           <tr key={jenis} className="border-b border-[#1b5e35]/50 print-border-black text-green-200/80 print-text-black">
+                              <td className="py-2">{jenis} ({statsPerType[jenis].qty} Unit)</td>
+                              <td className="py-2 text-right font-bold text-white print-text-black">Rp {statsPerType[jenis].nominal.toLocaleString('id-ID')}</td>
+                           </tr>
+                         )
+                      })}
+                   </tbody>
+                </table>
+             </div>
+
+             <div className="mt-6 border-t-[3px] border-[#1b5e35] print-border-black pt-4 bg-black/20 print-bg-transparent rounded text-center">
+                <p className="text-sm font-bold text-green-300/80 print-text-black mb-1 uppercase tracking-widest">Grand Total Setoran</p>
+                <h3 className="text-3xl font-black text-green-400 print-text-black">Rp {totalNominal.toLocaleString('id-ID')}</h3>
+             </div>
+
+             {/* TANDA TANGAN ONLINE & FOTO KASIR (Hanya Tampil Saat Print) */}
+             <div className="hidden-screen show-on-print mt-16 print-text-black font-sans">
+                 <div className="flex justify-between px-10">
+                    <div className="text-center w-40">
+                       <p className="text-sm">Mengetahui,</p>
+                       <p className="text-sm font-bold">Audit / Koordinator</p>
+                       <div className="mt-24 border-b border-black w-full"></div>
+                    </div>
+                    
+                    <div className="text-center w-40">
+                       <p className="text-sm mb-2">Dibuat Oleh,</p>
+                       <p className="text-sm font-bold mb-2">Kasir Bertugas</p>
+                       
+                       {/* FOTO WAJAH KASIR SAAT LOGIN */}
+                       {user.photo ? (
+                         <div className="flex flex-col items-center">
+                           <img src={user.photo} className="w-[80px] h-[80px] object-cover border-2 border-slate-200 rounded-lg grayscale shadow-sm mb-1" alt="Validasi Kasir" />
+                           <p className="text-[9px] text-gray-500 italic">Terverifikasi Sistem</p>
+                         </div>
+                       ) : (
+                         <div className="mt-20"></div>
+                       )}
+
+                       <p className="border-b border-black font-bold uppercase mt-2 pt-1 inline-block w-full">{user.nama}</p>
+                    </div>
+                 </div>
              </div>
           </div>
 
