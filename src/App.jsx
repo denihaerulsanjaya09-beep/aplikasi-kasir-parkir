@@ -4,7 +4,7 @@ import {
   MapPin, Clock, FileText, Search, Car, Truck, Bike, Download, Share2,
   ChevronDown, Bluetooth, Users, Monitor, ShieldCheck, FileImage,
   UploadCloud, AlertTriangle, X, Lock, Trash2, Database,
-  ArrowRight, ArrowLeft, Building, Printer, CheckSquare, HardDrive
+  ArrowRight, ArrowLeft, Printer, CheckSquare, HardDrive
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -50,65 +50,6 @@ const formatBytes = (bytes) => {
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-};
-
-// --- HELPER FUNCTION: Direct Bluetooth Print (RawBT / ESC-POS) ---
-const printDirectBluetooth = (type, data, settings) => {
-    const center = (str) => {
-        const spaces = Math.max(0, Math.floor((32 - str.length) / 2));
-        return ' '.repeat(spaces) + str;
-    };
-    const right = (lbl, val) => {
-        const spaces = Math.max(0, 32 - lbl.length - val.length);
-        return lbl + ' '.repeat(spaces) + val;
-    };
-
-    const loc = data.lokasi || '';
-    const nip = data.kasirMasuk || data.kasirKeluar || '';
-    const nopol = data.nopol || '';
-    const jenis = data.jenis || '';
-    const divider = '-'.repeat(32);
-
-    const ticketTitle = settings?.ticket?.title || "Sistem Device Portable";
-    const ticketSubtitle = settings?.ticket?.subtitle || "";
-
-    let text = '';
-    text += center(ticketTitle) + '\n';
-    if (ticketSubtitle) text += center(ticketSubtitle) + '\n';
-    text += center(loc) + '\n';
-    text += divider + '\n';
-    
-    if (type === 'IN') {
-        text += center("TIKET MASUK") + '\n';
-        text += `NOPOL: ${nopol}\n`;
-        text += `JENIS: ${jenis}\n`;
-        text += `MASUK: ${data.waktuMasuk.toLocaleString('id-ID')}\n`;
-        text += `KASIR: ${nip}\n`;
-        text += divider + '\n';
-        text += center(settings?.ticket?.footerIn || "SIMPAN TIKET INI") + '\n';
-    } else {
-        text += center("STRUK KELUAR") + '\n';
-        text += `NOPOL: ${nopol}\n`;
-        text += `JENIS: ${jenis} ${data.tiketHilang ? '(HILANG)' : ''}\n`;
-        text += `MASUK: ${data.waktuMasuk.toLocaleTimeString('id-ID')}\n`;
-        text += `KLUAR: ${data.waktuKeluar.toLocaleTimeString('id-ID')}\n`;
-        text += `DURAS: ${data.durasiText}\n`;
-        text += divider + '\n';
-        text += right("TOTAL:", `Rp ${data.totalBiaya.toLocaleString('id-ID')}`) + '\n';
-        text += divider + '\n';
-        text += center(settings?.ticket?.footerOut || "TERIMA KASIH") + '\n';
-    }
-    text += '\n';
-
-    const intentUrl = `intent:${encodeURI(text)}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = intentUrl;
-    document.body.appendChild(iframe);
-    
-    setTimeout(() => {
-        if (document.body.contains(iframe)) document.body.removeChild(iframe);
-    }, 2000);
 };
 
 // --- CONSTANTS & DEFAULT DATA ---
@@ -283,72 +224,88 @@ const CameraModal = ({ facingMode, onCapture, onClose, title }) => {
   );
 };
 
-// --- COMPONENT: TICKET PREVIEW (SOP KONTROL) ---
-const TicketPreviewModal = ({ type, data, settings, onClose, showToast }) => {
+// --- COMPONENT: TICKET PREVIEW (KEMBALI KE SETINGAN SEMULA 100%) ---
+const TicketPreviewModal = ({ type, data, settings, onClose }) => {
+  const locSettings = getLocSettings(settings, data.lokasi);
+
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in zoom-in-95 print:bg-white print:p-0 print:block">
-      <div className="bg-[#114022] p-6 rounded-[2rem] border border-[#1b5e35] shadow-2xl flex flex-col items-center max-w-sm w-full relative print:border-none print:shadow-none print:p-0 print:bg-white print:w-full print:max-w-none">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in zoom-in-95">
+      <div className="bg-[#114022] p-6 rounded-[2rem] border border-[#1b5e35] shadow-2xl flex flex-col items-center max-w-sm w-full relative">
         
-        <div className="absolute -top-5 bg-teal-500 text-white px-4 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-2 hide-on-print">
-          <CheckCircle2 size={14}/> Tercetak Otomatis
-        </div>
-        
-        <h3 className="text-white font-bold mb-4 flex items-center gap-2 hide-on-print">
-          <FileText className="text-teal-400"/> SOP Preview Karcis
+        <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+          <FileText className="text-teal-400"/> Preview Struk
         </h3>
 
-        {/* Simulasi Kertas Karcis Thermal dengan layout Ultra Compact untuk Hemat Kertas */}
-        <div className="ticket-print-area bg-white text-black font-mono w-full p-4 rounded shadow-inner text-sm relative overflow-hidden">
-           
-           <div className="ticket-text-center font-bold ticket-mb-1">
+        {/* PRINT AREA ASLI SESUAI PERMINTAAN USER (UKURAN 58MM) */}
+        <div id="print-area" className="bg-white text-black w-full p-4 font-mono text-sm relative">
+           <div className="text-center font-bold mb-2">
               {settings?.web?.logoUrl && (
-                 <img src={settings.web.logoUrl} alt="Logo" className="mx-auto" style={{ display: 'block', maxHeight: '40px', width: 'auto', marginBottom: '2px' }} />
+                 <img src={settings.web.logoUrl} alt="Logo" className="mx-auto block max-h-[40px] w-auto mb-1" />
               )}
-              
-              <p className="text-[13px]">{settings?.ticket?.title || 'Sistem Device Portable'}</p>
-              {settings?.ticket?.subtitle && <p className="text-[10px]">{settings.ticket.subtitle}</p>}
+              <p className="text-[13px] uppercase">{settings?.ticket?.title || 'Sistem Device Portable'}</p>
+              {settings?.ticket?.subtitle && <p className="text-[10px] uppercase">{settings.ticket.subtitle}</p>}
               <p className="text-[11px]">{data.lokasi}</p>
            </div>
-
-           <div className="ticket-divider"></div>
-           <div className="ticket-text-center font-bold text-[12px] my-1">{type === 'IN' ? 'TIKET MASUK' : 'STRUK KELUAR'}</div>
-           <div className="ticket-divider"></div>
            
-           <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>NOPOL:</span><span className="font-bold text-[13px]">{data.nopol}</span></div>
-           <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>JENIS:</span><span>{data.jenis}</span></div>
-           <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>MASUK:</span><span>{data.waktuMasuk.toLocaleString('id-ID')}</span></div>
+           <div className="border-b border-dashed border-black my-1"></div>
+           <div className="text-center font-bold text-[14px] my-1">{type === 'IN' ? 'TIKET MASUK' : 'STRUK KELUAR'}</div>
+           <div className="border-b border-dashed border-black my-1"></div>
+           
+           <div className="flex justify-between text-[11px] mb-1"><span>NOPOL:</span><span className="font-bold text-[13px]">{data.nopol}</span></div>
+           <div className="flex justify-between text-[11px] mb-1"><span>JENIS:</span><span>{data.jenis}</span></div>
+           <div className="flex justify-between text-[11px] mb-1"><span>MASUK:</span><span>{data.waktuMasuk.toLocaleString('id-ID')}</span></div>
            
            {type === 'OUT' && (
               <>
-                <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>KELUAR:</span><span>{data.waktuKeluar.toLocaleTimeString('id-ID')}</span></div>
-                <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>DURASI:</span><span>{data.durasiText}</span></div>
-                {data.tiketHilang && <div className="text-center text-[10px] mt-1 text-black font-bold">*Termasuk Denda Kehilangan</div>}
-                <div className="ticket-divider mt-1"></div>
-                <div className="ticket-flex-between font-black text-[13px] mt-1"><span>TOTAL:</span><span>Rp {data.totalBiaya?.toLocaleString('id-ID')}</span></div>
+                <div className="flex justify-between text-[11px] mb-1"><span>KELUAR:</span><span>{data.waktuKeluar.toLocaleTimeString('id-ID')}</span></div>
+                <div className="flex justify-between text-[11px] mb-1"><span>DURASI:</span><span>{data.durasiText}</span></div>
+                <div className="border-b border-dashed border-black my-1"></div>
+                <div className="flex justify-between font-black text-[14px] mt-1"><span>TOTAL:</span><span>Rp {data.totalBiaya?.toLocaleString('id-ID')}</span></div>
               </>
            )}
            
            {type === 'IN' && (
-              <div className="ticket-flex-between mt-1 text-[11px]"><span>KASIR:</span><span>{data.kasirMasuk}</span></div>
+              <div className="flex justify-between text-[11px] mt-1"><span>KASIR:</span><span>{data.kasirMasuk}</span></div>
            )}
 
-           <div className="ticket-divider mt-1 mb-1"></div>
-           <div className="ticket-text-center text-[10px] font-bold">{type === 'IN' ? (settings?.ticket?.footerIn || 'SIMPAN TIKET INI') : (settings?.ticket?.footerOut || 'TERIMA KASIH')}</div>
+           <div className="text-[10px] text-left pt-2 mt-2">
+               {type === 'OUT' && data.tiketHilang && <p className="text-center font-bold mb-1 text-black">*Termasuk denda kehilangan tiket Rp 10.000</p>}
+               {type === 'OUT' && locSettings?.tariffs?.[data.jenis]?.mode === 'progressif' && !data.isMember && (
+                 <p className="text-center italic mt-2 text-[8px]">Max Tarif: Rp {locSettings.tariffs[data.jenis].max} | Inap: Rp {locSettings.tariffs[data.jenis].inap}</p>
+               )}
+           </div>
+
+           <div className="border-b border-dashed border-black my-2"></div>
+           <div className="text-center text-[10px] font-bold mb-2">{type === 'IN' ? (settings?.ticket?.footerIn || 'SIMPAN TIKET INI') : (settings?.ticket?.footerOut || 'TERIMA KASIH')}</div>
+           {settings?.web?.runningText && <p className="text-[9px] text-center pt-2 border-t border-dashed border-black">{settings.web.runningText}</p>}
         </div>
 
-        <p className="text-[10px] text-green-200/50 mt-4 text-center hide-on-print">Data telah tersimpan dan perintah cetak telah dikirim.</p>
-
-        <div className="flex flex-wrap gap-2 mt-4 w-full hide-on-print">
-           <button onClick={() => window.print()} className="flex-1 py-3 px-2 rounded-xl bg-[#092613] border border-[#1b5e35] text-white hover:bg-[#164d2b] transition-all flex justify-center items-center gap-2 text-xs font-bold">
-             <Printer size={14}/> Print (Spooler)
-           </button>
-           <button onClick={() => { printDirectBluetooth(type, data, settings); showToast("Mengirim ulang via bluetooth..."); }} className="flex-1 py-3 px-2 rounded-xl bg-orange-600 border border-orange-500 text-white hover:bg-orange-500 transition-all flex justify-center items-center gap-2 text-xs font-bold">
-             <Bluetooth size={14}/> Print Bluetooth
-           </button>
-           <button onClick={onClose} className="w-full py-3 rounded-xl bg-teal-600 text-white font-bold hover:bg-teal-500 transition-all shadow-lg mt-2 text-sm">
-             Selesai / Tutup
-           </button>
+        <div className="flex gap-3 w-full mt-6">
+          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-[#092613] text-white font-bold hover:bg-black/20 transition-all">Tutup</button>
+          <button onClick={() => window.print()} className="flex-1 py-3 rounded-xl bg-orange-600 text-white font-bold flex justify-center gap-2 hover:bg-orange-500 transition-all shadow-lg">
+             <Printer size={18} /> Cetak Struk
+          </button>
         </div>
+
+        {/* INJEKSI CSS KHUSUS STRUK PRINTER BLUETOOTH */}
+        <style dangerouslySetInnerHTML={{__html: `
+          @media print {
+            body * { visibility: hidden !important; }
+            #print-area, #print-area * { visibility: visible !important; color: black !important; }
+            #print-area { 
+              position: absolute !important; 
+              left: 0 !important; 
+              top: 0 !important; 
+              width: 58mm !important; 
+              margin: 0 !important; 
+              padding: 0 !important; 
+              font-family: monospace !important; 
+              box-shadow: none !important; 
+              border: none !important; 
+            }
+            @page { margin: 0; size: 58mm auto; }
+          }
+        `}} />
       </div>
     </div>
   );
@@ -522,7 +479,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#092613] text-green-50 font-sans selection:bg-green-500 selection:text-white pb-36">
-      {/* CSS KHUSUS PRINT Laporan & Karcis Hemat Kertas */}
+      {/* CSS GLOBAL KHUSUS UNTUK PRINT LAPORAN A4 (Ticket tidak terpengaruh jika modal tidak terbuka) */}
       <style>{`
         @media print {
           @page { margin: 0; size: auto; }
@@ -540,23 +497,6 @@ export default function App() {
             margin: 0 !important;
           }
 
-          .ticket-print-area {
-            width: 100% !important;
-            max-width: 58mm !important;
-            margin: 0 auto !important;
-            padding: 2mm !important;
-            background: white !important;
-            color: black !important;
-            font-family: monospace !important;
-            box-shadow: none !important;
-            border: none !important;
-          }
-          .ticket-print-area * { line-height: 1.1 !important; margin: 0; padding: 0; }
-          .ticket-divider { border-bottom: 1px solid black !important; margin: 2px 0 !important; }
-          .ticket-text-center { text-align: center !important; }
-          .ticket-flex-between { display: flex !important; justify-content: space-between !important; }
-          .ticket-mb-1 { margin-bottom: 2px !important; }
-
           .dense-table { width: 100%; border-collapse: collapse; font-size: 11px !important; margin-top: 15px; }
           .dense-table tr { page-break-inside: avoid; page-break-after: auto; }
           .dense-table th, .dense-table td { border: 1px solid black !important; padding: 6px 8px !important; color: black !important; background-color: transparent !important; }
@@ -572,7 +512,8 @@ export default function App() {
       {toast && <Toast message={toast.msg} type={toast.type} />}
       {confirmDialog && <ConfirmModal {...confirmDialog} />}
       
-      {ticketPreview && <TicketPreviewModal type={ticketPreview.type} data={ticketPreview.data} settings={settings} onClose={() => setTicketPreview(null)} showToast={showToast} />}
+      {/* TICKET PREVIEW MENGGUNAKAN NATIVE BROWSER PRINT */}
+      {ticketPreview && <TicketPreviewModal type={ticketPreview.type} data={ticketPreview.data} settings={settings} onClose={() => setTicketPreview(null)} />}
 
       {/* Header */}
       <header className="fixed top-0 w-full z-40 bg-[#0c331a]/90 backdrop-blur-xl border-b border-[#1b5e35] shadow-lg px-6 py-3 flex items-center justify-between hide-on-print">
@@ -596,7 +537,6 @@ export default function App() {
           </div>
         </div>
         <div className="w-1/3 flex justify-end gap-2">
-          {/* Tombol akhiri shift atas disembunyikan jika layar HP, karena diganti tombol super besar di bawah */}
           {canTransact && (
              <button onClick={() => setShiftData(prev => ({...prev, showSummary: true, forced: false}))} className="p-2 bg-orange-500/20 text-orange-400 rounded-xl hover:bg-orange-500/30 transition-colors text-xs font-bold hidden md:flex items-center gap-1 border border-orange-500/20">
                <CheckSquare size={14} /> Akhiri Shift
@@ -785,8 +725,16 @@ function ShiftEndModal({ user, transactions, shiftName, forced, onClose, cancelO
   const [pdfPrinted, setPdfPrinted] = useState(false);
   const webSettings = settings?.web || {};
   
-  // Ambil transaksi khusus untuk shift ini, user ini, dan lokasi ini
-  const shiftTx = transactions.filter(t => t.kasirKeluar === user.nama && t.lokasi === user.lokasi && t.waktuKeluar && t.waktuKeluar >= (user.loginTime || new Date()));
+  // FIX BUG PENTING: Gunakan rentang waktu 14 Jam ke belakang sebagai pengganti user.loginTime yang rentan riset saat refresh browser.
+  const cutoffTime = new Date(Date.now() - 14 * 60 * 60 * 1000); // 14 jam ke belakang
+  
+  const shiftTx = transactions.filter(t => 
+    t.kasirKeluar === user.nama && 
+    t.lokasi === user.lokasi && 
+    t.waktuKeluar && 
+    new Date(t.waktuKeluar) > cutoffTime
+  );
+  
   const totalNominal = shiftTx.reduce((sum, t) => sum + (t.totalBiaya || 0), 0);
   
   const regularTx = shiftTx.filter(t => !t.isManual);
@@ -877,7 +825,6 @@ function ShiftEndModal({ user, transactions, shiftName, forced, onClose, cancelO
        <div className="bg-[#114022] rounded-3xl p-6 md:p-8 max-w-2xl w-full border border-[#1b5e35] shadow-[0_0_50px_rgba(0,0,0,0.8)] hide-on-print max-h-[95vh] flex flex-col print-a4-layout relative">
           
           <div className="text-center hide-on-print shrink-0 mb-4 relative">
-            {/* Tombol X hanya muncul jika dibuka manual (bukan karena habis shift) dan BISA DITUTUP agar bisa kembali kerja jika kepencet */}
             {!forced && !canClose && (
                <button onClick={cancelOpen} className="absolute top-0 right-0 bg-[#092613] text-green-200/50 hover:text-white hover:bg-red-600/50 p-2 rounded-full transition-all" title="Batal / Kembali Bekerja">
                   <X size={20}/>
@@ -1070,9 +1017,6 @@ function KendaraanMasuk({ user, addTransaction, showToast, settings, setTicketPr
     // Simpan ke DB dulu agar tidak hilang
     await addTransaction(newTx);
     
-    // Print background langsung jalan
-    printDirectBluetooth('IN', newTx, settings);
-    
     // Tampilkan SOP Preview Modal ke UI
     setTicketPreview({ type: 'IN', data: newTx });
     
@@ -1197,8 +1141,6 @@ function KendaraanKeluar({ user, transactions, updateTransaction, settings, show
     
     const locSettings = getLocSettings(settings, selectedTx.lokasi);
     const finalData = { ...selectedTx, ...updateData, petugasPhoto: user.photo, locSettings };
-
-    printDirectBluetooth('OUT', finalData, settings);
 
     // Tampilkan SOP Preview Modal ke UI
     setTicketPreview({ type: 'OUT', data: finalData });
@@ -2381,7 +2323,7 @@ function SettingUser({ settings, setSettings, showToast }) {
                 </div>
              </div>
              {form.role === 'korlap' && (
-                <div className="pt-2">
+               <div className="pt-2">
                    <label className="flex items-center gap-2 text-sm text-orange-300 cursor-pointer">
                       <input type="checkbox" checked={form.canViewArea} onChange={e => setForm({...form, canViewArea: e.target.checked})} className="rounded accent-orange-500 w-4 h-4" />
                       Izinkan Korlap Melihat Daftar Kendaraan Area?
@@ -2646,14 +2588,8 @@ function SettingWeb({ settings, setSettings, isReadOnly, showToast }) {
   return (
     <form onSubmit={handleSave} className="space-y-6">
       <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35]">
-         <h4 className="font-bold text-white mb-2 uppercase text-sm flex items-center gap-2"><Bluetooth size={18} className="text-teal-400"/> Pengaturan Printer Default</h4>
-         <p className="text-xs text-green-200/70 leading-relaxed mb-4">Aplikasi ini telah dioptimalkan untuk menggunakan pencetakan otomatis (<strong>Direct Background Print</strong>).</p>
-         <div className="bg-[#114022] p-4 rounded-xl border border-[#1b5e35]">
-            <ol className="text-xs text-green-200/60 list-decimal ml-4 space-y-2">
-               <li><strong>Android:</strong> Wajib install aplikasi <strong>RawBT</strong> Print Service. Aktifkan fitur <em>"Don't ask before print"</em> agar struk otomatis keluar seketika.</li>
-               <li>Pastikan Printer Thermal Bluetooth Anda sudah di-pairing (dipasangkan) di setingan Bluetooth HP.</li>
-            </ol>
-         </div>
+         <h4 className="font-bold text-white mb-2 uppercase text-sm flex items-center gap-2"><Bluetooth size={18} className="text-teal-400"/> Pengaturan Printer</h4>
+         <p className="text-xs text-green-200/70 leading-relaxed mb-4">Aplikasi saat ini menggunakan fitur pencetakan Struk Modal klasik yang dapat memanggil perintah Print bawaan Browser yang kompatibel dengan ukuran kertas Kasir Bluetooth Anda (58mm).</p>
       </div>
 
       <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35] flex flex-col items-center text-center">
@@ -2694,7 +2630,7 @@ function SettingTiket({ settings, setSettings, isReadOnly, showToast }) {
     <form onSubmit={handleSave} className="space-y-6">
       <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35]">
          <h4 className="font-bold text-white mb-2 uppercase text-sm flex items-center gap-2"><Printer size={18} className="text-teal-400"/> Editor Konten Struk</h4>
-         <p className="text-xs text-green-200/70 leading-relaxed mb-4">Sesuaikan teks Header dan Footer khusus untuk cetakan tiket masuk dan struk keluar (berlaku untuk print bluetooth dan preview). <b>Catatan: Logo struk mengambil dari menu Web & Printer.</b></p>
+         <p className="text-xs text-green-200/70 leading-relaxed mb-4">Sesuaikan teks Header dan Footer khusus untuk cetakan tiket masuk dan struk keluar. <b>Catatan: Logo struk mengambil dari menu Web & Printer.</b></p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
