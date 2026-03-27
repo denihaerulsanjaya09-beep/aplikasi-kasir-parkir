@@ -37,6 +37,22 @@ const processImageFile = (file, callback) => {
   reader.readAsDataURL(file);
 };
 
+// --- HELPER FUNCTION: Deep Merge Objects ---
+const deepMerge = (target, source) => {
+  const isObject = (item) => item && typeof item === 'object' && !Array.isArray(item);
+  if (!isObject(target) || !isObject(source)) return source;
+  const output = { ...target };
+  Object.keys(source).forEach(key => {
+    if (isObject(source[key])) {
+      if (!(key in target)) Object.assign(output, { [key]: source[key] });
+      else output[key] = deepMerge(target[key], source[key]);
+    } else {
+      Object.assign(output, { [key]: source[key] });
+    }
+  });
+  return output;
+};
+
 // --- HELPER FUNCTION: Direct Bluetooth Print (RawBT / ESC-POS) ---
 const printDirectBluetooth = (type, data, settings) => {
     const center = (str) => {
@@ -390,9 +406,9 @@ export default function App() {
       const unsubSettings = onSnapshot(settingsRef, (snapshot) => {
          if (!snapshot.empty) {
             const globalSettings = snapshot.docs.find(d => d.id === 'global');
-            if (globalSettings) {
+            if (globalSettings && !snapshot.metadata.hasPendingWrites) {
                const loadedSettings = globalSettings.data();
-               setSettings({ ...DEFAULT_SETTINGS, ...loadedSettings });
+               setSettings(prev => deepMerge(prev, loadedSettings));
             }
          } else {
             setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), DEFAULT_SETTINGS);
@@ -415,9 +431,9 @@ export default function App() {
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', id), txToUpdate, { merge: true });
   };
 
-  const handleUpdateSettings = async (newSettings) => {
+  const handleUpdateSettings = async (newSettings, isPartial = false) => {
     if (!fbUser) return;
-    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), newSettings);
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), newSettings, { merge: isPartial });
   };
 
   useEffect(() => {
@@ -430,9 +446,8 @@ export default function App() {
       const activeLogins = settings.activeLogins || {};
       if (activeLogins[user.nipp]?.deviceId === deviceId) {
          handleUpdateSettings({
-            ...settings, 
             activeLogins: { ...activeLogins, [user.nipp]: { ...activeLogins[user.nipp], timestamp: Date.now() } }
-         });
+         }, true);
       }
     }, 60000);
     return () => clearInterval(interval);
@@ -1680,11 +1695,22 @@ function SettingShift({ settings, setSettings, isReadOnly, user, showToast }) {
   const locSettings = getLocSettings(settings, targetLokasi);
   const [shifts, setShifts] = useState(locSettings.shifts || DEFAULT_LOCATION_SETTINGS.shifts);
 
-  useEffect(() => { setShifts(getLocSettings(settings, targetLokasi).shifts || DEFAULT_LOCATION_SETTINGS.shifts); }, [targetLokasi, settings]);
+  useEffect(() => { 
+     const remoteShifts = getLocSettings(settings, targetLokasi).shifts || DEFAULT_LOCATION_SETTINGS.shifts;
+     if (JSON.stringify(remoteShifts) !== JSON.stringify(shifts)) {
+        setShifts(remoteShifts); 
+     }
+  }, [targetLokasi, settings]);
 
   const handleSave = () => {
-    const newLocations = { ...settings.locations, [targetLokasi]: { ...getLocSettings(settings, targetLokasi), shifts: shifts } };
-    setSettings({ ...settings, locations: newLocations });
+    const partialUpdate = {
+        locations: {
+            [targetLokasi]: {
+                shifts: shifts
+            }
+        }
+    };
+    setSettings(partialUpdate, true);
     showToast(`Setingan Jam Shift untuk ${targetLokasi} Tersimpan!`);
   };
 
@@ -1744,7 +1770,7 @@ function SettingUser({ settings, setSettings, showToast }) {
     }
     
     setUsersList(newList);
-    setSettings({ ...settings, users: newList });
+    setSettings({ users: newList }, true);
     
     setShowForm(false);
     setForm({ id: '', nipp: '', nama: '', password: '', role: 'kasir', canViewArea: false });
@@ -1756,7 +1782,7 @@ function SettingUser({ settings, setSettings, showToast }) {
     const newList = usersList.filter(u => u.id !== id);
     
     setUsersList(newList);
-    setSettings({ ...settings, users: newList });
+    setSettings({ users: newList }, true);
     showToast("Akun berhasil dihapus!");
   };
 
@@ -1828,12 +1854,15 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
      'Sepeda/Becak': true
   });
 
-  // BUG FIX: Hapus `settings` dari dependency agar auto-sync background tidak mereset input yang sedang diketik
+  // BUG FIX: Gunakan JSON.stringify untuk mengecek apakah tarif benar-benar berubah sebelum mereset state lokal
   useEffect(() => { 
-     setLocalTariff(getLocSettings(settings, targetLokasi).tariffs || DEFAULT_LOCATION_SETTINGS.tariffs); 
+     const remoteTariffs = getLocSettings(settings, targetLokasi).tariffs || DEFAULT_LOCATION_SETTINGS.tariffs;
+     if (JSON.stringify(remoteTariffs) !== JSON.stringify(localTariff)) {
+        setLocalTariff(remoteTariffs); 
+     }
      // Reset kuncian saat ganti lokasi
      setLocked({ 'Motor': true, 'Mobil': true, 'Box/Truck': true, 'Sepeda/Becak': true });
-  }, [targetLokasi]); 
+  }, [targetLokasi, settings]); 
 
   const updateTariff = (jenis, field, val) => {
     setLocalTariff(prev => ({ ...prev, [jenis]: { ...prev[jenis], [field]: field === 'mode' || typeof val === 'boolean' ? val : Number(val) } }));
@@ -1844,17 +1873,16 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
   };
 
   const handleSaveJenis = (jenis) => {
-     const newLocations = { 
-         ...settings.locations, 
-         [targetLokasi]: { 
-             ...getLocSettings(settings, targetLokasi), 
-             tariffs: {
-                 ...(getLocSettings(settings, targetLokasi).tariffs || DEFAULT_LOCATION_SETTINGS.tariffs),
-                 [jenis]: localTariff[jenis]
+     const partialUpdate = {
+         locations: {
+             [targetLokasi]: {
+                 tariffs: {
+                     [jenis]: localTariff[jenis]
+                 }
              }
-         } 
+         }
      };
-     setSettings({ ...settings, locations: newLocations });
+     setSettings(partialUpdate, true);
      setLocked(prev => ({ ...prev, [jenis]: true }));
      showToast(`Tarif ${jenis} di lokasi ${targetLokasi} berhasil diperbarui & dikunci!`);
   };
@@ -1960,7 +1988,7 @@ function SettingMember({ settings, setSettings, isReadOnly, user, showToast }) {
     e.preventDefault();
     if (!form.fotoSTNK || !form.fotoKartuPegawai) return showToast("Mohon Upload Foto STNK dan Kartu Pegawai!", "error");
     const newMember = { ...form, id: Date.now(), status: 'Pending' };
-    setSettings({ ...settings, members: [...membersList, newMember] });
+    setSettings({ members: [...membersList, newMember] }, true);
     setShowAdd(false);
     setForm({ nipp: '', nopol: '', masaBerlaku: 'Bulanan', fotoSTNK: null, fotoKartuPegawai: null });
     showToast("Berhasil diajukan!");
@@ -1969,7 +1997,7 @@ function SettingMember({ settings, setSettings, isReadOnly, user, showToast }) {
   const handleVerif = (id) => {
     if (user.role !== 'master') return showToast("Hanya Master yang bisa verifikasi.", "error");
     const updated = membersList.map(m => m.id === id ? { ...m, status: 'Aktif' } : m);
-    setSettings({ ...settings, members: updated });
+    setSettings({ members: updated }, true);
     showToast("Member Diverifikasi!");
   };
 
@@ -2039,11 +2067,21 @@ function SettingMember({ settings, setSettings, isReadOnly, user, showToast }) {
 function SettingWeb({ settings, setSettings, isReadOnly, showToast }) {
   const [form, setForm] = useState(settings.web || DEFAULT_SETTINGS.web);
   
+  useEffect(() => {
+    if (JSON.stringify(settings.web) !== JSON.stringify(form)) {
+      setForm(settings.web || DEFAULT_SETTINGS.web);
+    }
+  }, [settings.web]);
+
   const handleLogoUpload = (e) => {
     processImageFile(e.target.files[0], (data) => setForm({...form, logoUrl: data}));
   };
 
-  const handleSave = (e) => { e.preventDefault(); setSettings({ ...settings, web: form }); showToast("Pengaturan Web Tersimpan!"); };
+  const handleSave = (e) => { 
+    e.preventDefault(); 
+    setSettings({ web: form }, true); 
+    showToast("Pengaturan Web Tersimpan!"); 
+  };
 
   return (
     <form onSubmit={handleSave} className="space-y-6">
@@ -2086,6 +2124,12 @@ function SettingTiket({ settings, setSettings, isReadOnly, showToast }) {
   const defaultTicketSettings = { title: 'Sistem Device Portable', subtitle: '', footerIn: 'SIMPAN TIKET INI', footerOut: 'TERIMA KASIH', logoUrl: '' };
   const [form, setForm] = useState(settings.ticket || defaultTicketSettings);
 
+  useEffect(() => {
+    if (JSON.stringify(settings.ticket) !== JSON.stringify(form)) {
+      setForm(settings.ticket || defaultTicketSettings);
+    }
+  }, [settings.ticket]);
+
   const handleLogoUpload = (e) => {
     processImageFile(e.target.files[0], (data) => setForm({...form, logoUrl: data}));
   };
@@ -2094,7 +2138,7 @@ function SettingTiket({ settings, setSettings, isReadOnly, showToast }) {
 
   const handleSave = (e) => {
      e.preventDefault();
-     setSettings({ ...settings, ticket: form });
+     setSettings({ ticket: form }, true);
      showToast("Pengaturan Struk/Tiket Tersimpan!");
   };
 
