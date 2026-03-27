@@ -122,9 +122,9 @@ const LOCATIONS = [...PURE_LOCATIONS, 'All Lokasi'];
 
 const DEFAULT_LOCATION_SETTINGS = {
   tariffs: {
-    'Motor': { mode: 'progressif', first: 2000, firstDuration: 1, next: 2000, max: 8000, inap: 10000, gracePeriodActive: false, gracePeriodMinutes: 10 },
-    'Mobil': { mode: 'progressif', first: 3000, firstDuration: 1, next: 3000, max: 15000, inap: 20000, gracePeriodActive: false, gracePeriodMinutes: 10 },
-    'Box/Truck': { mode: 'progressif', first: 5000, firstDuration: 2, next: 5000, max: 25000, inap: 25000, gracePeriodActive: false, gracePeriodMinutes: 10 },
+    'Motor': { mode: 'progressif', first: 2000, firstDuration: 1, next: 2000, max: 8000, inap: 10000, gracePeriodActive: true, gracePeriodMinutes: 10 },
+    'Mobil': { mode: 'progressif', first: 3000, firstDuration: 1, next: 3000, max: 15000, inap: 20000, gracePeriodActive: true, gracePeriodMinutes: 10 },
+    'Box/Truck': { mode: 'progressif', first: 5000, firstDuration: 1, next: 5000, max: 25000, inap: 25000, gracePeriodActive: false, gracePeriodMinutes: 10 },
     'Sepeda/Becak': { mode: 'flat', first: 1000, firstDuration: 1, next: 0, max: 1000, inap: 0, gracePeriodActive: false, gracePeriodMinutes: 0 }
   },
   shifts: [
