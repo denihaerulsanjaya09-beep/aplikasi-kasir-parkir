@@ -4,7 +4,7 @@ import {
   MapPin, Clock, FileText, Search, Car, Truck, Bike, Download, Share2,
   ChevronDown, Bluetooth, Users, Monitor, ShieldCheck, FileImage,
   UploadCloud, AlertTriangle, X, Lock, Trash2, Database,
-  ArrowRight, ArrowLeft, Building, Printer, CheckSquare
+  ArrowRight, ArrowLeft, Building, Printer, CheckSquare, HardDrive
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -37,7 +37,23 @@ const processImageFile = (file, callback) => {
   reader.readAsDataURL(file);
 };
 
+// --- HELPER FUNCTION: Storage Calculator ---
+const getBase64Size = (b64) => {
+  if (!b64 || typeof b64 !== 'string') return 0;
+  const base64str = b64.includes(',') ? b64.split(',')[1] : b64;
+  return Math.floor((base64str.length * 3) / 4);
+};
+
+const formatBytes = (bytes) => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
 // --- HELPER FUNCTION: Direct Bluetooth Print (RawBT / ESC-POS) ---
+// OPTIMASI: Menghapus baris kosong berlebih agar cetakan padat & hemat kertas
 const printDirectBluetooth = (type, data, settings) => {
     const center = (str) => {
         const spaces = Math.max(0, Math.floor((32 - str.length) / 2));
@@ -65,27 +81,25 @@ const printDirectBluetooth = (type, data, settings) => {
     
     if (type === 'IN') {
         text += center("TIKET MASUK") + '\n';
-        text += divider + '\n';
-        text += `NOPOL : ${nopol}\n`;
-        text += `JENIS : ${jenis}\n`;
-        text += `MASUK : ${data.waktuMasuk.toLocaleString('id-ID')}\n`;
-        text += `KASIR : ${nip}\n`;
+        text += `NOPOL: ${nopol}\n`;
+        text += `JENIS: ${jenis}\n`;
+        text += `MASUK: ${data.waktuMasuk.toLocaleString('id-ID')}\n`;
+        text += `KASIR: ${nip}\n`;
         text += divider + '\n';
         text += center(settings?.ticket?.footerIn || "SIMPAN TIKET INI") + '\n';
     } else {
         text += center("STRUK KELUAR") + '\n';
-        text += divider + '\n';
-        text += `NOPOL : ${nopol}\n`;
-        text += `JENIS : ${jenis} ${data.tiketHilang ? '(HILANG)' : ''}\n`;
-        text += `MASUK : ${data.waktuMasuk.toLocaleTimeString('id-ID')}\n`;
-        text += `KELUAR: ${data.waktuKeluar.toLocaleTimeString('id-ID')}\n`;
-        text += `DURASI: ${data.durasiText}\n`;
+        text += `NOPOL: ${nopol}\n`;
+        text += `JENIS: ${jenis} ${data.tiketHilang ? '(HILANG)' : ''}\n`;
+        text += `MASUK: ${data.waktuMasuk.toLocaleTimeString('id-ID')}\n`;
+        text += `KLUAR: ${data.waktuKeluar.toLocaleTimeString('id-ID')}\n`;
+        text += `DURAS: ${data.durasiText}\n`;
         text += divider + '\n';
         text += right("TOTAL:", `Rp ${data.totalBiaya.toLocaleString('id-ID')}`) + '\n';
         text += divider + '\n';
         text += center(settings?.ticket?.footerOut || "TERIMA KASIH") + '\n';
     }
-    text += '\n\n';
+    text += '\n'; // Hanya 1 baris kosong di akhir
 
     const intentUrl = `intent:${encodeURI(text)}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
     const iframe = document.createElement('iframe');
@@ -102,7 +116,6 @@ const printDirectBluetooth = (type, data, settings) => {
 const PURE_LOCATIONS = ['ST. Cimahi Selatan', 'ST. Gadobangkong', 'ST. Cianjur', 'ST. Cibatu'];
 const LOCATIONS = [...PURE_LOCATIONS, 'All Lokasi'];
 
-// UPDATE DEFAULT SETTINGS SESUAI PERMINTAAN USER
 const DEFAULT_LOCATION_SETTINGS = {
   tariffs: {
     'Motor': { mode: 'progressif', first: 2000, firstDuration: 1, next: 2000, max: 8000, inap: 10000, gracePeriodActive: false, gracePeriodMinutes: 0 },
@@ -131,8 +144,8 @@ const DEFAULT_SETTINGS = {
     footerOut: 'TERIMA KASIH'
   },
   members: [],
-  activeLogins: {}, // Keperluan Tracking Online Biasa
-  userSessions: {}, // Keperluan LOCK SHIFT SESSIONS
+  activeLogins: {}, 
+  userSessions: {}, 
   users: [
     { id: 'u1', nipp: '200041', nama: 'Petugas Master', role: 'master', password: 'R3gional2BD!', canViewArea: true },
     { id: 'u2', nipp: 'audit', nama: 'Petugas Audit', role: 'audit', password: 'Rmu123456', canViewArea: true },
@@ -285,49 +298,43 @@ const TicketPreviewModal = ({ type, data, settings, onClose, showToast }) => {
           <FileText className="text-teal-400"/> SOP Preview Karcis
         </h3>
 
-        {/* Simulasi Kertas Karcis Thermal / Area Print Sistem */}
-        <div className="bg-white text-black font-mono w-full p-4 print:p-0 rounded shadow-inner text-sm leading-snug relative overflow-hidden print:shadow-none print:overflow-visible">
+        {/* Simulasi Kertas Karcis Thermal dengan layout Ultra Compact untuk Hemat Kertas */}
+        <div className="ticket-print-area bg-white text-black font-mono w-full p-4 rounded shadow-inner text-sm relative overflow-hidden">
            
-           <div className="text-center font-bold mb-2">
-              {/* MENGGUNAKAN 1 MASTER LOGO DARI WEB SETTINGS */}
+           <div className="ticket-text-center font-bold ticket-mb-1">
               {settings?.web?.logoUrl && (
-                 <div className="flex justify-center mb-1">
-                    <img src={settings.web.logoUrl} alt="Logo" className="mx-auto" style={{ display: 'block', maxHeight: '48px', width: 'auto' }} />
-                 </div>
+                 <img src={settings.web.logoUrl} alt="Logo" className="mx-auto" style={{ display: 'block', maxHeight: '40px', width: 'auto', marginBottom: '2px' }} />
               )}
               
-              <p className="text-base leading-tight mt-1">{settings?.ticket?.title || 'Sistem Device Portable'}</p>
-              {settings?.ticket?.subtitle && <p className="text-[10px] leading-tight mt-0.5">{settings.ticket.subtitle}</p>}
-              <p className="text-xs mt-1">{data.lokasi}</p>
+              <p className="text-[13px]">{settings?.ticket?.title || 'Sistem Device Portable'}</p>
+              {settings?.ticket?.subtitle && <p className="text-[10px]">{settings.ticket.subtitle}</p>}
+              <p className="text-[11px]">{data.lokasi}</p>
            </div>
 
-           <div className="border-b-2 border-dashed border-black/50 mb-2"></div>
-           <div className="text-center font-bold mb-2">{type === 'IN' ? 'TIKET MASUK' : 'STRUK KELUAR'}</div>
-           <div className="border-b-2 border-dashed border-black/50 mb-2"></div>
+           <div className="ticket-divider"></div>
+           <div className="ticket-text-center font-bold text-[12px] my-1">{type === 'IN' ? 'TIKET MASUK' : 'STRUK KELUAR'}</div>
+           <div className="ticket-divider"></div>
            
-           <div className="flex justify-between mb-1"><span>NOPOL:</span><span className="font-bold">{data.nopol}</span></div>
-           <div className="flex justify-between mb-1"><span>JENIS:</span><span>{data.jenis}</span></div>
-           <div className="flex justify-between mb-1"><span>MASUK:</span><span>{data.waktuMasuk.toLocaleString('id-ID')}</span></div>
+           <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>NOPOL:</span><span className="font-bold text-[13px]">{data.nopol}</span></div>
+           <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>JENIS:</span><span>{data.jenis}</span></div>
+           <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>MASUK:</span><span>{data.waktuMasuk.toLocaleString('id-ID')}</span></div>
            
            {type === 'OUT' && (
               <>
-                <div className="flex justify-between mb-1"><span>KELUAR:</span><span>{data.waktuKeluar.toLocaleTimeString('id-ID')}</span></div>
-                <div className="flex justify-between mb-1"><span>DURASI:</span><span>{data.durasiText}</span></div>
-                {data.tiketHilang && <div className="text-center text-xs mt-1 text-red-600 font-bold">*Termasuk Denda Kehilangan</div>}
-                <div className="border-b-2 border-dashed border-black/50 my-2"></div>
-                <div className="flex justify-between font-black text-base"><span>TOTAL:</span><span>Rp {data.totalBiaya?.toLocaleString('id-ID')}</span></div>
+                <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>KELUAR:</span><span>{data.waktuKeluar.toLocaleTimeString('id-ID')}</span></div>
+                <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>DURASI:</span><span>{data.durasiText}</span></div>
+                {data.tiketHilang && <div className="text-center text-[10px] mt-1 text-black font-bold">*Termasuk Denda Kehilangan</div>}
+                <div className="ticket-divider mt-1"></div>
+                <div className="ticket-flex-between font-black text-[13px] mt-1"><span>TOTAL:</span><span>Rp {data.totalBiaya?.toLocaleString('id-ID')}</span></div>
               </>
            )}
            
            {type === 'IN' && (
-              <div className="flex justify-between mt-1 text-xs"><span>KASIR:</span><span>{data.kasirMasuk}</span></div>
+              <div className="ticket-flex-between mt-1 text-[11px]"><span>KASIR:</span><span>{data.kasirMasuk}</span></div>
            )}
 
-           <div className="border-b-2 border-dashed border-black/50 my-2"></div>
-           <div className="text-center text-xs mt-2 font-bold">{type === 'IN' ? (settings?.ticket?.footerIn || 'SIMPAN TIKET INI') : (settings?.ticket?.footerOut || 'TERIMA KASIH')}</div>
-           
-           {/* Zig-zag bottom edge effect */}
-           <div className="absolute bottom-0 left-0 w-full h-2 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPjxwb2x5Z29uIHBvaW50cz0iMCw4IDQsMCA4LDgiIGZpbGw9IiMxMTQwMjIiLz48L3N2Zz4=')] bg-repeat-x hide-on-print"></div>
+           <div className="ticket-divider mt-1 mb-1"></div>
+           <div className="ticket-text-center text-[10px] font-bold">{type === 'IN' ? (settings?.ticket?.footerIn || 'SIMPAN TIKET INI') : (settings?.ticket?.footerOut || 'TERIMA KASIH')}</div>
         </div>
 
         <p className="text-[10px] text-green-200/50 mt-4 text-center hide-on-print">Data telah tersimpan dan perintah cetak telah dikirim.</p>
@@ -403,7 +410,23 @@ export default function App() {
             const globalSettings = snapshot.docs.find(d => d.id === 'global');
             if (globalSettings) {
                const loadedSettings = globalSettings.data();
-               setSettings({ ...DEFAULT_SETTINGS, ...loadedSettings });
+               
+               // FIX BUG LOGO RESET: Deep merge settings (terutama locations) agar data tidak tertimpa
+               const mergedLocations = { ...DEFAULT_SETTINGS.locations };
+               if (loadedSettings.locations) {
+                   Object.keys(loadedSettings.locations).forEach(loc => {
+                       mergedLocations[loc] = {
+                           ...DEFAULT_LOCATION_SETTINGS,
+                           ...(loadedSettings.locations[loc] || {})
+                       };
+                   });
+               }
+
+               setSettings({ 
+                   ...DEFAULT_SETTINGS, 
+                   ...loadedSettings,
+                   locations: mergedLocations
+               });
             }
          } else {
             setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), DEFAULT_SETTINGS);
@@ -428,7 +451,8 @@ export default function App() {
 
   const handleUpdateSettings = async (newSettings) => {
     if (!fbUser) return;
-    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), newSettings);
+    // FIX BUG LOGO RESET: Selalu gunakan { merge: true } agar firebase tidak menimpa dokumen
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), newSettings, { merge: true });
   };
 
   // LOGIC INTERVAL SHIFT & FORCED END SHIFT
@@ -439,7 +463,6 @@ export default function App() {
        const userLocShifts = getLocSettings(settings, user.lokasi).shifts;
        const active = getActiveShift(userLocShifts);
        
-       // JIKA waktu shift saat ini sudah berganti dari shift saat petugas login
        if (user.startShiftName && active !== user.startShiftName) {
            setShiftData({ current: user.startShiftName, showSummary: true, forced: true });
        } else if (active !== shiftData.current) {
@@ -455,27 +478,19 @@ export default function App() {
        }
     };
 
-    // Pengecekan awal segera setelah login
     checkShift();
-
-    const interval = setInterval(checkShift, 10000); // Check tiap 10 detik
+    const interval = setInterval(checkShift, 10000); 
     return () => clearInterval(interval);
   }, [user, settings, deviceId]);
 
-  // Handle Logout & End Shift Closure
   const handleLogout = async (newSessionsData = null) => { 
     if(user){
-       // Menghapus status active login online
        const activeLogins = settings.activeLogins || {};
        const newLogins = { ...activeLogins };
        delete newLogins[user.nipp];
        
        const toUpdate = { ...settings, activeLogins: newLogins };
-       
-       // Jika dipanggil dari Akhiri Shift & Lapor, status 'OPEN' akan berubah jadi 'CLOSED'
-       if (newSessionsData) {
-           toUpdate.userSessions = newSessionsData;
-       }
+       if (newSessionsData) toUpdate.userSessions = newSessionsData;
 
        await handleUpdateSettings(toUpdate);
     }
@@ -495,7 +510,7 @@ export default function App() {
             deviceId={deviceId}
             showToast={showToast}
             onLogin={(u) => { 
-                setUser(u); // u already has loginTime & startShiftName from LoginScreen
+                setUser(u); 
                 if (u.role === 'audit') setActiveTab('settings');
             }} 
         />
@@ -510,12 +525,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#092613] text-green-50 font-sans selection:bg-green-500 selection:text-white pb-28">
-      {/* CSS KHUSUS PRINT Laporan Bersih, Padat & Tanpa Background Warnai */}
+      {/* CSS KHUSUS PRINT Laporan & Karcis Hemat Kertas */}
       <style>{`
         @media print {
-          @page { margin: 10mm; }
-          body { background: white !important; color: black !important; }
+          @page { margin: 0; size: auto; } /* Hilangkan margin kertas standar */
+          body { background: white !important; color: black !important; font-size: 11px; margin: 0; padding: 0; }
           #root > div > header, .fixed.bottom-6, .hide-on-print { display: none !important; }
+          
+          /* Laporan Master / Shift (A4 Layout) */
           .print-a4-layout {
             display: block !important;
             background: white !important;
@@ -523,9 +540,29 @@ export default function App() {
             width: 100% !important;
             box-shadow: none !important;
             border: none !important;
-            padding: 0 !important;
+            padding: 10mm !important; /* Kembalikan padding khusus laporan A4 */
             margin: 0 !important;
           }
+
+          /* TICKET PRINT (Ultra Compact Thermal Style) */
+          .ticket-print-area {
+            width: 100% !important;
+            max-width: 58mm !important;
+            margin: 0 auto !important;
+            padding: 2mm !important;
+            background: white !important;
+            color: black !important;
+            font-family: monospace !important;
+            box-shadow: none !important;
+            border: none !important;
+          }
+          .ticket-print-area * { line-height: 1.1 !important; margin: 0; padding: 0; }
+          .ticket-divider { border-bottom: 1px solid black !important; margin: 2px 0 !important; }
+          .ticket-text-center { text-align: center !important; }
+          .ticket-flex-between { display: flex !important; justify-content: space-between !important; }
+          .ticket-mb-1 { margin-bottom: 2px !important; }
+
+          /* Dense Table for Reports */
           .dense-table { width: 100%; border-collapse: collapse; font-size: 11px !important; margin-top: 15px; }
           .dense-table tr { page-break-inside: avoid; page-break-after: auto; }
           .dense-table th, .dense-table td { border: 1px solid black !important; padding: 6px 8px !important; color: black !important; background-color: transparent !important; }
@@ -533,11 +570,7 @@ export default function App() {
           .shift-report-print { width: 100%; font-family: 'Times New Roman', serif, sans-serif !important; }
           .shift-report-print h3 { font-size: 16pt !important; margin-bottom: 2px; text-align: center; font-weight: bold; }
           .shift-report-print p { font-size: 10pt !important; color: black !important; margin: 2px 0;}
-          .print-border-black { border-color: black !important; border-width: 1px !important; }
-          .print-text-black { color: black !important; }
-          .print-bg-transparent { background-color: transparent !important; }
           
-          /* Memastikan tabel scrollable terbuka semua saat print */
           .scrollable-modal-content { max-height: none !important; overflow: visible !important; }
         }
       `}</style>
@@ -545,7 +578,6 @@ export default function App() {
       {toast && <Toast message={toast.msg} type={toast.type} />}
       {confirmDialog && <ConfirmModal {...confirmDialog} />}
       
-      {/* TICKET PREVIEW MODAL */}
       {ticketPreview && <TicketPreviewModal type={ticketPreview.type} data={ticketPreview.data} settings={settings} onClose={() => setTicketPreview(null)} showToast={showToast} />}
 
       {/* Header */}
@@ -1094,6 +1126,10 @@ function MasterSettings({ settings, setSettings, user, transactions, addTransact
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2 custom-scrollbar hide-on-print">
         <button onClick={() => setActiveSetTab('laporan')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'laporan' ? 'bg-green-600 text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Laporan & Audit</button>
         {user.role === 'master' && <button onClick={() => setActiveSetTab('rekapan')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'rekapan' ? 'bg-teal-600 text-white' : 'bg-[#114022] text-teal-400 hover:bg-[#164d2b]'}`}>Rekapan Global (Rinci)</button>}
+        
+        {/* TAB BARU: DATABASE STORAGE */}
+        {user.role === 'master' && <button onClick={() => setActiveSetTab('storage')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap shadow-md ${activeSetTab === 'storage' ? 'bg-purple-600 text-white' : 'bg-[#114022] text-purple-400 hover:bg-[#164d2b]'}`}><HardDrive size={16} className="inline mr-2 -mt-0.5"/>Database Storage</button>}
+        
         <button onClick={() => setActiveSetTab('tarif')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'tarif' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Setting Tarif</button>
         <button onClick={() => setActiveSetTab('member')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'member' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Member Parkir</button>
         <button onClick={() => setActiveSetTab('shift')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'shift' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Setting Shift</button>
@@ -1108,6 +1144,7 @@ function MasterSettings({ settings, setSettings, user, transactions, addTransact
       <div className="bg-[#114022] rounded-[2.5rem] p-8 shadow-2xl border border-[#1b5e35] print-a4-layout">
         {activeSetTab === 'laporan' && <Laporan transactions={transactions} user={user} updateTransaction={updateTransaction} showToast={showToast} setConfirmDialog={setConfirmDialog} settings={settings} />}
         {activeSetTab === 'rekapan' && user.role === 'master' && <RekapanLaporan transactions={transactions} user={user} settings={settings} />}
+        {activeSetTab === 'storage' && user.role === 'master' && <SettingStorage transactions={transactions} updateTransaction={updateTransaction} showToast={showToast} setConfirmDialog={setConfirmDialog} />}
         {activeSetTab === 'tarif' && <SettingTarif settings={settings} setSettings={setSettings} isReadOnly={isReadOnly} user={user} showToast={showToast} />}
         {activeSetTab === 'member' && <SettingMember settings={settings} setSettings={setSettings} isReadOnly={isReadOnly} user={user} showToast={showToast} />}
         {activeSetTab === 'shift' && <SettingShift settings={settings} setSettings={setSettings} isReadOnly={isReadOnly} user={user} showToast={showToast} />}
@@ -1118,6 +1155,196 @@ function MasterSettings({ settings, setSettings, user, transactions, addTransact
       </div>
     </div>
   );
+}
+
+// --- NEW SUB-SETTING: DATABASE STORAGE ---
+function SettingStorage({ transactions, updateTransaction, showToast, setConfirmDialog }) {
+   const MAX_SIMULATED_STORAGE_MB = 100; // Simulated 100MB Total Capacity for Base64 Data
+   const MAX_STORAGE_BYTES = MAX_SIMULATED_STORAGE_MB * 1024 * 1024;
+
+   const [selectedIds, setSelectedIds] = useState([]);
+   const [isDeleting, setIsDeleting] = useState(false);
+
+   // Kalkulasi ukuran dari tiap transaksi
+   let sizeMasuk = 0, sizeKeluar = 0, sizeDokumen = 0, sizeText = 0;
+   
+   const txWithSizes = transactions.map(tx => {
+      const masukB = getBase64Size(tx.fotoMasuk);
+      const keluarB = getBase64Size(tx.fotoKeluar);
+      const docB = getBase64Size(tx.fotoKTP) + getBase64Size(tx.fotoSTNK);
+      const textB = JSON.stringify(tx).length; // Rough estimation of text object size
+
+      sizeMasuk += masukB;
+      sizeKeluar += keluarB;
+      sizeDokumen += docB;
+      sizeText += textB;
+
+      return { ...tx, masukB, keluarB, docB, textB, totalPhotoB: masukB + keluarB + docB };
+   });
+
+   const totalUsedBytes = sizeMasuk + sizeKeluar + sizeDokumen + sizeText;
+   const freeBytes = MAX_STORAGE_BYTES - totalUsedBytes > 0 ? MAX_STORAGE_BYTES - totalUsedBytes : 0;
+   const totalUsedMB = (totalUsedBytes / (1024 * 1024)).toFixed(2);
+   const freeMB = (freeBytes / (1024 * 1024)).toFixed(2);
+
+   // Hitung porsi untuk chart (conic-gradient requires percentages)
+   const totalChartBytes = totalUsedBytes + freeBytes;
+   const pMasuk = (sizeMasuk / totalChartBytes) * 100;
+   const pKeluar = (sizeKeluar / totalChartBytes) * 100;
+   const pDoc = (sizeDokumen / totalChartBytes) * 100;
+   const pText = (sizeText / totalChartBytes) * 100;
+   
+   // Filter hanya transaksi yang memiliki file foto (untuk ditampilkan di table delete)
+   const txWithPhotos = txWithSizes.filter(tx => tx.totalPhotoB > 0).sort((a,b) => b.waktuMasuk - a.waktuMasuk);
+
+   const handleSelectAll = (e) => {
+      if (e.target.checked) {
+         setSelectedIds(txWithPhotos.map(t => t.id));
+      } else {
+         setSelectedIds([]);
+      }
+   };
+
+   const handleSelectOne = (id, checked) => {
+      if (checked) setSelectedIds([...selectedIds, id]);
+      else setSelectedIds(selectedIds.filter(i => i !== id));
+   };
+
+   const handleBulkDelete = () => {
+      if (selectedIds.length === 0) return showToast("Pilih minimal satu data!", "warning");
+      
+      setConfirmDialog({
+         title: "Hapus File Storage?",
+         message: `Anda akan menghapus file foto dari ${selectedIds.length} transaksi. Histori teks transaksi akan tetap ada. Tindakan ini tidak dapat dibatalkan!`,
+         onConfirm: async () => {
+             setConfirmDialog(null);
+             setIsDeleting(true);
+             try {
+                for (const id of selectedIds) {
+                   await updateTransaction(id, { fotoMasuk: null, fotoKeluar: null, fotoKTP: null, fotoSTNK: null, photoCleaned: true });
+                }
+                showToast(`Memori foto dari ${selectedIds.length} transaksi berhasil dihapus/dibersihkan!`);
+                setSelectedIds([]);
+             } catch (e) {
+                showToast("Terjadi kesalahan saat menghapus memori.", "error");
+             }
+             setIsDeleting(false);
+         },
+         onCancel: () => setConfirmDialog(null)
+      });
+   };
+
+   return (
+      <div className="space-y-6 animate-in fade-in">
+         <div className="flex flex-col md:flex-row gap-6">
+            
+            {/* KOTAK DONUT CHART */}
+            <div className="bg-[#092613] p-6 rounded-3xl border border-[#1b5e35] flex flex-col items-center justify-center shrink-0 w-full md:w-auto">
+               <h3 className="font-bold text-white mb-6 uppercase tracking-widest text-sm flex items-center gap-2">
+                  <Database size={16} className="text-purple-400"/> Kapasitas Memori Database
+               </h3>
+               
+               {/* Visualisasi Donut menggunakan CSS conic-gradient murni */}
+               <div style={{
+                  background: `conic-gradient(
+                     #0d9488 0% ${pMasuk}%,
+                     #ea580c ${pMasuk}% ${pMasuk+pKeluar}%,
+                     #3b82f6 ${pMasuk+pKeluar}% ${pMasuk+pKeluar+pDoc}%,
+                     #22c55e ${pMasuk+pKeluar+pDoc}% ${pMasuk+pKeluar+pDoc+pText}%,
+                     #1b5e35 ${pMasuk+pKeluar+pDoc+pText}% 100%
+                  )`
+               }} className="w-48 h-48 rounded-full flex items-center justify-center relative shadow-[0_0_30px_rgba(0,0,0,0.5)]">
+                  <div className="w-36 h-36 bg-[#092613] rounded-full flex items-center justify-center flex-col shadow-inner z-10 border border-[#1b5e35]/50">
+                     <span className="text-3xl font-black text-white leading-none">{totalUsedMB}</span>
+                     <span className="text-xs text-green-200/50 mt-1">MB Terpakai</span>
+                  </div>
+               </div>
+
+               <p className="mt-6 text-sm text-green-200/70 font-medium bg-[#114022] px-4 py-2 rounded-xl border border-[#1b5e35]">
+                  Sisa Kapasitas: <strong className="text-white">{freeMB} MB</strong> dari <strong className="text-purple-400">{MAX_SIMULATED_STORAGE_MB} MB</strong>
+               </p>
+            </div>
+
+            {/* KOTAK BREAKDOWN DETAIL */}
+            <div className="flex-1 bg-[#092613] p-6 rounded-3xl border border-[#1b5e35]">
+               <h3 className="font-bold text-white mb-6 uppercase tracking-widest text-sm border-b border-[#1b5e35] pb-2">Rincian Penggunaan Memori</h3>
+               <div className="space-y-4">
+                  <div className="flex justify-between items-center p-3 rounded-xl hover:bg-[#114022] transition-colors border border-transparent hover:border-[#1b5e35]">
+                     <div className="flex items-center gap-3"><div className="w-4 h-4 rounded-full bg-teal-600"></div><span className="text-sm text-white font-medium">Foto Kendaraan Masuk</span></div>
+                     <span className="text-sm font-bold text-teal-400">{formatBytes(sizeMasuk)}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 rounded-xl hover:bg-[#114022] transition-colors border border-transparent hover:border-[#1b5e35]">
+                     <div className="flex items-center gap-3"><div className="w-4 h-4 rounded-full bg-orange-600"></div><span className="text-sm text-white font-medium">Foto Kendaraan Keluar</span></div>
+                     <span className="text-sm font-bold text-orange-400">{formatBytes(sizeKeluar)}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 rounded-xl hover:bg-[#114022] transition-colors border border-transparent hover:border-[#1b5e35]">
+                     <div className="flex items-center gap-3"><div className="w-4 h-4 rounded-full bg-blue-600"></div><span className="text-sm text-white font-medium">Dokumen Denda (KTP/STNK)</span></div>
+                     <span className="text-sm font-bold text-blue-400">{formatBytes(sizeDokumen)}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 rounded-xl hover:bg-[#114022] transition-colors border border-transparent hover:border-[#1b5e35]">
+                     <div className="flex items-center gap-3"><div className="w-4 h-4 rounded-full bg-green-500"></div><span className="text-sm text-white font-medium">Data Histori Teks Murni</span></div>
+                     <span className="text-sm font-bold text-green-400">{formatBytes(sizeText)}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 rounded-xl hover:bg-[#114022] transition-colors border border-transparent hover:border-[#1b5e35]">
+                     <div className="flex items-center gap-3"><div className="w-4 h-4 rounded-full bg-[#1b5e35]"></div><span className="text-sm text-green-200/50 font-medium">Sisa Ruang Kosong (Simulasi)</span></div>
+                     <span className="text-sm font-bold text-green-200/50">{formatBytes(freeBytes)}</span>
+                  </div>
+               </div>
+            </div>
+         </div>
+
+         {/* TABEL MANAJEMEN PENGHAPUSAN MEMORI */}
+         <div className="bg-[#092613] rounded-3xl border border-[#1b5e35] overflow-hidden flex flex-col max-h-[500px]">
+            <div className="p-4 bg-[#0c331a] border-b border-[#1b5e35] flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0">
+               <div>
+                  <h3 className="font-bold text-white uppercase text-sm">Manajer File Transaksi</h3>
+                  <p className="text-xs text-green-200/60 mt-0.5">Pilih riwayat transaksi di bawah ini untuk mengosongkan file foto dari database (Teks histori tidak akan dihapus).</p>
+               </div>
+               <button onClick={handleBulkDelete} disabled={selectedIds.length === 0 || isDeleting} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${selectedIds.length > 0 ? 'bg-red-600 text-white hover:bg-red-500 shadow-lg' : 'bg-[#114022] text-green-300/30 cursor-not-allowed'}`}>
+                  <Trash2 size={16}/> {isDeleting ? 'Menghapus...' : `Hapus Foto Terpilih (${selectedIds.length})`}
+               </button>
+            </div>
+            
+            <div className="overflow-x-auto overflow-y-auto custom-scrollbar flex-1">
+               <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 bg-[#0c331a] z-10 shadow-sm">
+                     <tr className="text-green-300/70 text-xs uppercase">
+                        <th className="p-4 border-b border-[#1b5e35] w-12 text-center">
+                           <input type="checkbox" onChange={handleSelectAll} checked={selectedIds.length === txWithPhotos.length && txWithPhotos.length > 0} className="w-4 h-4 accent-red-500 rounded cursor-pointer" />
+                        </th>
+                        <th className="p-4 border-b border-[#1b5e35]">Tanggal & Nopol</th>
+                        <th className="p-4 border-b border-[#1b5e35] text-center">Foto Masuk</th>
+                        <th className="p-4 border-b border-[#1b5e35] text-center">Foto Keluar</th>
+                        <th className="p-4 border-b border-[#1b5e35] text-center">Dokumen Hilang</th>
+                        <th className="p-4 border-b border-[#1b5e35] text-right">Total Ukuran</th>
+                     </tr>
+                  </thead>
+                  <tbody>
+                     {txWithPhotos.length === 0 ? (
+                        <tr><td colSpan="6" className="p-8 text-center text-green-300/30 text-sm">Seluruh foto transaksi sudah kosong / bersih.</td></tr>
+                     ) : (
+                        txWithPhotos.map(tx => (
+                           <tr key={tx.id} className="hover:bg-[#114022] border-b border-[#1b5e35]/50 text-sm transition-colors">
+                              <td className="p-4 text-center">
+                                 <input type="checkbox" checked={selectedIds.includes(tx.id)} onChange={(e) => handleSelectOne(tx.id, e.target.checked)} className="w-4 h-4 accent-red-500 rounded cursor-pointer" />
+                              </td>
+                              <td className="p-4">
+                                 <p className="font-bold text-white text-base">{tx.nopol}</p>
+                                 <p className="text-[10px] text-green-200/50 mt-1">{tx.waktuMasuk.toLocaleString('id-ID')}</p>
+                              </td>
+                              <td className="p-4 text-center"><span className={`px-2 py-1 rounded-md text-[10px] ${tx.masukB > 0 ? 'bg-teal-900/50 text-teal-400 font-bold' : 'text-green-200/30'}`}>{tx.masukB > 0 ? formatBytes(tx.masukB) : 'N/A'}</span></td>
+                              <td className="p-4 text-center"><span className={`px-2 py-1 rounded-md text-[10px] ${tx.keluarB > 0 ? 'bg-orange-900/50 text-orange-400 font-bold' : 'text-green-200/30'}`}>{tx.keluarB > 0 ? formatBytes(tx.keluarB) : 'N/A'}</span></td>
+                              <td className="p-4 text-center"><span className={`px-2 py-1 rounded-md text-[10px] ${tx.docB > 0 ? 'bg-blue-900/50 text-blue-400 font-bold' : 'text-green-200/30'}`}>{tx.docB > 0 ? formatBytes(tx.docB) : 'N/A'}</span></td>
+                              <td className="p-4 text-right font-bold text-red-400">{formatBytes(tx.totalPhotoB)}</td>
+                           </tr>
+                        ))
+                     )}
+                  </tbody>
+               </table>
+            </div>
+         </div>
+      </div>
+   );
 }
 
 // Sub-Setting: Setoran Manual
@@ -1287,7 +1514,6 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
          breakdown[tx.jenis].nominal += tx.totalBiaya || 0; 
      }
 
-     // Durasi parkir tidak dihitung untuk transaksi manual
      if (!tx.isManual) {
         const jam = tx.durasiJam || 1;
         if (jam <= 1) durasiStats['1 Jam Awal'] += 1;
@@ -1298,12 +1524,10 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
      }
   });
 
-  // Tambahkan data manual ke table breakdown jika ada
   if (hasManual) {
       breakdown['Pendapatan Manual (Backup)'] = { qty: manualTotalQty, nominal: manualTotalNominal };
   }
 
-  // Hitung total unit kendaraan yang dihitung
   const totalQtySelesai = Object.values(breakdown).reduce((sum, item) => sum + item.qty, 0);
 
   const requestCleanDatabase = () => {
@@ -1730,7 +1954,7 @@ function RekapanLaporan({ transactions, user, settings }) {
 
           {filterMode === 'bulanan' && (
              <div>
-                <label className="block text-xs text-green-200/70 mb-1">Bulan</label>
+               <label className="block text-xs text-green-200/70 mb-1">Bulan</label>
                 <input type="month" value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-[#114022] border border-[#1b5e35] p-2 rounded-lg text-white outline-none focus:border-green-500 text-sm" />
              </div>
           )}
@@ -1942,10 +2166,8 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
   const [targetLokasi, setTargetLokasi] = useState(user.lokasi === 'All Lokasi' ? PURE_LOCATIONS[0] : user.lokasi);
   const [localTariff, setLocalTariff] = useState(getLocSettings(settings, targetLokasi).tariffs || DEFAULT_LOCATION_SETTINGS.tariffs);
 
-  // STATE BARU: Indikator field diedit dan belum disave
   const [dirty, setDirty] = useState({ 'Motor': false, 'Mobil': false, 'Box/Truck': false, 'Sepeda/Becak': false });
 
-  // Hanya perbarui dari database JIKA user belum mengedit kolom kendaraan tersebut (dirty = false)
   useEffect(() => { 
      const dbTariff = getLocSettings(settings, targetLokasi).tariffs || DEFAULT_LOCATION_SETTINGS.tariffs;
      setLocalTariff(prev => {
@@ -1959,17 +2181,18 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
      });
   }, [settings, targetLokasi, dirty]); 
 
-  // Bersihkan indikator saat ganti target lokasi di dropdown atas
   useEffect(() => {
      setDirty({ 'Motor': false, 'Mobil': false, 'Box/Truck': false, 'Sepeda/Becak': false });
   }, [targetLokasi]);
 
   const updateTariff = (jenis, field, val) => {
+    if (isReadOnly) return; // KOKOHKAN AKSES TARIF
     setDirty(prev => ({ ...prev, [jenis]: true }));
     setLocalTariff(prev => ({ ...prev, [jenis]: { ...prev[jenis], [field]: field === 'mode' || typeof val === 'boolean' ? val : Number(val) } }));
   };
 
   const handleSaveJenis = (jenis) => {
+     if (isReadOnly) return; // KOKOHKAN AKSES TARIF
      const newLocations = { 
          ...settings.locations, 
          [targetLokasi]: { 
@@ -1982,7 +2205,7 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
      };
      
      setSettings({ ...settings, locations: newLocations });
-     setDirty(prev => ({ ...prev, [jenis]: false })); // Hapus indikator edit
+     setDirty(prev => ({ ...prev, [jenis]: false })); 
      showToast(`Tarif ${jenis} di lokasi ${targetLokasi} berhasil disimpan!`);
   };
 
@@ -2052,7 +2275,7 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
                    )}
                </div>
 
-               {/* TOMBOL SIMPAN PER JENIS */}
+               {/* TOMBOL SIMPAN HANYA MUNCUL JIKA MASTER */}
                <div className="w-full md:w-auto flex justify-end">
                    {!isReadOnly && (
                       <button onClick={() => handleSaveJenis(jenis)} className={`w-full md:w-auto px-5 py-2 rounded-xl text-xs font-bold flex justify-center items-center gap-2 shadow-lg transition-all ${dirty[jenis] ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/20' : 'bg-[#114022] text-green-500 border border-[#1b5e35]'}`}>
@@ -2162,7 +2385,11 @@ function SettingWeb({ settings, setSettings, isReadOnly, showToast }) {
     processImageFile(e.target.files[0], (data) => setForm({...form, logoUrl: data}));
   };
 
-  const handleSave = (e) => { e.preventDefault(); setSettings({ ...settings, web: form }); showToast("Pengaturan Web & Logo Tersimpan!"); };
+  const handleSave = (e) => { 
+      e.preventDefault(); 
+      setSettings({ ...settings, web: form }); // Ini sekarang aman karena deep merge di onSnapshot
+      showToast("Pengaturan Web & Logo Tersimpan!"); 
+  };
 
   return (
     <form onSubmit={handleSave} className="space-y-6">
@@ -2309,13 +2536,12 @@ function ShiftEndModal({ user, transactions, shiftName, forced, onClose, setting
   };
 
   const handleCompleteShift = () => {
-     // Menutup sesi di database saat user klik Selesai / Logout
      const newSessions = { ...settings.userSessions };
      if (newSessions[user.nipp]) {
          newSessions[user.nipp] = { ...newSessions[user.nipp], status: 'CLOSED', endTime: Date.now() };
      }
      
-     onClose(newSessions); // Mengirim data sesi baru untuk disimpan ke db via parent function
+     onClose(newSessions);
   };
 
   return (
