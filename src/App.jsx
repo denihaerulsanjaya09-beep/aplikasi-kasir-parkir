@@ -38,7 +38,6 @@ const processImageFile = (file, callback) => {
 };
 
 // --- HELPER FUNCTION: Direct Bluetooth Print (RawBT / ESC-POS) ---
-// OPTIMASI: Menghapus baris kosong berlebih agar cetakan padat & hemat kertas
 const printDirectBluetooth = (type, data, settings) => {
     const center = (str) => {
         const spaces = Math.max(0, Math.floor((32 - str.length) / 2));
@@ -66,25 +65,27 @@ const printDirectBluetooth = (type, data, settings) => {
     
     if (type === 'IN') {
         text += center("TIKET MASUK") + '\n';
-        text += `NOPOL: ${nopol}\n`;
-        text += `JENIS: ${jenis}\n`;
-        text += `MASUK: ${data.waktuMasuk.toLocaleString('id-ID')}\n`;
-        text += `KASIR: ${nip}\n`;
+        text += divider + '\n';
+        text += `NOPOL : ${nopol}\n`;
+        text += `JENIS : ${jenis}\n`;
+        text += `MASUK : ${data.waktuMasuk.toLocaleString('id-ID')}\n`;
+        text += `KASIR : ${nip}\n`;
         text += divider + '\n';
         text += center(settings?.ticket?.footerIn || "SIMPAN TIKET INI") + '\n';
     } else {
         text += center("STRUK KELUAR") + '\n';
-        text += `NOPOL: ${nopol}\n`;
-        text += `JENIS: ${jenis} ${data.tiketHilang ? '(HILANG)' : ''}\n`;
-        text += `MASUK: ${data.waktuMasuk.toLocaleTimeString('id-ID')}\n`;
-        text += `KLUAR: ${data.waktuKeluar.toLocaleTimeString('id-ID')}\n`;
-        text += `DURAS: ${data.durasiText}\n`;
+        text += divider + '\n';
+        text += `NOPOL : ${nopol}\n`;
+        text += `JENIS : ${jenis} ${data.tiketHilang ? '(HILANG)' : ''}\n`;
+        text += `MASUK : ${data.waktuMasuk.toLocaleTimeString('id-ID')}\n`;
+        text += `KELUAR: ${data.waktuKeluar.toLocaleTimeString('id-ID')}\n`;
+        text += `DURASI: ${data.durasiText}\n`;
         text += divider + '\n';
         text += right("TOTAL:", `Rp ${data.totalBiaya.toLocaleString('id-ID')}`) + '\n';
         text += divider + '\n';
         text += center(settings?.ticket?.footerOut || "TERIMA KASIH") + '\n';
     }
-    text += '\n'; // Hanya 1 baris kosong di akhir
+    text += '\n\n';
 
     const intentUrl = `intent:${encodeURI(text)}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
     const iframe = document.createElement('iframe');
@@ -101,6 +102,7 @@ const printDirectBluetooth = (type, data, settings) => {
 const PURE_LOCATIONS = ['ST. Cimahi Selatan', 'ST. Gadobangkong', 'ST. Cianjur', 'ST. Cibatu'];
 const LOCATIONS = [...PURE_LOCATIONS, 'All Lokasi'];
 
+// UPDATE DEFAULT SETTINGS SESUAI PERMINTAAN USER
 const DEFAULT_LOCATION_SETTINGS = {
   tariffs: {
     'Motor': { mode: 'progressif', first: 2000, firstDuration: 1, next: 2000, max: 8000, inap: 10000, gracePeriodActive: false, gracePeriodMinutes: 0 },
@@ -283,43 +285,49 @@ const TicketPreviewModal = ({ type, data, settings, onClose, showToast }) => {
           <FileText className="text-teal-400"/> SOP Preview Karcis
         </h3>
 
-        {/* Simulasi Kertas Karcis Thermal dengan layout Ultra Compact untuk Hemat Kertas */}
-        <div className="ticket-print-area bg-white text-black font-mono w-full p-4 rounded shadow-inner text-sm relative overflow-hidden">
+        {/* Simulasi Kertas Karcis Thermal / Area Print Sistem */}
+        <div className="bg-white text-black font-mono w-full p-4 print:p-0 rounded shadow-inner text-sm leading-snug relative overflow-hidden print:shadow-none print:overflow-visible">
            
-           <div className="ticket-text-center font-bold ticket-mb-1">
+           <div className="text-center font-bold mb-2">
+              {/* MENGGUNAKAN 1 MASTER LOGO DARI WEB SETTINGS */}
               {settings?.web?.logoUrl && (
-                 <img src={settings.web.logoUrl} alt="Logo" className="mx-auto" style={{ display: 'block', maxHeight: '40px', width: 'auto', marginBottom: '2px' }} />
+                 <div className="flex justify-center mb-1">
+                    <img src={settings.web.logoUrl} alt="Logo" className="mx-auto" style={{ display: 'block', maxHeight: '48px', width: 'auto' }} />
+                 </div>
               )}
               
-              <p className="text-[13px]">{settings?.ticket?.title || 'Sistem Device Portable'}</p>
-              {settings?.ticket?.subtitle && <p className="text-[10px]">{settings.ticket.subtitle}</p>}
-              <p className="text-[11px]">{data.lokasi}</p>
+              <p className="text-base leading-tight mt-1">{settings?.ticket?.title || 'Sistem Device Portable'}</p>
+              {settings?.ticket?.subtitle && <p className="text-[10px] leading-tight mt-0.5">{settings.ticket.subtitle}</p>}
+              <p className="text-xs mt-1">{data.lokasi}</p>
            </div>
 
-           <div className="ticket-divider"></div>
-           <div className="ticket-text-center font-bold text-[12px] my-1">{type === 'IN' ? 'TIKET MASUK' : 'STRUK KELUAR'}</div>
-           <div className="ticket-divider"></div>
+           <div className="border-b-2 border-dashed border-black/50 mb-2"></div>
+           <div className="text-center font-bold mb-2">{type === 'IN' ? 'TIKET MASUK' : 'STRUK KELUAR'}</div>
+           <div className="border-b-2 border-dashed border-black/50 mb-2"></div>
            
-           <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>NOPOL:</span><span className="font-bold text-[13px]">{data.nopol}</span></div>
-           <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>JENIS:</span><span>{data.jenis}</span></div>
-           <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>MASUK:</span><span>{data.waktuMasuk.toLocaleString('id-ID')}</span></div>
+           <div className="flex justify-between mb-1"><span>NOPOL:</span><span className="font-bold">{data.nopol}</span></div>
+           <div className="flex justify-between mb-1"><span>JENIS:</span><span>{data.jenis}</span></div>
+           <div className="flex justify-between mb-1"><span>MASUK:</span><span>{data.waktuMasuk.toLocaleString('id-ID')}</span></div>
            
            {type === 'OUT' && (
               <>
-                <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>KELUAR:</span><span>{data.waktuKeluar.toLocaleTimeString('id-ID')}</span></div>
-                <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>DURASI:</span><span>{data.durasiText}</span></div>
-                {data.tiketHilang && <div className="text-center text-[10px] mt-1 text-black font-bold">*Termasuk Denda Kehilangan</div>}
-                <div className="ticket-divider mt-1"></div>
-                <div className="ticket-flex-between font-black text-[13px] mt-1"><span>TOTAL:</span><span>Rp {data.totalBiaya?.toLocaleString('id-ID')}</span></div>
+                <div className="flex justify-between mb-1"><span>KELUAR:</span><span>{data.waktuKeluar.toLocaleTimeString('id-ID')}</span></div>
+                <div className="flex justify-between mb-1"><span>DURASI:</span><span>{data.durasiText}</span></div>
+                {data.tiketHilang && <div className="text-center text-xs mt-1 text-red-600 font-bold">*Termasuk Denda Kehilangan</div>}
+                <div className="border-b-2 border-dashed border-black/50 my-2"></div>
+                <div className="flex justify-between font-black text-base"><span>TOTAL:</span><span>Rp {data.totalBiaya?.toLocaleString('id-ID')}</span></div>
               </>
            )}
            
            {type === 'IN' && (
-              <div className="ticket-flex-between mt-1 text-[11px]"><span>KASIR:</span><span>{data.kasirMasuk}</span></div>
+              <div className="flex justify-between mt-1 text-xs"><span>KASIR:</span><span>{data.kasirMasuk}</span></div>
            )}
 
-           <div className="ticket-divider mt-1 mb-1"></div>
-           <div className="ticket-text-center text-[10px] font-bold">{type === 'IN' ? (settings?.ticket?.footerIn || 'SIMPAN TIKET INI') : (settings?.ticket?.footerOut || 'TERIMA KASIH')}</div>
+           <div className="border-b-2 border-dashed border-black/50 my-2"></div>
+           <div className="text-center text-xs mt-2 font-bold">{type === 'IN' ? (settings?.ticket?.footerIn || 'SIMPAN TIKET INI') : (settings?.ticket?.footerOut || 'TERIMA KASIH')}</div>
+           
+           {/* Zig-zag bottom edge effect */}
+           <div className="absolute bottom-0 left-0 w-full h-2 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPjxwb2x5Z29uIHBvaW50cz0iMCw4IDQsMCA4LDgiIGZpbGw9IiMxMTQwMjIiLz48L3N2Zz4=')] bg-repeat-x hide-on-print"></div>
         </div>
 
         <p className="text-[10px] text-green-200/50 mt-4 text-center hide-on-print">Data telah tersimpan dan perintah cetak telah dikirim.</p>
@@ -395,23 +403,7 @@ export default function App() {
             const globalSettings = snapshot.docs.find(d => d.id === 'global');
             if (globalSettings) {
                const loadedSettings = globalSettings.data();
-               
-               // FIX BUG LOGO RESET: Deep merge settings (terutama locations) agar data tidak tertimpa
-               const mergedLocations = { ...DEFAULT_SETTINGS.locations };
-               if (loadedSettings.locations) {
-                   Object.keys(loadedSettings.locations).forEach(loc => {
-                       mergedLocations[loc] = {
-                           ...DEFAULT_LOCATION_SETTINGS,
-                           ...(loadedSettings.locations[loc] || {})
-                       };
-                   });
-               }
-
-               setSettings({ 
-                   ...DEFAULT_SETTINGS, 
-                   ...loadedSettings,
-                   locations: mergedLocations
-               });
+               setSettings({ ...DEFAULT_SETTINGS, ...loadedSettings });
             }
          } else {
             setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), DEFAULT_SETTINGS);
@@ -436,8 +428,7 @@ export default function App() {
 
   const handleUpdateSettings = async (newSettings) => {
     if (!fbUser) return;
-    // FIX BUG LOGO RESET: Selalu gunakan { merge: true } agar firebase tidak menimpa dokumen
-    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), newSettings, { merge: true });
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), newSettings);
   };
 
   // LOGIC INTERVAL SHIFT & FORCED END SHIFT
@@ -519,14 +510,12 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#092613] text-green-50 font-sans selection:bg-green-500 selection:text-white pb-28">
-      {/* CSS KHUSUS PRINT Laporan & Karcis Hemat Kertas */}
+      {/* CSS KHUSUS PRINT Laporan Bersih, Padat & Tanpa Background Warnai */}
       <style>{`
         @media print {
-          @page { margin: 0; size: auto; } /* Hilangkan margin kertas standar */
-          body { background: white !important; color: black !important; font-size: 11px; margin: 0; padding: 0; }
+          @page { margin: 10mm; }
+          body { background: white !important; color: black !important; }
           #root > div > header, .fixed.bottom-6, .hide-on-print { display: none !important; }
-          
-          /* Laporan Master / Shift (A4 Layout) */
           .print-a4-layout {
             display: block !important;
             background: white !important;
@@ -534,29 +523,9 @@ export default function App() {
             width: 100% !important;
             box-shadow: none !important;
             border: none !important;
-            padding: 10mm !important; /* Kembalikan padding khusus laporan A4 */
+            padding: 0 !important;
             margin: 0 !important;
           }
-
-          /* TICKET PRINT (Ultra Compact Thermal Style) */
-          .ticket-print-area {
-            width: 100% !important;
-            max-width: 58mm !important;
-            margin: 0 auto !important;
-            padding: 2mm !important;
-            background: white !important;
-            color: black !important;
-            font-family: monospace !important;
-            box-shadow: none !important;
-            border: none !important;
-          }
-          .ticket-print-area * { line-height: 1.1 !important; margin: 0; padding: 0; }
-          .ticket-divider { border-bottom: 1px solid black !important; margin: 2px 0 !important; }
-          .ticket-text-center { text-align: center !important; }
-          .ticket-flex-between { display: flex !important; justify-content: space-between !important; }
-          .ticket-mb-1 { margin-bottom: 2px !important; }
-
-          /* Dense Table for Reports */
           .dense-table { width: 100%; border-collapse: collapse; font-size: 11px !important; margin-top: 15px; }
           .dense-table tr { page-break-inside: avoid; page-break-after: auto; }
           .dense-table th, .dense-table td { border: 1px solid black !important; padding: 6px 8px !important; color: black !important; background-color: transparent !important; }
@@ -564,7 +533,11 @@ export default function App() {
           .shift-report-print { width: 100%; font-family: 'Times New Roman', serif, sans-serif !important; }
           .shift-report-print h3 { font-size: 16pt !important; margin-bottom: 2px; text-align: center; font-weight: bold; }
           .shift-report-print p { font-size: 10pt !important; color: black !important; margin: 2px 0;}
+          .print-border-black { border-color: black !important; border-width: 1px !important; }
+          .print-text-black { color: black !important; }
+          .print-bg-transparent { background-color: transparent !important; }
           
+          /* Memastikan tabel scrollable terbuka semua saat print */
           .scrollable-modal-content { max-height: none !important; overflow: visible !important; }
         }
       `}</style>
@@ -1757,7 +1730,7 @@ function RekapanLaporan({ transactions, user, settings }) {
 
           {filterMode === 'bulanan' && (
              <div>
-               <label className="block text-xs text-green-200/70 mb-1">Bulan</label>
+                <label className="block text-xs text-green-200/70 mb-1">Bulan</label>
                 <input type="month" value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-[#114022] border border-[#1b5e35] p-2 rounded-lg text-white outline-none focus:border-green-500 text-sm" />
              </div>
           )}
@@ -1969,8 +1942,10 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
   const [targetLokasi, setTargetLokasi] = useState(user.lokasi === 'All Lokasi' ? PURE_LOCATIONS[0] : user.lokasi);
   const [localTariff, setLocalTariff] = useState(getLocSettings(settings, targetLokasi).tariffs || DEFAULT_LOCATION_SETTINGS.tariffs);
 
+  // STATE BARU: Indikator field diedit dan belum disave
   const [dirty, setDirty] = useState({ 'Motor': false, 'Mobil': false, 'Box/Truck': false, 'Sepeda/Becak': false });
 
+  // Hanya perbarui dari database JIKA user belum mengedit kolom kendaraan tersebut (dirty = false)
   useEffect(() => { 
      const dbTariff = getLocSettings(settings, targetLokasi).tariffs || DEFAULT_LOCATION_SETTINGS.tariffs;
      setLocalTariff(prev => {
@@ -1984,18 +1959,17 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
      });
   }, [settings, targetLokasi, dirty]); 
 
+  // Bersihkan indikator saat ganti target lokasi di dropdown atas
   useEffect(() => {
      setDirty({ 'Motor': false, 'Mobil': false, 'Box/Truck': false, 'Sepeda/Becak': false });
   }, [targetLokasi]);
 
   const updateTariff = (jenis, field, val) => {
-    if (isReadOnly) return; // KOKOHKAN AKSES TARIF
     setDirty(prev => ({ ...prev, [jenis]: true }));
     setLocalTariff(prev => ({ ...prev, [jenis]: { ...prev[jenis], [field]: field === 'mode' || typeof val === 'boolean' ? val : Number(val) } }));
   };
 
   const handleSaveJenis = (jenis) => {
-     if (isReadOnly) return; // KOKOHKAN AKSES TARIF
      const newLocations = { 
          ...settings.locations, 
          [targetLokasi]: { 
@@ -2008,7 +1982,7 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
      };
      
      setSettings({ ...settings, locations: newLocations });
-     setDirty(prev => ({ ...prev, [jenis]: false })); 
+     setDirty(prev => ({ ...prev, [jenis]: false })); // Hapus indikator edit
      showToast(`Tarif ${jenis} di lokasi ${targetLokasi} berhasil disimpan!`);
   };
 
@@ -2078,7 +2052,7 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
                    )}
                </div>
 
-               {/* TOMBOL SIMPAN HANYA MUNCUL JIKA MASTER */}
+               {/* TOMBOL SIMPAN PER JENIS */}
                <div className="w-full md:w-auto flex justify-end">
                    {!isReadOnly && (
                       <button onClick={() => handleSaveJenis(jenis)} className={`w-full md:w-auto px-5 py-2 rounded-xl text-xs font-bold flex justify-center items-center gap-2 shadow-lg transition-all ${dirty[jenis] ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/20' : 'bg-[#114022] text-green-500 border border-[#1b5e35]'}`}>
@@ -2188,11 +2162,7 @@ function SettingWeb({ settings, setSettings, isReadOnly, showToast }) {
     processImageFile(e.target.files[0], (data) => setForm({...form, logoUrl: data}));
   };
 
-  const handleSave = (e) => { 
-      e.preventDefault(); 
-      setSettings({ ...settings, web: form }); // Ini sekarang aman karena deep merge di onSnapshot
-      showToast("Pengaturan Web & Logo Tersimpan!"); 
-  };
+  const handleSave = (e) => { e.preventDefault(); setSettings({ ...settings, web: form }); showToast("Pengaturan Web & Logo Tersimpan!"); };
 
   return (
     <form onSubmit={handleSave} className="space-y-6">
@@ -2339,12 +2309,13 @@ function ShiftEndModal({ user, transactions, shiftName, forced, onClose, setting
   };
 
   const handleCompleteShift = () => {
+     // Menutup sesi di database saat user klik Selesai / Logout
      const newSessions = { ...settings.userSessions };
      if (newSessions[user.nipp]) {
          newSessions[user.nipp] = { ...newSessions[user.nipp], status: 'CLOSED', endTime: Date.now() };
      }
      
-     onClose(newSessions);
+     onClose(newSessions); // Mengirim data sesi baru untuk disimpan ke db via parent function
   };
 
   return (
