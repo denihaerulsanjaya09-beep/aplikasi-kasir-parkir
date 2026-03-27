@@ -103,19 +103,21 @@ const printDirectBluetooth = (type, data, settings) => {
     }
     text += '\n\n';
 
-    const intentUrl = `intent:${encodeURI(text)}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = intentUrl;
-    document.body.appendChild(iframe);
+    const intentUrl = `intent:${encodeURIComponent(text)}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
     
+    // Trigger intent menggunakan hidden anchor untuk reliabilitas lebih tinggi di Android
+    const a = document.createElement('a');
+    a.href = intentUrl;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
     setTimeout(() => {
-        if (document.body.contains(iframe)) document.body.removeChild(iframe);
-    }, 2000);
+        if (document.body.contains(a)) document.body.removeChild(a);
+    }, 100);
 };
 
 // --- CONSTANTS & DEFAULT DATA ---
-const PURE_LOCATIONS = ['ST. Cimahi Selatan', 'ST. Gadobangkong', 'ST. Cianjur', 'ST. Cibatu'];
+const PURE_LOCATIONS = ['ST Cimahi Selatan', 'ST Gadobangkong', 'ST Cianjur', 'ST Cibatu'];
 const LOCATIONS = [...PURE_LOCATIONS, 'All Lokasi'];
 
 const DEFAULT_LOCATION_SETTINGS = {
@@ -436,21 +438,27 @@ export default function App() {
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
     try {
       if (isPartial) {
-        // Gunakan updateDoc untuk mendukung dot notation dan mencegah overwriting nested objects
-        const { getDoc } = await import('firebase/firestore');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const { updateDoc } = await import('firebase/firestore');
-          await updateDoc(docRef, newSettings);
-        } else {
-          await setDoc(docRef, newSettings, { merge: true });
-        }
+        // BUG FIX: Flatten object ke dot notation untuk mencegah overwriting nested objects di Firestore
+        const flatten = (obj, prefix = '') => {
+          return Object.keys(obj).reduce((acc, k) => {
+            const pre = prefix.length ? prefix + '.' : '';
+            if (typeof obj[k] === 'object' && obj[k] !== null && !Array.isArray(obj[k]) && !(obj[k] instanceof Date)) {
+              Object.assign(acc, flatten(obj[k], pre + k));
+            } else {
+              acc[pre + k] = obj[k];
+            }
+            return acc;
+          }, {});
+        };
+        const flattened = flatten(newSettings);
+        const { updateDoc } = await import('firebase/firestore');
+        await updateDoc(docRef, flattened);
       } else {
         await setDoc(docRef, newSettings);
       }
     } catch (e) {
       console.error("Error updating settings:", e);
-      // Fallback ke setDoc jika updateDoc gagal (misal doc belum ada)
+      // Fallback ke setDoc jika updateDoc gagal
       await setDoc(docRef, newSettings, { merge: isPartial });
     }
   };
@@ -841,11 +849,9 @@ function KendaraanMasuk({ user, addTransaction, showToast, settings, setTicketPr
       kasirMasuk: user.nama, gps
     };
     
-    // Simpan ke DB dulu agar tidak hilang
-    await addTransaction(newTx);
-    
-    // Print background langsung jalan
+    // Trigger print dan simpan data secara paralel (berbarengan)
     printDirectBluetooth('IN', newTx, settings);
+    addTransaction(newTx).catch(err => console.error("Gagal simpan transaksi:", err));
     
     // Tampilkan SOP Preview Modal ke UI
     setTicketPreview({ type: 'IN', data: newTx });
@@ -967,12 +973,12 @@ function KendaraanKeluar({ user, transactions, updateTransaction, settings, show
       isMember, tiketHilang, denda, fotoKTP, fotoSTNK
     };
     
-    await updateTransaction(selectedTx.id, updateData);
-    
     const locSettings = getLocSettings(settings, selectedTx.lokasi);
     const finalData = { ...selectedTx, ...updateData, petugasPhoto: user.photo, locSettings };
 
+    // Trigger print dan simpan data secara paralel (berbarengan)
     printDirectBluetooth('OUT', finalData, settings);
+    updateTransaction(selectedTx.id, updateData).catch(err => console.error("Gagal update transaksi:", err));
 
     // Tampilkan SOP Preview Modal ke UI
     setTicketPreview({ type: 'OUT', data: finalData });
@@ -2247,11 +2253,11 @@ function SettingMember({ settings, setSettings, isReadOnly, user, showToast }) {
 
 // Sub-Setting: Web & Printer 
 function SettingWeb({ settings, setSettings, isReadOnly, showToast }) {
-  const [form, setForm] = useState(settings.web || DEFAULT_SETTINGS.web);
+  const [form, setForm] = useState({ ...DEFAULT_SETTINGS.web, ...(settings.web || {}) });
   
   useEffect(() => {
     if (JSON.stringify(settings.web) !== JSON.stringify(form)) {
-      setForm(settings.web || DEFAULT_SETTINGS.web);
+      setForm({ ...DEFAULT_SETTINGS.web, ...(settings.web || {}) });
     }
   }, [settings.web]);
 
@@ -2304,11 +2310,11 @@ function SettingWeb({ settings, setSettings, isReadOnly, showToast }) {
 // Sub-Setting: Setting Struk / Tiket Parkir
 function SettingTiket({ settings, setSettings, isReadOnly, showToast }) {
   const defaultTicketSettings = { title: 'Sistem Device Portable', subtitle: '', footerIn: 'SIMPAN TIKET INI', footerOut: 'TERIMA KASIH', logoUrl: '' };
-  const [form, setForm] = useState(settings.ticket || defaultTicketSettings);
+  const [form, setForm] = useState({ ...defaultTicketSettings, ...(settings.ticket || {}) });
 
   useEffect(() => {
     if (JSON.stringify(settings.ticket) !== JSON.stringify(form)) {
-      setForm(settings.ticket || defaultTicketSettings);
+      setForm({ ...defaultTicketSettings, ...(settings.ticket || {}) });
     }
   }, [settings.ticket]);
 
