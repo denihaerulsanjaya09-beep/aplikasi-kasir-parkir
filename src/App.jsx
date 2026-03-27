@@ -433,25 +433,112 @@ export default function App() {
 
   const handleUpdateSettings = async (newSettings, isPartial = true) => {
     if (!fbUser) return;
-    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), newSettings, { merge: isPartial });
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
+    try {
+      if (isPartial) {
+        // Gunakan updateDoc untuk mendukung dot notation dan mencegah overwriting nested objects
+        const { getDoc } = await import('firebase/firestore');
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const { updateDoc } = await import('firebase/firestore');
+          await updateDoc(docRef, newSettings);
+        } else {
+          await setDoc(docRef, newSettings, { merge: true });
+        }
+      } else {
+        await setDoc(docRef, newSettings);
+      }
+    } catch (e) {
+      console.error("Error updating settings:", e);
+      // Fallback ke setDoc jika updateDoc gagal (misal doc belum ada)
+      await setDoc(docRef, newSettings, { merge: isPartial });
+    }
   };
 
+  const [isReportOverdue, setIsReportOverdue] = useState(false);
+
   useEffect(() => {
-    if (!user) return;
+    if (!user || user.role !== 'kasir') return;
+    
+    const checkOverdueReport = async () => {
+      const userLocShifts = getLocSettings(settings, user.lokasi).shifts;
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Cari semua shift yang sudah lewat hari ini
+      const now = new Date();
+      const currentTotalM = now.getHours() * 60 + now.getMinutes();
+
+      for (const s of userLocShifts) {
+        const [endH, endM] = s.end.split(':').map(Number);
+        const [startH, startM] = s.start.split(':').map(Number);
+        const endTotalM = endH * 60 + endM;
+        const startTotalM = startH * 60 + startM;
+
+        let isPast = false;
+        if (startTotalM <= endTotalM) {
+          if (currentTotalM > endTotalM) isPast = true;
+        } else {
+          // Shift malam (misal 22:00 - 05:59)
+          if (currentTotalM > endTotalM && currentTotalM < startTotalM) isPast = true;
+        }
+
+        if (isPast) {
+          // Cek apakah user punya transaksi di shift ini
+          const hasTxInShift = transactions.some(t => {
+            if (t.kasirKeluar !== user.nama) return false;
+            const txDate = t.waktuKeluar;
+            if (!txDate || txDate.toISOString().split('T')[0] !== today) return false;
+            
+            const txTotalM = txDate.getHours() * 60 + txDate.getMinutes();
+            if (startTotalM <= endTotalM) {
+              return txTotalM >= startTotalM && txTotalM <= endTotalM;
+            } else {
+              return txTotalM >= startTotalM || txTotalM <= endTotalM;
+            }
+          });
+
+          if (hasTxInShift) {
+            const reportId = `${user.nipp}_${user.lokasi}_${s.name}_${today}`;
+            const { getDoc } = await import('firebase/firestore');
+            const reportRef = doc(db, 'artifacts', appId, 'public', 'data', 'reports', reportId);
+            const reportSnap = await getDoc(reportRef);
+            
+            if (!reportSnap.exists()) {
+              setIsReportOverdue(true);
+              setShiftData({ current: s.name, showSummary: true });
+              return; // Tampilkan satu per satu
+            }
+          }
+        }
+      }
+      setIsReportOverdue(false);
+    };
+
     const interval = setInterval(() => {
       const userLocShifts = getLocSettings(settings, user.lokasi).shifts;
       const active = getActiveShift(userLocShifts);
-      if (active !== shiftData.current) setShiftData({ current: active, showSummary: true });
+      
+      // Trigger otomatis jika shift berganti
+      if (active !== shiftData.current) {
+        setShiftData({ current: active, showSummary: true });
+      }
+
+      // Cek kewajiban laporan jika shift sudah lewat
+      checkOverdueReport();
 
       const activeLogins = settings.activeLogins || {};
       if (activeLogins[user.nipp]?.deviceId === deviceId) {
          handleUpdateSettings({
-            activeLogins: { ...activeLogins, [user.nipp]: { ...activeLogins[user.nipp], timestamp: Date.now() } }
+            [`activeLogins.${user.nipp}.timestamp`]: Date.now()
          }, true);
       }
     }, 60000);
+    
+    // Jalankan sekali saat login
+    checkOverdueReport();
+    
     return () => clearInterval(interval);
-  }, [user, shiftData.current, settings, deviceId]);
+  }, [user, shiftData.current, settings, deviceId, transactions]);
 
   const handleLogout = () => { 
     if(user){
@@ -583,7 +670,7 @@ export default function App() {
         <div className="w-1/3 flex justify-end gap-2">
           {canTransact && (
              <button onClick={() => setShiftData(prev => ({...prev, showSummary: true}))} className="p-2 bg-orange-500/20 text-orange-400 rounded-xl hover:bg-orange-500/30 transition-colors text-xs font-bold hidden md:flex items-center gap-1 border border-orange-500/20">
-               <Clock size={14} /> Akhiri Shift
+               <Clock size={14} /> Laporan / Pulang
              </button>
           )}
           <button onClick={handleLogout} className="p-3 bg-red-600/20 text-red-400 rounded-xl hover:bg-red-600/30 transition-colors flex items-center gap-2 text-sm font-bold border border-red-600/20">
@@ -1810,14 +1897,9 @@ function SettingShift({ settings, setSettings, isReadOnly, user, showToast }) {
   }, [targetLokasi, settings]);
 
   const handleSave = () => {
-    const partialUpdate = {
-        locations: {
-            [targetLokasi]: {
-                shifts: shifts
-            }
-        }
-    };
-    setSettings(partialUpdate, true);
+    // BUG FIX: Gunakan dot notation agar tidak menimpa tariffs di lokasi tersebut
+    const updateKey = `locations.${targetLokasi}.shifts`;
+    setSettings({ [updateKey]: shifts }, true);
     showToast(`Setingan Jam Shift untuk ${targetLokasi} Tersimpan!`);
   };
 
@@ -1980,16 +2062,9 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
   };
 
   const handleSaveJenis = (jenis) => {
-     const partialUpdate = {
-         locations: {
-             [targetLokasi]: {
-                 tariffs: {
-                     [jenis]: localTariff[jenis]
-                 }
-             }
-         }
-     };
-     setSettings(partialUpdate, true);
+     // BUG FIX: Gunakan dot notation agar tidak menimpa tariff lain atau shift di lokasi tersebut
+     const updateKey = `locations.${targetLokasi}.tariffs.${jenis}`;
+     setSettings({ [updateKey]: localTariff[jenis] }, true);
      setLocked(prev => ({ ...prev, [jenis]: true }));
      showToast(`Tarif ${jenis} di lokasi ${targetLokasi} berhasil diperbarui & dikunci!`);
   };
@@ -2299,8 +2374,9 @@ function SettingTiket({ settings, setSettings, isReadOnly, showToast }) {
 }
 
 // --- SHIFT END MODAL (AUTO LOGOUT POPUP) ---
-function ShiftEndModal({ user, transactions, shiftName, onClose, settings }) {
+function ShiftEndModal({ user, transactions, shiftName, onClose, settings, onReportSuccess }) {
   const [waSent, setWaSent] = useState(false);
+  const [pdfSent, setPdfSent] = useState(false);
   const webSettings = settings?.web || {};
   
   const shiftTx = transactions.filter(t => t.kasirKeluar === user.nama && t.waktuKeluar && t.waktuKeluar >= (user.loginTime || new Date()));
@@ -2326,6 +2402,27 @@ function ShiftEndModal({ user, transactions, shiftName, onClose, settings }) {
     setWaSent(true);
   };
 
+  const handleFinish = async () => {
+    // Simpan status laporan ke database agar tidak muncul lagi
+    if (auth.currentUser) {
+      const reportId = `${user.nipp}_${user.lokasi}_${shiftName}_${new Date().toISOString().split('T')[0]}`;
+      const reportRef = doc(db, 'artifacts', appId, 'public', 'data', 'reports', reportId);
+      await setDoc(reportRef, {
+        nipp: user.nipp,
+        nama: user.nama,
+        lokasi: user.lokasi,
+        shift: shiftName,
+        tanggal: new Date().toISOString().split('T')[0],
+        timestamp: new Date().toISOString(),
+        totalNominal,
+        statsPerType
+      });
+    }
+    
+    if (onReportSuccess) onReportSuccess();
+    onClose();
+  };
+
   return (
     <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
        {/* Mengubah menjadi layout yang lebih pantas untuk di-print PDF */}
@@ -2333,8 +2430,8 @@ function ShiftEndModal({ user, transactions, shiftName, onClose, settings }) {
           
           <div className="text-center hide-on-print">
             <div className="w-16 h-16 bg-orange-500/20 text-orange-400 rounded-full flex items-center justify-center mx-auto mb-4"><Clock size={36}/></div>
-            <h2 className="text-2xl font-black text-white mb-2">Shift Telah Berakhir</h2>
-            <p className="text-green-200/70 text-sm mb-6">Waktu shift Anda telah selesai. Berikut rekapan pendapatan Anda pada sesi ini.</p>
+            <h2 className="text-2xl font-black text-white mb-2">Laporan & Pulang</h2>
+            <p className="text-green-200/70 text-sm mb-6">Silakan kirim laporan ke WhatsApp dan cetak PDF untuk menyelesaikan tugas shift Anda.</p>
           </div>
           
           <div className="shift-report-print bg-[#092613] border border-[#1b5e35] p-6 rounded-2xl text-left mb-6 font-mono text-sm print:bg-transparent print:border-none print:p-0">
@@ -2419,10 +2516,10 @@ function ShiftEndModal({ user, transactions, shiftName, onClose, settings }) {
           <div className="flex flex-col gap-3 hide-on-print">
              <div className="flex gap-2">
                  <button onClick={exportWA} className="flex-1 bg-green-600 hover:bg-green-500 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2 text-sm"><Share2 size={18}/> Kirim WA</button>
-                 <button onClick={() => window.print()} className="flex-1 bg-teal-600 hover:bg-teal-500 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2 text-sm"><Download size={18}/> Cetak PDF</button>
+                 <button onClick={() => { window.print(); setPdfSent(true); }} className="flex-1 bg-teal-600 hover:bg-teal-500 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2 text-sm"><Download size={18}/> Cetak PDF</button>
              </div>
-             <button onClick={onClose} disabled={!waSent} className={`py-4 rounded-xl font-bold transition-all text-sm ${waSent ? 'bg-[#1b5e35] text-white hover:bg-[#258249]' : 'bg-[#092613] text-green-300/30 cursor-not-allowed border border-[#1b5e35]'}`}>
-                {waSent ? 'Tutup & Logout Sistem' : 'Kirim WA Laporan Dahulu'}
+             <button onClick={handleFinish} disabled={!waSent || !pdfSent} className={`py-4 rounded-xl font-bold transition-all text-sm ${waSent && pdfSent ? 'bg-[#1b5e35] text-white hover:bg-[#258249]' : 'bg-[#092613] text-green-300/30 cursor-not-allowed border border-[#1b5e35]'}`}>
+                {waSent && pdfSent ? 'Selesai (Pulang)' : 'Kirim WA & Cetak PDF Dahulu'}
              </button>
           </div>
        </div>
