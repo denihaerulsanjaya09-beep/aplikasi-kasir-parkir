@@ -431,7 +431,7 @@ export default function App() {
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', id), txToUpdate, { merge: true });
   };
 
-  const handleUpdateSettings = async (newSettings, isPartial = false) => {
+  const handleUpdateSettings = async (newSettings, isPartial = true) => {
     if (!fbUser) return;
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), newSettings, { merge: isPartial });
   };
@@ -461,7 +461,7 @@ export default function App() {
        const activeLogins = settings.activeLogins || {};
        const newLogins = { ...activeLogins };
        delete newLogins[user.nipp];
-       handleUpdateSettings({ ...settings, activeLogins: newLogins });
+       handleUpdateSettings({ activeLogins: newLogins }, true);
     }
     setUser(null); 
     setActiveTab('masuk'); 
@@ -657,12 +657,11 @@ function LoginScreen({ onLogin, usersList, settings, updateSettings, deviceId, s
     }
 
     updateSettings({
-       ...settings,
        activeLogins: {
            ...(settings.activeLogins || {}),
            [matchedUser.nipp]: { lokasi: formData.lokasi, deviceId: deviceId, timestamp: Date.now() }
        }
-    });
+    }, true);
 
     setTempUser({ ...matchedUser, lokasi: formData.lokasi });
     setShowCamera(true); 
@@ -1064,6 +1063,62 @@ function KendaraanArea({ transactions, user }) {
   );
 }
 
+// --- RELEASE MODAL ---
+function ReleaseModal({ tx, onConfirm, onCancel }) {
+  const [reason, setReason] = useState('');
+  const [nominal, setNominal] = useState('');
+
+  return (
+    <div className="fixed inset-0 z-[150] bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm">
+      <div className="bg-[#114022] border border-[#1b5e35] p-6 rounded-3xl max-w-sm w-full shadow-2xl animate-in zoom-in duration-300">
+        <div className="flex items-center gap-3 mb-4 text-orange-400">
+           <div className="w-12 h-12 bg-orange-500/20 rounded-2xl flex items-center justify-center border border-orange-500/30">
+              <AlertTriangle size={24}/>
+           </div>
+           <h3 className="text-xl font-bold text-white">Release Transaksi</h3>
+        </div>
+        <p className="text-sm text-green-200/70 mb-6 leading-relaxed">Anda akan me-release kendaraan <strong className="text-white tracking-widest">{tx.nopol}</strong> secara paksa dari area parkir.</p>
+        
+        <div className="space-y-5">
+           <div>
+              <label className="block text-[10px] font-black text-green-300/40 mb-2 uppercase tracking-widest">Alasan Release (Wajib)</label>
+              <textarea 
+                value={reason} 
+                onChange={e => setReason(e.target.value)}
+                placeholder="Contoh: Tiket hilang & motor dibawa pemilik asli..."
+                className="w-full bg-[#092613] border border-[#1b5e35] rounded-2xl p-4 text-sm text-white outline-none focus:border-orange-500 h-28 resize-none transition-all"
+              />
+           </div>
+           <div>
+              <label className="block text-[10px] font-black text-green-300/40 mb-2 uppercase tracking-widest">Nominal Pembayaran (Optional)</label>
+              <div className="relative">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-green-400 font-bold">Rp</span>
+                <input 
+                  type="number"
+                  value={nominal}
+                  onChange={e => setNominal(e.target.value)}
+                  placeholder="0"
+                  className="w-full bg-[#092613] border border-[#1b5e35] rounded-2xl p-4 pl-12 text-sm text-white outline-none focus:border-orange-500 transition-all font-mono"
+                />
+              </div>
+           </div>
+        </div>
+
+        <div className="flex gap-3 mt-8">
+          <button onClick={onCancel} className="flex-1 py-4 rounded-2xl bg-[#092613] text-green-300/70 hover:bg-black/30 font-bold transition-all border border-[#1b5e35]">Batal</button>
+          <button 
+            onClick={() => onConfirm(reason, nominal)} 
+            disabled={!reason}
+            className={`flex-1 py-4 rounded-2xl font-bold transition-all shadow-lg ${reason ? 'bg-orange-600 text-white hover:bg-orange-500 active:scale-95' : 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700'}`}
+          >
+            Release Unit
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // --- MASTER SETTINGS & LAPORAN ---
 function MasterSettings({ settings, setSettings, user, transactions, updateTransaction, showToast, setConfirmDialog }) {
   const [activeSetTab, setActiveSetTab] = useState('laporan');
@@ -1109,7 +1164,29 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
   const [lapTab, setLapTab] = useState('ringkasan');
   const [zoomImg, setZoomImg] = useState(null);
   const [isCleaning, setIsCleaning] = useState(false);
+  const [releaseTx, setReleaseTx] = useState(null);
   const webSettings = settings?.web || {};
+  
+  const canRelease = user.role === 'master' || user.role === 'korlap';
+
+  const handleReleaseConfirm = async (reason, nominal) => {
+    if (!releaseTx) return;
+    try {
+      await updateTransaction(releaseTx.id, {
+        status: 'OUT',
+        waktuKeluar: new Date(),
+        kasirKeluar: user.nama,
+        releaseReason: reason,
+        totalBiaya: parseInt(nominal) || 0,
+        isReleased: true,
+        keterangan: `RELEASED: ${reason}`
+      });
+      showToast(`Kendaraan ${releaseTx.nopol} berhasil direlease!`);
+      setReleaseTx(null);
+    } catch (err) {
+      showToast("Gagal me-release kendaraan", "error");
+    }
+  };
   
   // NEW FILTER STATES
   const [filterMode, setFilterMode] = useState('semua');
@@ -1432,7 +1509,15 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
       {lapTab === 'in_area' && (
          <div className="bg-[#092613] rounded-2xl border border-[#1b5e35] overflow-x-auto hide-on-print animate-in fade-in">
              <table className="w-full text-left border-collapse">
-               <thead><tr className="bg-[#0c331a] text-green-300/70 text-xs uppercase"><th className="p-4 border-b border-[#1b5e35]">Waktu Masuk</th><th className="p-4 border-b border-[#1b5e35]">Nopol & Jenis</th><th className="p-4 border-b border-[#1b5e35]">Foto Masuk</th><th className="p-4 border-b border-[#1b5e35]">Petugas</th></tr></thead>
+               <thead>
+                 <tr className="bg-[#0c331a] text-green-300/70 text-xs uppercase">
+                   <th className="p-4 border-b border-[#1b5e35]">Waktu Masuk</th>
+                   <th className="p-4 border-b border-[#1b5e35]">Nopol & Jenis</th>
+                   <th className="p-4 border-b border-[#1b5e35]">Foto Masuk</th>
+                   <th className="p-4 border-b border-[#1b5e35]">Petugas</th>
+                   {canRelease && <th className="p-4 border-b border-[#1b5e35] text-center">Aksi</th>}
+                 </tr>
+               </thead>
                <tbody>
                  {filteredTx.filter(t => t.status === 'IN').slice().reverse().map(tx => (
                    <tr key={tx.id} className="hover:bg-[#114022] border-b border-[#1b5e35]/50 text-sm transition-colors text-white">
@@ -1442,6 +1527,16 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
                         {tx.fotoMasuk ? <img src={tx.fotoMasuk} onClick={()=>setZoomImg(tx.fotoMasuk)} className="w-20 h-14 object-cover rounded cursor-pointer border border-[#1b5e35] hover:opacity-80" alt="Masuk"/> : <span className="text-xs text-green-200/30">N/A</span>}
                      </td>
                      <td className="p-4 text-green-200/70">{tx.kasirMasuk}</td>
+                     {canRelease && (
+                       <td className="p-4 text-center">
+                         <button 
+                           onClick={() => setReleaseTx(tx)}
+                           className="bg-orange-600/20 text-orange-400 border border-orange-500/30 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-orange-600 hover:text-white transition-all flex items-center gap-2 mx-auto"
+                         >
+                           <LogOut size={14}/> Release
+                         </button>
+                       </td>
+                     )}
                    </tr>
                  ))}
                </tbody>
@@ -1462,7 +1557,11 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
                         {tx.fotoMasuk ? <img src={tx.fotoMasuk} onClick={()=>setZoomImg(tx.fotoMasuk)} className="w-16 h-12 object-cover rounded cursor-pointer border border-[#1b5e35]" alt="In"/> : <div className="w-16 h-12 bg-black/50 border border-[#1b5e35] rounded flex items-center justify-center text-[8px] text-green-200/30">N/A</div>}
                         {tx.fotoKeluar ? <img src={tx.fotoKeluar} onClick={()=>setZoomImg(tx.fotoKeluar)} className="w-16 h-12 object-cover rounded cursor-pointer border border-[#1b5e35]" alt="Out"/> : <div className="w-16 h-12 bg-black/50 border border-[#1b5e35] rounded flex items-center justify-center text-[8px] text-green-200/30">N/A</div>}
                      </td>
-                     <td className="p-4 font-bold text-green-400">Rp {tx.totalBiaya.toLocaleString('id-ID')} {tx.tiketHilang && <span className="text-red-500 block text-xs">(Denda Hilang Tiket)</span>}</td>
+                     <td className="p-4 font-bold text-green-400">
+                        Rp {tx.totalBiaya.toLocaleString('id-ID')} 
+                        {tx.tiketHilang && <span className="text-red-500 block text-xs">(Denda Hilang Tiket)</span>}
+                        {tx.isReleased && <span className="text-orange-500 block text-xs">(Released: {tx.releaseReason})</span>}
+                     </td>
                    </tr>
                  ))}
                </tbody>
@@ -1475,6 +1574,14 @@ function Laporan({ transactions, user, updateTransaction, showToast, setConfirmD
            <img src={zoomImg} className="max-w-[95vw] max-h-[90vh] rounded-2xl shadow-2xl border-4 border-[#1b5e35] object-contain" alt="Zoom"/>
            <button className="absolute top-6 right-6 text-white bg-red-600/50 hover:bg-red-600 p-3 rounded-full transition-colors"><X size={24}/></button>
         </div>
+      )}
+
+      {releaseTx && (
+        <ReleaseModal 
+          tx={releaseTx} 
+          onConfirm={handleReleaseConfirm} 
+          onCancel={() => setReleaseTx(null)} 
+        />
       )}
     </div>
   );
