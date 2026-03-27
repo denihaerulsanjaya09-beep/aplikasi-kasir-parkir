@@ -52,6 +52,69 @@ const formatBytes = (bytes) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
 
+// --- HELPER FUNCTION: Direct Bluetooth Print (RawBT / ESC-POS) DIKEMBALIKAN ---
+const printDirectBluetooth = (type, data, settings) => {
+    try {
+        const center = (str) => {
+            const spaces = Math.max(0, Math.floor((32 - str.length) / 2));
+            return ' '.repeat(spaces) + str;
+        };
+        const right = (lbl, val) => {
+            const spaces = Math.max(0, 32 - lbl.length - val.length);
+            return lbl + ' '.repeat(spaces) + val;
+        };
+
+        const loc = data.lokasi || '';
+        const nip = data.kasirMasuk || data.kasirKeluar || '';
+        const nopol = data.nopol || '';
+        const jenis = data.jenis || '';
+        const divider = '-'.repeat(32);
+
+        const ticketTitle = settings?.ticket?.title || "Sistem Device Portable";
+        const ticketSubtitle = settings?.ticket?.subtitle || "";
+
+        let text = '';
+        text += center(ticketTitle) + '\n';
+        if (ticketSubtitle) text += center(ticketSubtitle) + '\n';
+        text += center(loc) + '\n';
+        text += divider + '\n';
+        
+        if (type === 'IN') {
+            text += center("TIKET MASUK") + '\n';
+            text += `NOPOL: ${nopol}\n`;
+            text += `JENIS: ${jenis}\n`;
+            text += `MASUK: ${data.waktuMasuk ? data.waktuMasuk.toLocaleString('id-ID') : new Date().toLocaleString('id-ID')}\n`;
+            text += `KASIR: ${nip}\n`;
+            text += divider + '\n';
+            text += center(settings?.ticket?.footerIn || "SIMPAN TIKET INI") + '\n';
+        } else {
+            text += center("STRUK KELUAR") + '\n';
+            text += `NOPOL: ${nopol}\n`;
+            text += `JENIS: ${jenis} ${data.tiketHilang ? '(HILANG)' : ''}\n`;
+            text += `MASUK: ${data.waktuMasuk ? data.waktuMasuk.toLocaleTimeString('id-ID') : '-'}\n`;
+            text += `KLUAR: ${data.waktuKeluar ? data.waktuKeluar.toLocaleTimeString('id-ID') : new Date().toLocaleTimeString('id-ID')}\n`;
+            text += `DURAS: ${data.durasiText || '-'}\n`;
+            text += divider + '\n';
+            text += right("TOTAL:", `Rp ${(data.totalBiaya || 0).toLocaleString('id-ID')}`) + '\n';
+            text += divider + '\n';
+            text += center(settings?.ticket?.footerOut || "TERIMA KASIH") + '\n';
+        }
+        text += '\n';
+
+        const intentUrl = `intent:${encodeURI(text)}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = intentUrl;
+        document.body.appendChild(iframe);
+        
+        setTimeout(() => {
+            if (document.body.contains(iframe)) document.body.removeChild(iframe);
+        }, 2000);
+    } catch (e) {
+        console.error("Print Direct Bluetooth Failed: ", e);
+    }
+};
+
 // --- CONSTANTS & DEFAULT DATA ---
 const PURE_LOCATIONS = ['ST. Cimahi Selatan', 'ST. Gadobangkong', 'ST. Cianjur', 'ST. Cibatu'];
 const LOCATIONS = [...PURE_LOCATIONS, 'All Lokasi'];
@@ -224,88 +287,72 @@ const CameraModal = ({ facingMode, onCapture, onClose, title }) => {
   );
 };
 
-// --- COMPONENT: TICKET PREVIEW (KEMBALI KE SETINGAN SEMULA 100%) ---
-const TicketPreviewModal = ({ type, data, settings, onClose }) => {
-  const locSettings = getLocSettings(settings, data.lokasi);
-
+// --- COMPONENT: TICKET PREVIEW (SOP KONTROL - DIKEMBALIKAN KE LAYOUT COMPACT) ---
+const TicketPreviewModal = ({ type, data, settings, onClose, showToast }) => {
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in zoom-in-95">
-      <div className="bg-[#114022] p-6 rounded-[2rem] border border-[#1b5e35] shadow-2xl flex flex-col items-center max-w-sm w-full relative">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in zoom-in-95 print:bg-white print:p-0 print:block">
+      <div className="bg-[#114022] p-6 rounded-[2rem] border border-[#1b5e35] shadow-2xl flex flex-col items-center max-w-sm w-full relative print:border-none print:shadow-none print:p-0 print:bg-white print:w-full print:max-w-none">
         
-        <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-          <FileText className="text-teal-400"/> Preview Struk
+        <div className="absolute -top-5 bg-teal-500 text-white px-4 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-2 hide-on-print">
+          <CheckCircle2 size={14}/> Tercetak Otomatis
+        </div>
+        
+        <h3 className="text-white font-bold mb-4 flex items-center gap-2 hide-on-print">
+          <FileText className="text-teal-400"/> SOP Preview Karcis
         </h3>
 
-        {/* PRINT AREA ASLI SESUAI PERMINTAAN USER (UKURAN 58MM) */}
-        <div id="print-area" className="bg-white text-black w-full p-4 font-mono text-sm relative">
-           <div className="text-center font-bold mb-2">
+        {/* Simulasi Kertas Karcis Thermal dengan layout Ultra Compact untuk Hemat Kertas */}
+        <div className="ticket-print-area bg-white text-black font-mono w-full p-4 rounded shadow-inner text-sm relative overflow-hidden">
+           
+           <div className="ticket-text-center font-bold ticket-mb-1">
               {settings?.web?.logoUrl && (
-                 <img src={settings.web.logoUrl} alt="Logo" className="mx-auto block max-h-[40px] w-auto mb-1" />
+                 <img src={settings.web.logoUrl} alt="Logo" className="mx-auto" style={{ display: 'block', maxHeight: '40px', width: 'auto', marginBottom: '2px' }} />
               )}
-              <p className="text-[13px] uppercase">{settings?.ticket?.title || 'Sistem Device Portable'}</p>
-              {settings?.ticket?.subtitle && <p className="text-[10px] uppercase">{settings.ticket.subtitle}</p>}
+              
+              <p className="text-[13px]">{settings?.ticket?.title || 'Sistem Device Portable'}</p>
+              {settings?.ticket?.subtitle && <p className="text-[10px]">{settings.ticket.subtitle}</p>}
               <p className="text-[11px]">{data.lokasi}</p>
            </div>
+
+           <div className="ticket-divider"></div>
+           <div className="ticket-text-center font-bold text-[12px] my-1">{type === 'IN' ? 'TIKET MASUK' : 'STRUK KELUAR'}</div>
+           <div className="ticket-divider"></div>
            
-           <div className="border-b border-dashed border-black my-1"></div>
-           <div className="text-center font-bold text-[14px] my-1">{type === 'IN' ? 'TIKET MASUK' : 'STRUK KELUAR'}</div>
-           <div className="border-b border-dashed border-black my-1"></div>
-           
-           <div className="flex justify-between text-[11px] mb-1"><span>NOPOL:</span><span className="font-bold text-[13px]">{data.nopol}</span></div>
-           <div className="flex justify-between text-[11px] mb-1"><span>JENIS:</span><span>{data.jenis}</span></div>
-           <div className="flex justify-between text-[11px] mb-1"><span>MASUK:</span><span>{data.waktuMasuk.toLocaleString('id-ID')}</span></div>
+           <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>NOPOL:</span><span className="font-bold text-[13px]">{data.nopol}</span></div>
+           <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>JENIS:</span><span>{data.jenis}</span></div>
+           <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>MASUK:</span><span>{data.waktuMasuk ? data.waktuMasuk.toLocaleString('id-ID') : '-'}</span></div>
            
            {type === 'OUT' && (
               <>
-                <div className="flex justify-between text-[11px] mb-1"><span>KELUAR:</span><span>{data.waktuKeluar.toLocaleTimeString('id-ID')}</span></div>
-                <div className="flex justify-between text-[11px] mb-1"><span>DURASI:</span><span>{data.durasiText}</span></div>
-                <div className="border-b border-dashed border-black my-1"></div>
-                <div className="flex justify-between font-black text-[14px] mt-1"><span>TOTAL:</span><span>Rp {data.totalBiaya?.toLocaleString('id-ID')}</span></div>
+                <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>KELUAR:</span><span>{data.waktuKeluar ? data.waktuKeluar.toLocaleTimeString('id-ID') : '-'}</span></div>
+                <div className="ticket-flex-between ticket-mb-1 text-[11px]"><span>DURASI:</span><span>{data.durasiText || '-'}</span></div>
+                {data.tiketHilang && <div className="text-center text-[10px] mt-1 text-black font-bold">*Termasuk Denda Kehilangan</div>}
+                <div className="ticket-divider mt-1"></div>
+                <div className="ticket-flex-between font-black text-[13px] mt-1"><span>TOTAL:</span><span>Rp {data.totalBiaya?.toLocaleString('id-ID')}</span></div>
               </>
            )}
            
            {type === 'IN' && (
-              <div className="flex justify-between text-[11px] mt-1"><span>KASIR:</span><span>{data.kasirMasuk}</span></div>
+              <div className="ticket-flex-between mt-1 text-[11px]"><span>KASIR:</span><span>{data.kasirMasuk}</span></div>
            )}
 
-           <div className="text-[10px] text-left pt-2 mt-2">
-               {type === 'OUT' && data.tiketHilang && <p className="text-center font-bold mb-1 text-black">*Termasuk denda kehilangan tiket Rp 10.000</p>}
-               {type === 'OUT' && locSettings?.tariffs?.[data.jenis]?.mode === 'progressif' && !data.isMember && (
-                 <p className="text-center italic mt-2 text-[8px]">Max Tarif: Rp {locSettings.tariffs[data.jenis].max} | Inap: Rp {locSettings.tariffs[data.jenis].inap}</p>
-               )}
-           </div>
-
-           <div className="border-b border-dashed border-black my-2"></div>
-           <div className="text-center text-[10px] font-bold mb-2">{type === 'IN' ? (settings?.ticket?.footerIn || 'SIMPAN TIKET INI') : (settings?.ticket?.footerOut || 'TERIMA KASIH')}</div>
-           {settings?.web?.runningText && <p className="text-[9px] text-center pt-2 border-t border-dashed border-black">{settings.web.runningText}</p>}
+           <div className="ticket-divider mt-1 mb-1"></div>
+           <div className="ticket-text-center text-[10px] font-bold">{type === 'IN' ? (settings?.ticket?.footerIn || 'SIMPAN TIKET INI') : (settings?.ticket?.footerOut || 'TERIMA KASIH')}</div>
         </div>
 
-        <div className="flex gap-3 w-full mt-6">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-[#092613] text-white font-bold hover:bg-black/20 transition-all">Tutup</button>
-          <button onClick={() => window.print()} className="flex-1 py-3 rounded-xl bg-orange-600 text-white font-bold flex justify-center gap-2 hover:bg-orange-500 transition-all shadow-lg">
-             <Printer size={18} /> Cetak Struk
-          </button>
-        </div>
+        <p className="text-[10px] text-green-200/50 mt-4 text-center hide-on-print">Data telah tersimpan dan perintah cetak telah dikirim.</p>
 
-        {/* INJEKSI CSS KHUSUS STRUK PRINTER BLUETOOTH */}
-        <style dangerouslySetInnerHTML={{__html: `
-          @media print {
-            body * { visibility: hidden !important; }
-            #print-area, #print-area * { visibility: visible !important; color: black !important; }
-            #print-area { 
-              position: absolute !important; 
-              left: 0 !important; 
-              top: 0 !important; 
-              width: 58mm !important; 
-              margin: 0 !important; 
-              padding: 0 !important; 
-              font-family: monospace !important; 
-              box-shadow: none !important; 
-              border: none !important; 
-            }
-            @page { margin: 0; size: 58mm auto; }
-          }
-        `}} />
+        <div className="flex flex-wrap gap-2 mt-4 w-full hide-on-print">
+           <button onClick={() => window.print()} className="flex-1 py-3 px-2 rounded-xl bg-[#092613] border border-[#1b5e35] text-white hover:bg-[#164d2b] transition-all flex justify-center items-center gap-2 text-xs font-bold">
+             <Printer size={14}/> Print (Spooler)
+           </button>
+           <button onClick={() => { printDirectBluetooth(type, data, settings); showToast("Mengirim ulang via bluetooth..."); }} className="flex-1 py-3 px-2 rounded-xl bg-orange-600 border border-orange-500 text-white hover:bg-orange-500 transition-all flex justify-center items-center gap-2 text-xs font-bold">
+             <Bluetooth size={14}/> Print Bluetooth
+           </button>
+           <button onClick={onClose} className="w-full py-3 rounded-xl bg-teal-600 text-white font-bold hover:bg-teal-500 transition-all shadow-lg mt-2 text-sm">
+             Selesai / Tutup
+           </button>
+        </div>
       </div>
     </div>
   );
@@ -497,6 +544,23 @@ export default function App() {
             margin: 0 !important;
           }
 
+          .ticket-print-area {
+            width: 100% !important;
+            max-width: 58mm !important;
+            margin: 0 auto !important;
+            padding: 2mm !important;
+            background: white !important;
+            color: black !important;
+            font-family: monospace !important;
+            box-shadow: none !important;
+            border: none !important;
+          }
+          .ticket-print-area * { line-height: 1.1 !important; margin: 0; padding: 0; }
+          .ticket-divider { border-bottom: 1px solid black !important; margin: 2px 0 !important; }
+          .ticket-text-center { text-align: center !important; }
+          .ticket-flex-between { display: flex !important; justify-content: space-between !important; }
+          .ticket-mb-1 { margin-bottom: 2px !important; }
+
           .dense-table { width: 100%; border-collapse: collapse; font-size: 11px !important; margin-top: 15px; }
           .dense-table tr { page-break-inside: avoid; page-break-after: auto; }
           .dense-table th, .dense-table td { border: 1px solid black !important; padding: 6px 8px !important; color: black !important; background-color: transparent !important; }
@@ -512,8 +576,8 @@ export default function App() {
       {toast && <Toast message={toast.msg} type={toast.type} />}
       {confirmDialog && <ConfirmModal {...confirmDialog} />}
       
-      {/* TICKET PREVIEW MENGGUNAKAN NATIVE BROWSER PRINT */}
-      {ticketPreview && <TicketPreviewModal type={ticketPreview.type} data={ticketPreview.data} settings={settings} onClose={() => setTicketPreview(null)} />}
+      {/* TICKET PREVIEW MENGGUNAKAN NATIVE BROWSER PRINT ATAU RAWBT */}
+      {ticketPreview && <TicketPreviewModal type={ticketPreview.type} data={ticketPreview.data} settings={settings} onClose={() => setTicketPreview(null)} showToast={showToast} />}
 
       {/* Header */}
       <header className="fixed top-0 w-full z-40 bg-[#0c331a]/90 backdrop-blur-xl border-b border-[#1b5e35] shadow-lg px-6 py-3 flex items-center justify-between hide-on-print">
@@ -1007,20 +1071,28 @@ function KendaraanMasuk({ user, addTransaction, showToast, settings, setTicketPr
   };
 
   const handleCapture = async (photo) => {
-    setShowCamera(false);
-    const newTx = {
-      id: Date.now().toString(), nopol: nopol.toUpperCase(), jenis, waktuMasuk: new Date(),
-      status: 'IN', fotoMasuk: photo, lokasi: user.lokasi === 'All Lokasi' ? PURE_LOCATIONS[0] : user.lokasi,
-      kasirMasuk: user.nama, gps
-    };
-    
-    // Simpan ke DB dulu agar tidak hilang
-    await addTransaction(newTx);
-    
-    // Tampilkan SOP Preview Modal ke UI
-    setTicketPreview({ type: 'IN', data: newTx });
-    
-    setNopol('');
+    try {
+        setShowCamera(false);
+        const newTx = {
+          id: Date.now().toString(), nopol: nopol.toUpperCase(), jenis, waktuMasuk: new Date(),
+          status: 'IN', fotoMasuk: photo, lokasi: user.lokasi === 'All Lokasi' ? PURE_LOCATIONS[0] : user.lokasi,
+          kasirMasuk: user.nama, gps
+        };
+        
+        // Simpan ke DB dulu agar tidak hilang
+        await addTransaction(newTx);
+        
+        // Eksekusi print rahasia / Direct Bluetooth
+        printDirectBluetooth('IN', newTx, settings);
+        
+        // Tampilkan SOP Preview Modal ke UI
+        setTicketPreview({ type: 'IN', data: newTx });
+        
+        setNopol('');
+    } catch (e) {
+        console.error("Gagal Proses Masuk: ", e);
+        showToast("Terjadi kesalahan saat simpan tiket masuk!", "error");
+    }
   };
 
   return (
@@ -1074,7 +1146,8 @@ function KendaraanKeluar({ user, transactions, updateTransaction, settings, show
 
   const calculateFee = (tx) => {
     const exitTime = new Date();
-    const diffMs = exitTime - tx.waktuMasuk;
+    const waktuMasukValid = tx.waktuMasuk ? new Date(tx.waktuMasuk) : new Date(); // Safey Check Jika Undefined
+    const diffMs = exitTime - waktuMasukValid;
     
     const diffMinutesTotal = Math.floor(diffMs / (1000 * 60));
     const exactHours = Math.floor(diffMinutesTotal / 60);
@@ -1085,7 +1158,7 @@ function KendaraanKeluar({ user, transactions, updateTransaction, settings, show
     const billedJam = jam > 0 ? jam : 1; 
 
     const locSettings = getLocSettings(settings, tx.lokasi);
-    const rate = locSettings.tariffs[tx.jenis] || locSettings.tariffs['Motor'];
+    const rate = locSettings.tariffs[tx.jenis] || locSettings.tariffs['Motor']; // Safety Jika Tarif Kosong
     const denda = tiketHilang ? 10000 : 0;
 
     if (rate.gracePeriodActive && diffMinutesTotal <= rate.gracePeriodMinutes) {
@@ -1128,26 +1201,36 @@ function KendaraanKeluar({ user, transactions, updateTransaction, settings, show
   };
 
   const handleCapture = async (photo) => {
-    setShowCamera(false);
-    const { total, jam, durasiText, exitTime, isMember, denda } = calculateFee(selectedTx);
-    
-    const updateData = { 
-      status: 'OUT', waktuKeluar: exitTime, fotoKeluar: photo, 
-      kasirKeluar: user.nama, durasiJam: jam, durasiText: durasiText, totalBiaya: total, 
-      isMember, tiketHilang, denda, fotoKTP, fotoSTNK
-    };
-    
-    await updateTransaction(selectedTx.id, updateData);
-    
-    const locSettings = getLocSettings(settings, selectedTx.lokasi);
-    const finalData = { ...selectedTx, ...updateData, petugasPhoto: user.photo, locSettings };
+    try {
+        setShowCamera(false);
+        const { total, jam, durasiText, exitTime, isMember, denda } = calculateFee(selectedTx);
+        
+        const updateData = { 
+          status: 'OUT', waktuKeluar: exitTime, fotoKeluar: photo, 
+          kasirKeluar: user.nama, durasiJam: jam, durasiText: durasiText, totalBiaya: total, 
+          isMember, tiketHilang, denda, fotoKTP, fotoSTNK
+        };
+        
+        // BUG FIX PENTING: Tunggu database tuntas terupdate
+        await updateTransaction(selectedTx.id, updateData);
+        
+        const locSettings = getLocSettings(settings, selectedTx.lokasi);
+        const finalData = { ...selectedTx, ...updateData, petugasPhoto: user.photo, locSettings };
 
-    // Tampilkan SOP Preview Modal ke UI
-    setTicketPreview({ type: 'OUT', data: finalData });
+        // Eksekusi print rahasia / Direct Bluetooth
+        printDirectBluetooth('OUT', finalData, settings);
 
-    setSelectedTx(null);
-    setSearchQuery('');
-    setTiketHilang(false); setFotoKTP(null); setFotoSTNK(null);
+        // Tampilkan SOP Preview Modal ke UI
+        setTicketPreview({ type: 'OUT', data: finalData });
+
+        // Reset state
+        setSelectedTx(null);
+        setSearchQuery('');
+        setTiketHilang(false); setFotoKTP(null); setFotoSTNK(null);
+    } catch (error) {
+        console.error("Gagal Proses Keluar:", error);
+        showToast("Proses gagal: " + error.message, "error");
+    }
   };
 
   return (
@@ -2588,8 +2671,14 @@ function SettingWeb({ settings, setSettings, isReadOnly, showToast }) {
   return (
     <form onSubmit={handleSave} className="space-y-6">
       <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35]">
-         <h4 className="font-bold text-white mb-2 uppercase text-sm flex items-center gap-2"><Bluetooth size={18} className="text-teal-400"/> Pengaturan Printer</h4>
-         <p className="text-xs text-green-200/70 leading-relaxed mb-4">Aplikasi saat ini menggunakan fitur pencetakan Struk Modal klasik yang dapat memanggil perintah Print bawaan Browser yang kompatibel dengan ukuran kertas Kasir Bluetooth Anda (58mm).</p>
+         <h4 className="font-bold text-white mb-2 uppercase text-sm flex items-center gap-2"><Bluetooth size={18} className="text-teal-400"/> Pengaturan Printer Default</h4>
+         <p className="text-xs text-green-200/70 leading-relaxed mb-4">Aplikasi ini telah dioptimalkan untuk menggunakan pencetakan otomatis (<strong>Direct Background Print</strong>).</p>
+         <div className="bg-[#114022] p-4 rounded-xl border border-[#1b5e35]">
+            <ol className="text-xs text-green-200/60 list-decimal ml-4 space-y-2">
+               <li><strong>Android:</strong> Wajib install aplikasi <strong>RawBT</strong> Print Service. Aktifkan fitur <em>"Don't ask before print"</em> agar struk otomatis keluar seketika tanpa dialog.</li>
+               <li>Pastikan Printer Thermal Bluetooth Anda sudah di-pairing (dipasangkan) di setingan Bluetooth HP.</li>
+            </ol>
+         </div>
       </div>
 
       <div className="bg-[#092613] p-5 rounded-2xl border border-[#1b5e35] flex flex-col items-center text-center">
