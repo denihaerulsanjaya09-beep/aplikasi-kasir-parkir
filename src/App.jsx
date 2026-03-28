@@ -181,6 +181,7 @@ function MainApp() {
   const [reportToPrint, setReportToPrint] = useState(null); 
   const [rekapSearch, setRekapSearch] = useState('');
   
+  // States Modal & Transaction Flow
   const [showCamera, setShowCamera] = useState(false);
   const [showLoginCamera, setShowLoginCamera] = useState(false);
   const [pendingLoginUser, setPendingLoginUser] = useState(null);
@@ -188,6 +189,10 @@ function MainApp() {
   const [showReportModal, setShowReportModal] = useState(false);
   const [currentTransaction, setCurrentTransaction] = useState(null);
   const [capturedImage, setCapturedImage] = useState(null);
+  const [isSaving, setIsSaving] = useState(false); // Penanda saat sedang Write DB
+  
+  // Mengamankan referensi memori data transaksi agar tidak kena jeda react
+  const txDataRef = useRef(null); 
 
   // State Khusus Admin Laporan
   const [reportFilterType, setReportFilterType] = useState('cutoff'); 
@@ -369,28 +374,10 @@ function MainApp() {
     return stats;
   };
 
-  // --- TRANSAKSI KASIR (FIX: SIMPAN DATABASE OTOMATIS SAAT FOTO DIAMBIL) ---
-  const saveTransactionToDB = async (transactionData, photoData) => {
-    if (!db || !fbUser || !currentUser?.location || !transactionData) return;
-    try {
-      if (transactionData.type === 'masuk') {
-        const v = { ...transactionData, photo: photoData, time: transactionData.time.toISOString() };
-        await setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, v.plate), v);
-      } else if (transactionData.type === 'keluar') {
-        await deleteDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, transactionData.plate));
-        // Menyimpan data keluar beserta foto bukti keluarnya
-        const tx = { ...transactionData, exitPhoto: photoData, time: transactionData.time.toISOString(), exitTime: transactionData.exitTime.toISOString() };
-        const businessStr = getBusinessDateStr(new Date());
-        await setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${currentUser.location}_${businessStr}`, `${tx.plate}_${Date.now()}`), tx);
-      }
-    } catch (err) {
-      console.error("Error saving data:", err);
-    }
-  };
-
+  // --- TRANSAKSI KASIR UTAMA ---
   const handleMasuk = () => {
     if (!plateMasuk) return alert("Masukkan Plat Nomor!");
-    setCurrentTransaction({
+    const tx = {
       type: 'masuk',
       plate: plateMasuk.toUpperCase(),
       vehicleType: vehicleTypeMasuk,
@@ -399,7 +386,9 @@ function MainApp() {
       cashier: currentUser?.name,
       shift: shiftInfo.name,
       isMember: members.some(m => m.plate === plateMasuk.toUpperCase())
-    });
+    };
+    txDataRef.current = tx; // Kunci data agar tidak hilang oleh re-render
+    setCurrentTransaction(tx);
     setShowCamera(true);
   };
 
@@ -425,7 +414,7 @@ function MainApp() {
       }
     }
 
-    setCurrentTransaction({ 
+    const tx = { 
       ...vehicle, 
       type: 'keluar', 
       exitTime, 
@@ -434,22 +423,61 @@ function MainApp() {
       location: currentUser?.location,
       exitCashier: currentUser?.name,
       exitShift: shiftInfo.name
-    });
+    };
+    txDataRef.current = tx; // Kunci data agar tidak hilang
+    setCurrentTransaction(tx);
     setShowCamera(true);
   };
 
+  // --- FIX PENYIMPANAN DATA INSTAN DARI KAMERA ---
+  const handleCapture = async (photoBase64) => {
+    setCapturedImage(photoBase64);
+    setShowCamera(false); 
+    setIsSaving(true); // Memunculkan loading layar hitam
+    
+    const tx = txDataRef.current || currentTransaction;
+    
+    if (!tx || !db || !currentUser?.location) {
+        setIsSaving(false);
+        alert("Sistem gagal memuat data transaksi. Silakan coba lagi.");
+        return;
+    }
+
+    try {
+      if (tx.type === 'masuk') {
+        const v = { ...tx, photo: photoBase64, time: tx.time.toISOString() };
+        await setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, v.plate), v);
+      } else if (tx.type === 'keluar') {
+        await deleteDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, tx.plate));
+        // Menyimpan data keluar beserta foto bukti keluarnya
+        const exitTx = { ...tx, exitPhoto: photoBase64, time: tx.time.toISOString(), exitTime: tx.exitTime.toISOString() };
+        const businessStr = getBusinessDateStr(new Date());
+        await setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${currentUser.location}_${businessStr}`, `${exitTx.plate}_${Date.now()}`), exitTx);
+      }
+      
+      setIsSaving(false); // Sembunyikan loading
+      setShowPrintModal(true); // Baru munculkan modal cetak (data dijamin sudah aman)
+    } catch (err) {
+      console.error("Database Error:", err);
+      setIsSaving(false);
+      alert("Gagal menyimpan data ke server: " + err.message + "\n\nPastikan Anda memiliki hak akses (Permissions Firebase) atau koneksi internet stabil.");
+    }
+  };
+
   const handleReprint = (transactionData) => {
+      txDataRef.current = transactionData;
       setCurrentTransaction(transactionData);
       setShowPrintModal(true);
   };
 
   const handlePrintComplete = () => {
-    // Fungsi ini sekarang HANYA membersihkan UI Form. Data sudah tersimpan saat proses Kamera Selesai.
-    if (currentTransaction?.type === 'masuk') setPlateMasuk('');
-    else if (currentTransaction?.type === 'keluar') setPlateKeluar('');
+    // Fungsi ini sekarang HANYA membersihkan UI Form.
+    if (txDataRef.current?.type === 'masuk') setPlateMasuk('');
+    else if (txDataRef.current?.type === 'keluar') setPlateKeluar('');
     
     setShowPrintModal(false);
     setCurrentTransaction(null);
+    txDataRef.current = null;
     setCapturedImage(null);
   };
 
@@ -474,7 +502,7 @@ function MainApp() {
   }, [reportToPrint]);
 
   // =====================================
-  // TAMPILAN LOADING DB
+  // TAMPILAN LOADING DB & SAVING
   // =====================================
   if (!isDbReady) {
     return (
@@ -637,7 +665,16 @@ function MainApp() {
   // =====================================
   if (view === 'dashboard') {
     return (
-      <div className="min-h-screen bg-[#0A1A13] font-sans text-white pb-10 selection:bg-green-500/30 print:hidden flex flex-col">
+      <div className="min-h-screen bg-[#0A1A13] font-sans text-white pb-10 selection:bg-green-500/30 print:hidden flex flex-col relative">
+        {/* LAYAR LOADING OVERLAY (MENGAMANKAN DATA) */}
+        {isSaving && (
+          <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[999] flex flex-col items-center justify-center">
+             <div className="w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin mb-4 shadow-[0_0_15px_rgba(34,197,94,0.5)]"></div>
+             <p className="text-green-400 font-bold tracking-widest uppercase text-lg">Menyimpan ke Database</p>
+             <p className="text-white/50 text-xs mt-2 font-medium">Jangan tutup aplikasi. Menunggu respons server...</p>
+          </div>
+        )}
+
         <div className="bg-[#0F2E1F]/80 backdrop-blur-xl pt-6 pb-4 px-6 sticky top-0 z-10 border-b border-white/10 shadow-lg">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">
             <div className="flex items-center gap-4">
@@ -788,7 +825,7 @@ function MainApp() {
                </div>
                
                <div className="flex-1 overflow-y-auto space-y-3 bg-black/20 p-2 rounded-2xl border border-white/5">
-                  {parkedVehicles.sort((a,b) => b.time - a.time).map((v, i) => (
+                  {[...parkedVehicles].sort((a,b) => b.time - a.time).map((v, i) => (
                      <div key={i} className="bg-white/10 p-4 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border border-white/5 hover:bg-white/20 transition-colors">
                         <div className="flex items-center gap-4">
                            {v.photo ? (
@@ -818,12 +855,7 @@ function MainApp() {
 
         </div>
 
-        {showCamera && <CameraModal onCapture={v => { 
-            setCapturedImage(v); 
-            setShowCamera(false); 
-            saveTransactionToDB(currentTransaction, v); // SIMPAN KE DB SEBELUM MODAL CETAK TAMPIL
-            setShowPrintModal(true); 
-          }} onClose={() => setShowCamera(false)} />}
+        {showCamera && <CameraModal onCapture={handleCapture} onClose={() => setShowCamera(false)} />}
           
         {showPrintModal && <PrintModal transaction={currentTransaction} onComplete={handlePrintComplete} />}
         {showReportModal && <ReportModal />}
@@ -1414,10 +1446,15 @@ function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek" }) {
   }, []);
 
   const takePhoto = () => {
-    if (error) { onCapture('dummy_image_data'); return; }
+    if (error) { 
+        onCapture('dummy_image_data'); 
+        return; 
+    }
+    
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (video && canvas) {
+    
+    if (video && canvas && video.videoWidth > 0) {
       const MAX_WIDTH = 300; 
       const scale = Math.min(1, MAX_WIDTH / video.videoWidth);
       canvas.width = video.videoWidth * scale;
@@ -1425,6 +1462,9 @@ function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek" }) {
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       onCapture(canvas.toDataURL('image/jpeg', 0.6)); 
+    } else {
+      // Fallback jika video belum termuat dengan sempurna
+      onCapture('dummy_image_data');
     }
   };
 
@@ -1511,7 +1551,7 @@ function PrintModal({ transaction, onComplete }) {
               <p className="font-bold tracking-wide">Mencetak...</p>
             </div>
             {/* Trik Fallback: Kasir bisa lewati jika bluetooth hang */}
-            <button onClick={onComplete} className="text-white/50 text-xs underline mt-2 hover:text-white">Lewati / Tutup (Jika Printer Error)</button>
+            <button onClick={onComplete} className="text-white/50 text-xs underline mt-2 hover:text-white cursor-pointer">Lewati / Tutup (Jika Printer Error)</button>
           </div>
         ) : (
           <button onClick={onComplete} className="w-full bg-green-500 text-black rounded-xl py-4 font-extrabold flex justify-center gap-2 active:scale-95 transition-transform"><Check size={24} /> Selesai</button>
