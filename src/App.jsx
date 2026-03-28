@@ -489,7 +489,7 @@ function MainApp() {
   // =====================================
   // MODAL LAPORAN SHIFT (KASIR SPESIFIK)
   // =====================================
-  const ReportModal = () => {
+  const renderReportModal = () => {
     const myShiftTx = shiftTransactions.filter(t => 
        t.exitCashier === currentUser?.name && 
        t.exitShift === shiftInfo.name &&
@@ -519,8 +519,8 @@ function MainApp() {
     };
 
     return (
-      <div className={`fixed inset-0 ${isShiftLocked ? 'bg-black/95 z-[999]' : 'bg-black/90 z-50'} backdrop-blur-md flex items-center justify-center p-4 print:hidden`}>
-        <div className={`bg-[#0F2E1F] border ${isShiftLocked ? 'border-red-500/50 shadow-[0_0_50px_rgba(239,68,68,0.2)]' : 'border-green-500/30 shadow-[0_0_50px_rgba(34,197,94,0.1)]'} backdrop-blur-xl rounded-[32px] w-full max-w-md p-6 text-white relative overflow-hidden`}>
+      <div className={`fixed inset-0 bg-black/95 z-[9999] backdrop-blur-md flex items-center justify-center p-4 print:hidden`}>
+        <div className={`bg-[#0F2E1F] border ${isShiftLocked ? 'border-red-500/50 shadow-[0_0_50px_rgba(239,68,68,0.2)]' : 'border-green-500/30 shadow-[0_0_50px_rgba(34,197,94,0.1)]'} backdrop-blur-xl rounded-[32px] w-full max-w-md p-6 text-white relative overflow-y-auto max-h-[95vh]`}>
           {!isShiftLocked && (
              <button onClick={() => setShowReportModal(false)} className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-red-500/80 rounded-full transition-colors"><X size={24} /></button>
           )}
@@ -799,7 +799,7 @@ function MainApp() {
 
           setShowPrintModal(true); 
         }} onClose={() => setShowCamera(false)} />}
-        {showReportModal && <ReportModal />}
+        {showReportModal && renderReportModal()}
         </div>
         {showPrintModal && <PrintModal transaction={currentTransaction} onComplete={handlePrintComplete} />}
       </>
