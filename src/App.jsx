@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
+import { getFirestore, collection, doc, setDoc, onSnapshot } from 'firebase/firestore';
 
 // --- BUG FIX: Mencegah error "tailwind is not defined" dari environment ---
 if (typeof window !== 'undefined') {
@@ -35,6 +35,22 @@ const processImageFile = (file, callback) => {
     img.src = event.target.result;
   };
   reader.readAsDataURL(file);
+};
+
+// --- HELPER FUNCTION: Deep Merge Objects ---
+const deepMerge = (target, source) => {
+  const isObject = (item) => item && typeof item === 'object' && !Array.isArray(item);
+  if (!isObject(target) || !isObject(source)) return source;
+  const output = { ...target };
+  Object.keys(source).forEach(key => {
+    if (isObject(source[key])) {
+      if (!(key in target)) Object.assign(output, { [key]: source[key] });
+      else output[key] = deepMerge(target[key], source[key]);
+    } else {
+      Object.assign(output, { [key]: source[key] });
+    }
+  });
+  return output;
 };
 
 // --- HELPER FUNCTION: Direct Bluetooth Print (RawBT / ESC-POS) ---
@@ -390,15 +406,12 @@ export default function App() {
       const unsubSettings = onSnapshot(settingsRef, (snapshot) => {
          if (!snapshot.empty) {
             const globalSettings = snapshot.docs.find(d => d.id === 'global');
-            if (globalSettings) {
+            if (globalSettings && !snapshot.metadata.hasPendingWrites) {
                const loadedSettings = globalSettings.data();
-               // Merge carefully: loaded settings should override defaults
-               setSettings(prev => ({ ...prev, ...loadedSettings }));
+               setSettings(prev => deepMerge(prev, loadedSettings));
             }
          } else {
-            // Only initialize if truly empty and we are master
-            // For now, just set the default state locally
-            setSettings(DEFAULT_SETTINGS);
+            setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), DEFAULT_SETTINGS);
          }
       }, (err) => console.error("Error settings:", err));
 
@@ -418,73 +431,37 @@ export default function App() {
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', id), txToUpdate, { merge: true });
   };
 
-  const handleUpdateSettings = async (newSettings) => {
+  const handleUpdateSettings = async (newSettings, isPartial = false) => {
     if (!fbUser) return;
-    try {
-      // Use setDoc with merge: true for general settings updates
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), newSettings, { merge: true });
-    } catch (error) {
-      console.error("Error updating settings:", error);
-      showToast("Gagal menyimpan pengaturan", "error");
-    }
-  };
-
-  const handleUpdateActiveLogin = async (nipp, loginData) => {
-    if (!fbUser) return;
-    try {
-      const settingsDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
-      if (loginData === null) {
-        // Logout case
-        await updateDoc(settingsDocRef, {
-          [`activeLogins.${nipp}`]: deleteField()
-        });
-      } else {
-        // Login/Heartbeat case
-        await updateDoc(settingsDocRef, {
-          [`activeLogins.${nipp}`]: loginData
-        });
-      }
-    } catch (error) {
-      console.error("Error updating active login:", error);
-      // If doc doesn't exist, we might need to create it first
-      if (error.code === 'not-found') {
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { activeLogins: { [nipp]: loginData } }, { merge: true });
-      }
-    }
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), newSettings, { merge: isPartial });
   };
 
   useEffect(() => {
-    if (!user || !fbUser) return;
-    const interval = setInterval(async () => {
-      try {
-        const userLocShifts = getLocSettings(settings, user.lokasi).shifts;
-        const active = getActiveShift(userLocShifts);
-        if (active !== shiftData.current) setShiftData({ current: active, showSummary: true });
+    if (!user) return;
+    const interval = setInterval(() => {
+      const userLocShifts = getLocSettings(settings, user.lokasi).shifts;
+      const active = getActiveShift(userLocShifts);
+      if (active !== shiftData.current) setShiftData({ current: active, showSummary: true });
 
-        // Update heartbeat for active login using atomic update
-        await handleUpdateActiveLogin(user.nipp, { 
-          lokasi: user.lokasi, 
-          deviceId: deviceId, 
-          timestamp: Date.now() 
-        });
-      } catch (error) {
-        console.warn("Heartbeat update failed:", error);
+      const activeLogins = settings.activeLogins || {};
+      if (activeLogins[user.nipp]?.deviceId === deviceId) {
+         handleUpdateSettings({
+            activeLogins: { ...activeLogins, [user.nipp]: { ...activeLogins[user.nipp], timestamp: Date.now() } }
+         }, true);
       }
     }, 60000);
     return () => clearInterval(interval);
-  }, [user, fbUser, shiftData.current, settings, deviceId]);
+  }, [user, shiftData.current, settings, deviceId]);
 
-  const handleLogout = async () => { 
-    if(user && fbUser){
-       try {
-         const userLocShifts = getLocSettings(settings, user.lokasi).shifts;
-         setShiftData({ current: getActiveShift(userLocShifts), showSummary: false }); 
-         
-         // Remove active login atomically
-         await handleUpdateActiveLogin(user.nipp, null);
-       } catch (error) {
-         console.error("Error during logout heartbeat cleanup:", error);
-       }
+  const handleLogout = () => { 
+    if(user){
+       const userLocShifts = getLocSettings(settings, user.lokasi).shifts;
+       setShiftData({ current: getActiveShift(userLocShifts), showSummary: false }); 
+       
+       const activeLogins = settings.activeLogins || {};
+       const newLogins = { ...activeLogins };
+       delete newLogins[user.nipp];
+       handleUpdateSettings({ ...settings, activeLogins: newLogins });
     }
     setUser(null); 
     setActiveTab('masuk'); 
@@ -497,7 +474,7 @@ export default function App() {
         <LoginScreen 
             usersList={settings.users || DEFAULT_SETTINGS.users} 
             settings={settings}
-            updateActiveLogin={handleUpdateActiveLogin}
+            updateSettings={handleUpdateSettings}
             deviceId={deviceId}
             showToast={showToast}
             onLogin={(u) => { 
@@ -511,7 +488,7 @@ export default function App() {
     );
   }
 
-  const hasSettingsAccess = ['master', 'korlap', 'audit', 'kasir'].includes(user.role);
+  const hasSettingsAccess = ['master', 'korlap', 'audit'].includes(user.role);
   const canViewArea = user.role === 'master' || user.role === 'audit' || user.role === 'kasir' || (user.role === 'korlap' && user.canViewArea);
   const canTransact = user.role === 'master' || user.role === 'korlap' || user.role === 'kasir';
   const webSettings = settings.web || DEFAULT_SETTINGS.web;
@@ -651,12 +628,12 @@ export default function App() {
 }
 
 // --- LOGIN COMPONENT DENGAN LOGIC MULTI-LOKASI ---
-function LoginScreen({ onLogin, usersList, settings, updateActiveLogin, deviceId, showToast }) {
+function LoginScreen({ onLogin, usersList, settings, updateSettings, deviceId, showToast }) {
   const [formData, setFormData] = useState({ nipp: '', password: '', lokasi: LOCATIONS[0] });
   const [showCamera, setShowCamera] = useState(false);
   const [tempUser, setTempUser] = useState(null);
 
-  const handleLoginSubmit = async (e) => {
+  const handleLoginSubmit = (e) => {
     e.preventDefault();
     const inputNipp = formData.nipp.trim().toLowerCase();
     const matchedUser = usersList.find(u => u.nipp.trim().toLowerCase() === inputNipp && u.password === formData.password);
@@ -679,10 +656,12 @@ function LoginScreen({ onLogin, usersList, settings, updateActiveLogin, deviceId
         }
     }
 
-    await updateActiveLogin(matchedUser.nipp, { 
-      lokasi: formData.lokasi, 
-      deviceId: deviceId, 
-      timestamp: Date.now() 
+    updateSettings({
+       ...settings,
+       activeLogins: {
+           ...(settings.activeLogins || {}),
+           [matchedUser.nipp]: { lokasi: formData.lokasi, deviceId: deviceId, timestamp: Date.now() }
+       }
     });
 
     setTempUser({ ...matchedUser, lokasi: formData.lokasi });
@@ -1089,27 +1068,26 @@ function KendaraanArea({ transactions, user }) {
 function MasterSettings({ settings, setSettings, user, transactions, updateTransaction, showToast, setConfirmDialog }) {
   const [activeSetTab, setActiveSetTab] = useState('laporan');
   const isReadOnly = user.role !== 'master';
-  const isCashier = user.role === 'kasir';
 
   return (
     <div className="fade-in max-w-5xl mx-auto print-a4-layout">
       <div className="flex items-center gap-4 mb-8 hide-on-print">
         <div className="w-14 h-14 bg-[#114022] text-green-400 border border-[#1b5e35] rounded-2xl flex items-center justify-center"><Settings size={28} /></div>
         <div>
-          <h2 className="text-2xl font-extrabold text-white tracking-tight">{isCashier ? 'Laporan Pendapatan' : 'System Settings & Reports'}</h2>
-          <p className="text-green-200/70 text-sm">Akses {user.role.toUpperCase()} {isReadOnly ? (isCashier ? '(Hanya Laporan)' : '(Sebagian Fitur Read-Only)') : '(Full Access)'}</p>
+          <h2 className="text-2xl font-extrabold text-white tracking-tight">System Settings & Reports</h2>
+          <p className="text-green-200/70 text-sm">Akses {user.role.toUpperCase()} {isReadOnly ? '(Sebagian Fitur Read-Only)' : '(Full Access)'}</p>
         </div>
       </div>
 
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2 custom-scrollbar hide-on-print">
         <button onClick={() => setActiveSetTab('laporan')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'laporan' ? 'bg-green-600 text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Laporan & Audit</button>
-        {!isCashier && user.role === 'master' && <button onClick={() => setActiveSetTab('rekapan')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'rekapan' ? 'bg-teal-600 text-white' : 'bg-[#114022] text-teal-400 hover:bg-[#164d2b]'}`}>Rekapan Global (Rinci)</button>}
-        {!isCashier && <button onClick={() => setActiveSetTab('tarif')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'tarif' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Setting Tarif</button>}
-        {!isCashier && <button onClick={() => setActiveSetTab('member')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'member' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Member Parkir</button>}
-        {!isCashier && <button onClick={() => setActiveSetTab('shift')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'shift' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Setting Shift</button>}
-        {!isCashier && user.role === 'master' && <button onClick={() => setActiveSetTab('users')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'users' ? 'bg-blue-600 text-white' : 'bg-[#114022] text-blue-400 hover:bg-[#164d2b]'}`}>Manajemen User</button>}
-        {!isCashier && <button onClick={() => setActiveSetTab('tiket')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'tiket' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Struk/Tiket Parkir</button>}
-        {!isCashier && <button onClick={() => setActiveSetTab('web')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'web' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Web & Printer</button>}
+        {user.role === 'master' && <button onClick={() => setActiveSetTab('rekapan')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'rekapan' ? 'bg-teal-600 text-white' : 'bg-[#114022] text-teal-400 hover:bg-[#164d2b]'}`}>Rekapan Global (Rinci)</button>}
+        <button onClick={() => setActiveSetTab('tarif')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'tarif' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Setting Tarif</button>
+        <button onClick={() => setActiveSetTab('member')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'member' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Member Parkir</button>
+        <button onClick={() => setActiveSetTab('shift')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'shift' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Setting Shift</button>
+        {user.role === 'master' && <button onClick={() => setActiveSetTab('users')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'users' ? 'bg-blue-600 text-white' : 'bg-[#114022] text-blue-400 hover:bg-[#164d2b]'}`}>Manajemen User</button>}
+        <button onClick={() => setActiveSetTab('tiket')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'tiket' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Struk/Tiket Parkir</button>
+        <button onClick={() => setActiveSetTab('web')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${activeSetTab === 'web' ? 'bg-[#1b5e35] text-white' : 'bg-[#114022] text-green-300/50 hover:bg-[#164d2b]'}`}>Web & Printer</button>
       </div>
 
       <div className="bg-[#114022] rounded-[2.5rem] p-8 shadow-2xl border border-[#1b5e35] print-a4-layout">
@@ -1717,18 +1695,23 @@ function SettingShift({ settings, setSettings, isReadOnly, user, showToast }) {
   const locSettings = getLocSettings(settings, targetLokasi);
   const [shifts, setShifts] = useState(locSettings.shifts || DEFAULT_LOCATION_SETTINGS.shifts);
 
-  useEffect(() => { setShifts(getLocSettings(settings, targetLokasi).shifts || DEFAULT_LOCATION_SETTINGS.shifts); }, [targetLokasi, settings]);
+  useEffect(() => { 
+     const remoteShifts = getLocSettings(settings, targetLokasi).shifts || DEFAULT_LOCATION_SETTINGS.shifts;
+     if (JSON.stringify(remoteShifts) !== JSON.stringify(shifts)) {
+        setShifts(remoteShifts); 
+     }
+  }, [targetLokasi, settings]);
 
-  const handleSave = async () => {
-    try {
-      const newLocations = { ...settings.locations, [targetLokasi]: { ...getLocSettings(settings, targetLokasi), shifts: shifts } };
-      const settingsDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
-      await updateDoc(settingsDocRef, { locations: newLocations });
-      showToast(`Setingan Jam Shift untuk ${targetLokasi} Tersimpan!`);
-    } catch (error) {
-      console.error("Error saving shifts:", error);
-      showToast("Gagal menyimpan waktu shift", "error");
-    }
+  const handleSave = () => {
+    const partialUpdate = {
+        locations: {
+            [targetLokasi]: {
+                shifts: shifts
+            }
+        }
+    };
+    setSettings(partialUpdate, true);
+    showToast(`Setingan Jam Shift untuk ${targetLokasi} Tersimpan!`);
   };
 
   const updateShift = (index, field, val) => {
@@ -1777,7 +1760,7 @@ function SettingUser({ settings, setSettings, showToast }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ id: '', nipp: '', nama: '', password: '', role: 'kasir', canViewArea: false });
 
-  const submitForm = async (e) => {
+  const submitForm = (e) => {
     e.preventDefault();
     let newList;
     if (form.id) {
@@ -1787,33 +1770,20 @@ function SettingUser({ settings, setSettings, showToast }) {
     }
     
     setUsersList(newList);
-    try {
-      const settingsDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
-      await updateDoc(settingsDocRef, { users: newList });
-      showToast("Akun berhasil disimpan ke database utama!");
-    } catch (error) {
-      console.error("Error saving users:", error);
-      showToast("Gagal menyimpan akun", "error");
-    }
+    setSettings({ users: newList }, true);
     
     setShowForm(false);
     setForm({ id: '', nipp: '', nama: '', password: '', role: 'kasir', canViewArea: false });
     showToast("Akun berhasil disimpan ke database utama!");
   };
 
-  const hapusUser = async (id) => {
+  const hapusUser = (id) => {
     if (usersList.find(u => u.id === id).role === 'master') return showToast("Akun Master tidak bisa dihapus!", "error");
     const newList = usersList.filter(u => u.id !== id);
     
     setUsersList(newList);
-    try {
-      const settingsDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
-      await updateDoc(settingsDocRef, { users: newList });
-      showToast("Akun berhasil dihapus!");
-    } catch (error) {
-      console.error("Error deleting user:", error);
-      showToast("Gagal menghapus akun", "error");
-    }
+    setSettings({ users: newList }, true);
+    showToast("Akun berhasil dihapus!");
   };
 
   return (
@@ -1884,12 +1854,15 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
      'Sepeda/Becak': true
   });
 
-  // BUG FIX: Hapus `settings` dari dependency agar auto-sync background tidak mereset input yang sedang diketik
+  // BUG FIX: Gunakan JSON.stringify untuk mengecek apakah tarif benar-benar berubah sebelum mereset state lokal
   useEffect(() => { 
-     setLocalTariff(getLocSettings(settings, targetLokasi).tariffs || DEFAULT_LOCATION_SETTINGS.tariffs); 
+     const remoteTariffs = getLocSettings(settings, targetLokasi).tariffs || DEFAULT_LOCATION_SETTINGS.tariffs;
+     if (JSON.stringify(remoteTariffs) !== JSON.stringify(localTariff)) {
+        setLocalTariff(remoteTariffs); 
+     }
      // Reset kuncian saat ganti lokasi
      setLocked({ 'Motor': true, 'Mobil': true, 'Box/Truck': true, 'Sepeda/Becak': true });
-  }, [targetLokasi]); 
+  }, [targetLokasi, settings]); 
 
   const updateTariff = (jenis, field, val) => {
     setLocalTariff(prev => ({ ...prev, [jenis]: { ...prev[jenis], [field]: field === 'mode' || typeof val === 'boolean' ? val : Number(val) } }));
@@ -1899,18 +1872,19 @@ function SettingTarif({ settings, setSettings, isReadOnly, user, showToast }) {
      setLocked(prev => ({ ...prev, [jenis]: false }));
   };
 
-  const handleSaveJenis = async (jenis) => {
-     try {
-       const settingsDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
-       await updateDoc(settingsDocRef, {
-         [`locations.${targetLokasi}.tariffs.${jenis}`]: localTariff[jenis]
-       });
-       setLocked(prev => ({ ...prev, [jenis]: true }));
-       showToast(`Tarif ${jenis} di lokasi ${targetLokasi} berhasil diperbarui & dikunci!`);
-     } catch (error) {
-       console.error("Error saving tariff:", error);
-       showToast("Gagal menyimpan tarif", "error");
-     }
+  const handleSaveJenis = (jenis) => {
+     const partialUpdate = {
+         locations: {
+             [targetLokasi]: {
+                 tariffs: {
+                     [jenis]: localTariff[jenis]
+                 }
+             }
+         }
+     };
+     setSettings(partialUpdate, true);
+     setLocked(prev => ({ ...prev, [jenis]: true }));
+     showToast(`Tarif ${jenis} di lokasi ${targetLokasi} berhasil diperbarui & dikunci!`);
   };
 
   return (
@@ -2010,33 +1984,21 @@ function SettingMember({ settings, setSettings, isReadOnly, user, showToast }) {
 
   const membersList = settings.members || [];
 
-  const handleAdd = async (e) => {
+  const handleAdd = (e) => {
     e.preventDefault();
     if (!form.fotoSTNK || !form.fotoKartuPegawai) return showToast("Mohon Upload Foto STNK dan Kartu Pegawai!", "error");
     const newMember = { ...form, id: Date.now(), status: 'Pending' };
-    try {
-      const settingsDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
-      await updateDoc(settingsDocRef, { members: [...membersList, newMember] });
-      showToast("Berhasil diajukan!");
-    } catch (error) {
-      console.error("Error adding member:", error);
-      showToast("Gagal mengajukan member", "error");
-    }
+    setSettings({ members: [...membersList, newMember] }, true);
     setShowAdd(false);
     setForm({ nipp: '', nopol: '', masaBerlaku: 'Bulanan', fotoSTNK: null, fotoKartuPegawai: null });
+    showToast("Berhasil diajukan!");
   };
 
-  const handleVerif = async (id) => {
+  const handleVerif = (id) => {
     if (user.role !== 'master') return showToast("Hanya Master yang bisa verifikasi.", "error");
     const updated = membersList.map(m => m.id === id ? { ...m, status: 'Aktif' } : m);
-    try {
-      const settingsDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
-      await updateDoc(settingsDocRef, { members: updated });
-      showToast("Member Diverifikasi!");
-    } catch (error) {
-      console.error("Error verifying member:", error);
-      showToast("Gagal verifikasi member", "error");
-    }
+    setSettings({ members: updated }, true);
+    showToast("Member Diverifikasi!");
   };
 
   return (
@@ -2105,20 +2067,20 @@ function SettingMember({ settings, setSettings, isReadOnly, user, showToast }) {
 function SettingWeb({ settings, setSettings, isReadOnly, showToast }) {
   const [form, setForm] = useState(settings.web || DEFAULT_SETTINGS.web);
   
+  useEffect(() => {
+    if (JSON.stringify(settings.web) !== JSON.stringify(form)) {
+      setForm(settings.web || DEFAULT_SETTINGS.web);
+    }
+  }, [settings.web]);
+
   const handleLogoUpload = (e) => {
     processImageFile(e.target.files[0], (data) => setForm({...form, logoUrl: data}));
   };
 
-  const handleSave = async (e) => { 
+  const handleSave = (e) => { 
     e.preventDefault(); 
-    try {
-      const settingsDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
-      await updateDoc(settingsDocRef, { web: form });
-      showToast("Pengaturan Web Tersimpan!");
-    } catch (error) {
-      console.error("Error saving web settings:", error);
-      showToast("Gagal menyimpan pengaturan web", "error");
-    }
+    setSettings({ web: form }, true); 
+    showToast("Pengaturan Web Tersimpan!"); 
   };
 
   return (
@@ -2162,22 +2124,22 @@ function SettingTiket({ settings, setSettings, isReadOnly, showToast }) {
   const defaultTicketSettings = { title: 'Sistem Device Portable', subtitle: '', footerIn: 'SIMPAN TIKET INI', footerOut: 'TERIMA KASIH', logoUrl: '' };
   const [form, setForm] = useState(settings.ticket || defaultTicketSettings);
 
+  useEffect(() => {
+    if (JSON.stringify(settings.ticket) !== JSON.stringify(form)) {
+      setForm(settings.ticket || defaultTicketSettings);
+    }
+  }, [settings.ticket]);
+
   const handleLogoUpload = (e) => {
     processImageFile(e.target.files[0], (data) => setForm({...form, logoUrl: data}));
   };
 
   const handleRemoveLogo = () => setForm({...form, logoUrl: ''});
 
-  const handleSave = async (e) => {
+  const handleSave = (e) => {
      e.preventDefault();
-     try {
-       const settingsDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
-       await updateDoc(settingsDocRef, { ticket: form });
-       showToast("Pengaturan Struk/Tiket Tersimpan!");
-     } catch (error) {
-       console.error("Error saving ticket settings:", error);
-       showToast("Gagal menyimpan pengaturan struk", "error");
-     }
+     setSettings({ ticket: form }, true);
+     showToast("Pengaturan Struk/Tiket Tersimpan!");
   };
 
   return (
