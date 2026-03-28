@@ -33,8 +33,6 @@ try {
 }
 
 const DB_APP_ID = "Resparking_Production_DB"; 
-const APP_LOGO = "https://cdn.lokomart.id/webcorporate/assets/img/logo/_bisnis2.png";
-const APP_VERSION = `v.${new Date().getMonth() + 1}.${new Date().getDate()}`;
 
 // --- DATA & CONFIG DEFAULT ---
 const DEFAULT_TARIFFS = {
@@ -90,6 +88,8 @@ const getDatesInRange = (start, end) => {
   }
   return [...new Set(arr)]; // Unique
 };
+
+const APP_VERSION = `v.${new Date().getMonth() + 1}.${new Date().getDate()}`;
 
 // ==========================================================
 // ERROR BOUNDARY (PENCEGAH BLANK PUTIH)
@@ -349,17 +349,14 @@ function MainApp() {
   };
 
   const generateReportStats = (transactions) => {
-    let stats = { 
-      motorQty: 0, motorNom: 0, mobilQty: 0, mobilNom: 0, trukQty: 0, trukNom: 0, memberQty: 0, total: 0, 
-      durUnder1: 0, dur1to3: 0, dur3to6: 0, dur6to8: 0, dur8to12: 0, durOver12: 0 
-    };
+    let stats = { motorQty: 0, motorNom: 0, mobilQty: 0, mobilNom: 0, trukQty: 0, trukNom: 0, memberQty: 0, total: 0, dur1: 0, dur3: 0, dur6: 0, dur8: 0, dur12: 0, durOver12: 0 };
     transactions.forEach(t => {
       const hrs = t.durationHours || 1;
-      if (hrs <= 1) stats.durUnder1++;
-      else if (hrs <= 3) stats.dur1to3++;
-      else if (hrs <= 6) stats.dur3to6++;
-      else if (hrs <= 8) stats.dur6to8++;
-      else if (hrs <= 12) stats.dur8to12++;
+      if (hrs <= 1) stats.dur1++;
+      else if (hrs <= 3) stats.dur3++;
+      else if (hrs <= 6) stats.dur6++;
+      else if (hrs <= 8) stats.dur8++;
+      else if (hrs <= 12) stats.dur12++;
       else stats.durOver12++;
 
       if (t.isMember) {
@@ -405,14 +402,14 @@ function MainApp() {
     
     let cost = 0;
     if (!vehicle.isMember) {
-      const rates = tariffs[vehicle.vehicleType];
+      const rates = tariffs[vehicle.vehicleType] || DEFAULT_TARIFFS[vehicle.vehicleType] || { type: 'flat', first: 2000, next: 2000, max: 10000, overnight: 10000 };
       if (rates.type === 'flat') {
         cost = rates.first;
-        if (exitTime.getDate() !== vehicle.time.getDate()) cost += rates.overnight;
+        if (exitTime.toDateString() !== vehicle.time.toDateString()) cost += rates.overnight;
       } else {
         cost = rates.first + (Math.max(0, hours - 1) * rates.next);
         if (cost > rates.max) cost = rates.max;
-        if (exitTime.getDate() !== vehicle.time.getDate()) cost += rates.overnight;
+        if (exitTime.toDateString() !== vehicle.time.toDateString()) cost += rates.overnight;
       }
     }
 
@@ -430,21 +427,6 @@ function MainApp() {
   };
 
   const handlePrintComplete = () => {
-    if (!db || !fbUser || !currentUser?.location) return;
-
-    if (currentTransaction?.type === 'masuk') {
-      const v = { ...currentTransaction, photo: capturedImage, time: currentTransaction.time.toISOString() };
-      setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, v.plate), v).catch(console.error);
-      setPlateMasuk('');
-    } else if (currentTransaction?.type === 'keluar') {
-      deleteDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, currentTransaction.plate)).catch(console.error);
-      const tx = { ...currentTransaction, time: currentTransaction.time.toISOString(), exitTime: currentTransaction.exitTime.toISOString() };
-      
-      const businessStr = getBusinessDateStr(new Date());
-      setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${currentUser.location}_${businessStr}`, `${tx.plate}_${Date.now()}`), tx).catch(console.error);
-      setPlateKeluar('');
-    }
-    
     setShowPrintModal(false);
     setCurrentTransaction(null);
     setCapturedImage(null);
@@ -466,8 +448,18 @@ function MainApp() {
 
   useEffect(() => {
     if (reportToPrint) {
-      setTimeout(() => { window.print(); setTimeout(() => setReportToPrint(null), 1000); }, 500);
+      const timer1 = setTimeout(() => { 
+        window.print(); 
+        const timer2 = setTimeout(() => {
+          setReportToPrint(null);
+          if (isShiftLocked) {
+            confirmLogout();
+          }
+        }, 1000); 
+      }, 500);
+      return () => clearTimeout(timer1);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportToPrint]);
 
   // =====================================
@@ -501,14 +493,16 @@ function MainApp() {
       if(actionType === 'wa') {
         const msg = `*LAPORAN SHIFT KASIR*\n📍 Lokasi: ${currentUser?.location}\n🗓 ${dateStr}\n👤 ${currentUser?.name} (${currentUser?.nipkwt})\n🕒 ${shiftInfo.name}\n\n*RINCIAN:*\n🏍 Motor: ${s.motorQty} (Rp ${s.motorNom.toLocaleString()})\n🚗 Mobil: ${s.mobilQty} (Rp ${s.mobilNom.toLocaleString()})\n🚚 Box: ${s.trukQty} (Rp ${s.trukNom.toLocaleString()})\n💳 Member: ${s.memberQty}\n\n*TOTAL STORAN: Rp ${s.total.toLocaleString()}*`;
         window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+        if(isShiftLocked) {
+           setTimeout(() => confirmLogout(), 2000);
+        } else {
+           setShowReportModal(false);
+        }
       } else if (actionType === 'pdf') {
         setReportToPrint(payload);
-      }
-
-      if(isShiftLocked) {
-         setTimeout(() => confirmLogout(), 2000);
-      } else {
-         setShowReportModal(false);
+        if(!isShiftLocked) {
+           setShowReportModal(false);
+        }
       }
     };
 
@@ -565,8 +559,8 @@ function MainApp() {
 
         <div className="bg-white/10 backdrop-blur-2xl border border-white/20 w-full max-w-sm rounded-[36px] p-8 shadow-[0_8px_32px_rgba(0,0,0,0.5)] relative z-10">
           <div className="flex flex-col items-center justify-center mb-6">
-            <div className="bg-white p-4 rounded-[28px] shadow-lg border border-white/20 mb-4 mt-2">
-              <img src={APP_LOGO} alt="Logo" className="h-16 object-contain" />
+            <div className="mb-4 mt-2">
+              <img src="https://cdn.lokomart.id/webcorporate/assets/img/logo/_bisnis2.png" alt="Logo Resparking" className="h-20 object-contain drop-shadow-md" />
             </div>
             <h1 className="text-4xl font-extrabold tracking-tight mb-2 text-transparent bg-clip-text bg-gradient-to-r from-white to-green-300 uppercase">
               Resparking
@@ -598,13 +592,13 @@ function MainApp() {
               <Camera size={20} /> Login & Ambil Foto
             </button>
             
-            <p className="text-center text-white/30 text-[11px] font-bold tracking-widest uppercase mt-6">
-              copyright by 200041
-            </p>
-            <div className="text-center mt-2 flex items-center justify-center gap-2">
-              <a href="https://www.dashboardregional2bd.id/" target="_blank" rel="noopener noreferrer" className="text-green-400 text-xs hover:underline font-bold">Lapor Kendala</a>
-              <span className="text-white/30 text-xs">|</span>
-              <span className="text-white/50 text-xs font-mono">{APP_VERSION}</span>
+            <div className="text-center mt-6 space-y-2">
+              <p className="text-white/30 text-[11px] font-bold tracking-widest uppercase">
+                copyright by 200041 • {APP_VERSION}
+              </p>
+              <a href="https://www.dashboardregional2bd.id/" target="_blank" rel="noopener noreferrer" className="text-green-400 hover:text-green-300 text-xs font-bold underline block">
+                Lapor Kendala
+              </a>
             </div>
           </form>
         </div>
@@ -626,8 +620,9 @@ function MainApp() {
   // =====================================
   if (view === 'dashboard') {
     return (
-      <div className="min-h-screen bg-[#0A1A13] font-sans text-white pb-10 selection:bg-green-500/30 print:hidden flex flex-col">
-        <div className="bg-[#0F2E1F]/80 backdrop-blur-xl pt-6 pb-4 px-6 sticky top-0 z-10 border-b border-white/10 shadow-lg">
+      <>
+        <div className="min-h-screen bg-[#0A1A13] font-sans text-white pb-10 selection:bg-green-500/30 print:hidden flex flex-col">
+          <div className="bg-[#0F2E1F]/80 backdrop-blur-xl pt-6 pb-4 px-6 sticky top-0 z-10 border-b border-white/10 shadow-lg">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">
             <div className="flex items-center gap-4">
               {currentUser?.photo ? (
@@ -766,10 +761,31 @@ function MainApp() {
           )}
         </div>
 
-        {showCamera && <CameraModal onCapture={v => { setCapturedImage(v); setShowCamera(false); setShowPrintModal(true); }} onClose={() => setShowCamera(false)} autoCapture={true} title="Memproses Kendaraan..." />}
-        {showPrintModal && <PrintModal transaction={currentTransaction} onComplete={handlePrintComplete} />}
+        {showCamera && <CameraModal onCapture={v => { 
+          setCapturedImage(v); 
+          setShowCamera(false); 
+          
+          // SAVE DATA OTOMATIS
+          if (db && fbUser && currentUser?.location) {
+            if (currentTransaction?.type === 'masuk') {
+              const tx = { ...currentTransaction, photo: v, time: currentTransaction.time.toISOString() };
+              setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, tx.plate), tx).catch(console.error);
+              setPlateMasuk('');
+            } else if (currentTransaction?.type === 'keluar') {
+              deleteDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, currentTransaction.plate)).catch(console.error);
+              const tx = { ...currentTransaction, time: currentTransaction.time.toISOString(), exitTime: currentTransaction.exitTime.toISOString() };
+              const businessStr = getBusinessDateStr(new Date());
+              setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${currentUser.location}_${businessStr}`, `${tx.plate}_${Date.now()}`), tx).catch(console.error);
+              setPlateKeluar('');
+            }
+          }
+
+          setShowPrintModal(true); 
+        }} onClose={() => setShowCamera(false)} />}
         {showReportModal && <ReportModal />}
-      </div>
+        </div>
+        {showPrintModal && <PrintModal transaction={currentTransaction} onComplete={handlePrintComplete} />}
+      </>
     );
   }
 
@@ -1126,8 +1142,12 @@ function MainApp() {
                             {(() => {
                                const stats = generateReportStats(adminReports);
                                const totalP = adminReports.length;
-                               const pUnder1 = totalP ? Math.round((stats.durUnder1 / totalP) * 100) : 0;
-                               const p1to3 = totalP ? Math.round((stats.dur1to3 / totalP) * 100) : 0;
+                               const p1 = totalP ? Math.round((stats.dur1 / totalP) * 100) : 0;
+                               const p3 = totalP ? Math.round((stats.dur3 / totalP) * 100) : 0;
+                               const p6 = totalP ? Math.round((stats.dur6 / totalP) * 100) : 0;
+                               const p8 = totalP ? Math.round((stats.dur8 / totalP) * 100) : 0;
+                               const p12 = totalP ? Math.round((stats.dur12 / totalP) * 100) : 0;
+                               const pOver12 = totalP ? Math.round((stats.durOver12 / totalP) * 100) : 0;
 
                                return (
                                  <>
@@ -1140,28 +1160,28 @@ function MainApp() {
                                      <h4 className="font-bold text-white/80 mb-4 border-b border-white/10 pb-2">Lama Parkir (Durasi Menginap)</h4>
                                      <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
                                         <div className="flex-1">
-                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>&lt; 1 Jam ({stats.durUnder1})</span><span className="font-bold text-green-400">{pUnder1}%</span></div>
-                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-green-500 h-full transition-all" style={{width: `${pUnder1}%`}}></div></div>
+                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>1 Jam Pertama ({stats.dur1} unit)</span><span className="font-bold text-green-400">{p1}%</span></div>
+                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-green-500 h-full transition-all" style={{width: `${p1}%`}}></div></div>
                                         </div>
                                         <div className="flex-1">
-                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>1 - 3 Jam ({stats.dur1to3})</span><span className="font-bold text-blue-400">{p1to3}%</span></div>
-                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-blue-500 h-full transition-all" style={{width: `${p1to3}%`}}></div></div>
+                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>Di Bawah 3 Jam ({stats.dur3} unit)</span><span className="font-bold text-blue-400">{p3}%</span></div>
+                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-blue-500 h-full transition-all" style={{width: `${p3}%`}}></div></div>
                                         </div>
                                         <div className="flex-1">
-                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>3 - 6 Jam ({stats.dur3to6})</span><span className="font-bold text-yellow-400">{totalP ? Math.round((stats.dur3to6 / totalP) * 100) : 0}%</span></div>
-                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-yellow-500 h-full transition-all" style={{width: `${totalP ? Math.round((stats.dur3to6 / totalP) * 100) : 0}%`}}></div></div>
+                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>Di Bawah 6 Jam ({stats.dur6} unit)</span><span className="font-bold text-yellow-400">{p6}%</span></div>
+                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-yellow-500 h-full transition-all" style={{width: `${p6}%`}}></div></div>
                                         </div>
                                         <div className="flex-1">
-                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>6 - 8 Jam ({stats.dur6to8})</span><span className="font-bold text-orange-400">{totalP ? Math.round((stats.dur6to8 / totalP) * 100) : 0}%</span></div>
-                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-orange-500 h-full transition-all" style={{width: `${totalP ? Math.round((stats.dur6to8 / totalP) * 100) : 0}%`}}></div></div>
+                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>Di Bawah 8 Jam ({stats.dur8} unit)</span><span className="font-bold text-orange-400">{p8}%</span></div>
+                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-orange-500 h-full transition-all" style={{width: `${p8}%`}}></div></div>
                                         </div>
                                         <div className="flex-1">
-                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>8 - 12 Jam ({stats.dur8to12})</span><span className="font-bold text-red-400">{totalP ? Math.round((stats.dur8to12 / totalP) * 100) : 0}%</span></div>
-                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-red-500 h-full transition-all" style={{width: `${totalP ? Math.round((stats.dur8to12 / totalP) * 100) : 0}%`}}></div></div>
+                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>Di Bawah 12 Jam ({stats.dur12} unit)</span><span className="font-bold text-purple-400">{p12}%</span></div>
+                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-purple-500 h-full transition-all" style={{width: `${p12}%`}}></div></div>
                                         </div>
                                         <div className="flex-1">
-                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>&gt; 12 Jam ({stats.durOver12})</span><span className="font-bold text-purple-400">{totalP ? Math.round((stats.durOver12 / totalP) * 100) : 0}%</span></div>
-                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-purple-500 h-full transition-all" style={{width: `${totalP ? Math.round((stats.durOver12 / totalP) * 100) : 0}%`}}></div></div>
+                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>&gt; 12 Jam ({stats.durOver12} unit)</span><span className="font-bold text-red-400">{pOver12}%</span></div>
+                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-red-500 h-full transition-all" style={{width: `${pOver12}%`}}></div></div>
                                         </div>
                                      </div>
                                   </div>
@@ -1277,7 +1297,7 @@ function MainApp() {
           <div className="hidden print:block print:absolute print:inset-0 print:bg-white print:text-black print:z-[9999] p-8 font-sans">
             <div className="border-b-4 border-black pb-4 mb-6 flex justify-between items-start">
                <div>
-                 <img src={APP_LOGO} alt="Logo" className="h-16 object-contain mb-4" />
+                 <img src="https://cdn.lokomart.id/webcorporate/assets/img/logo/_bisnis2.png" alt="Logo" className="h-16 object-contain mb-4" />
                  <h1 className="text-4xl font-black tracking-tight">{reportToPrint.title || "LAPORAN PENDAPATAN"}</h1>
                  <p className="text-xl font-medium mt-2">Periode Data: {reportToPrint.date}</p>
                  <p className="text-md">Lokasi Stasiun: <span className="font-bold">{reportToPrint.location}</span></p>
@@ -1322,11 +1342,11 @@ function MainApp() {
                  <tr className="bg-gray-100"><th className="border border-gray-300 p-3">Durasi</th><th className="border border-gray-300 p-3">Qty</th><th className="border border-gray-300 p-3">Persentase (%)</th></tr>
               </thead>
               <tbody>
-                 <tr><td className="border border-gray-300 p-3 font-semibold">&lt; 1 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.durUnder1}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.durUnder1 / reportToPrint.data.length) * 100) : 0}%</td></tr>
-                 <tr><td className="border border-gray-300 p-3 font-semibold">1 - 3 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur1to3}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur1to3 / reportToPrint.data.length) * 100) : 0}%</td></tr>
-                 <tr><td className="border border-gray-300 p-3 font-semibold">3 - 6 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur3to6}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur3to6 / reportToPrint.data.length) * 100) : 0}%</td></tr>
-                 <tr><td className="border border-gray-300 p-3 font-semibold">6 - 8 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur6to8}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur6to8 / reportToPrint.data.length) * 100) : 0}%</td></tr>
-                 <tr><td className="border border-gray-300 p-3 font-semibold">8 - 12 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur8to12}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur8to12 / reportToPrint.data.length) * 100) : 0}%</td></tr>
+                 <tr><td className="border border-gray-300 p-3 font-semibold">1 Jam Pertama</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur1}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur1 / reportToPrint.data.length) * 100) : 0}%</td></tr>
+                 <tr><td className="border border-gray-300 p-3 font-semibold">Di Bawah 3 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur3}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur3 / reportToPrint.data.length) * 100) : 0}%</td></tr>
+                 <tr><td className="border border-gray-300 p-3 font-semibold">Di Bawah 6 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur6}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur6 / reportToPrint.data.length) * 100) : 0}%</td></tr>
+                 <tr><td className="border border-gray-300 p-3 font-semibold">Di Bawah 8 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur8}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur8 / reportToPrint.data.length) * 100) : 0}%</td></tr>
+                 <tr><td className="border border-gray-300 p-3 font-semibold">Di Bawah 12 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur12}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur12 / reportToPrint.data.length) * 100) : 0}%</td></tr>
                  <tr><td className="border border-gray-300 p-3 font-semibold">&gt; 12 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.durOver12}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.durOver12 / reportToPrint.data.length) * 100) : 0}%</td></tr>
               </tbody>
             </table>
@@ -1353,52 +1373,32 @@ function MainApp() {
 // =====================================
 // SUBKOMPONEN MODAL (KAMERA & PRINTER)
 // =====================================
-function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek", facingMode = "environment", autoCapture = false }) {
+function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek", facingMode = "environment" }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [error, setError] = useState(false);
-  const [countdown, setCountdown] = useState(autoCapture ? 2 : null);
 
   useEffect(() => {
     let stream = null;
-    let interval = null;
+    let isMounted = true;
     const startCamera = async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode } });
-        if (videoRef.current) {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facingMode } });
+        if (isMounted && videoRef.current) {
           videoRef.current.srcObject = stream;
-          if (autoCapture) {
-            const startCountdown = () => {
-              let count = 2;
-              interval = setInterval(() => {
-                count -= 1;
-                setCountdown(count);
-                if (count === 0) {
-                  clearInterval(interval);
-                  takePhoto();
-                }
-              }, 1000);
-            };
-            if (videoRef.current.readyState >= 1) {
-              startCountdown();
-            } else {
-              videoRef.current.onloadedmetadata = startCountdown;
-            }
-          }
+        } else if (stream) {
+          stream.getTracks().forEach(track => track.stop());
         }
       } catch (err) { 
-        setError(true); 
-        if (autoCapture) {
-          setTimeout(() => takePhoto(), 1000);
-        }
+        if (isMounted) setError(true); 
       }
     };
     startCamera();
     return () => { 
+      isMounted = false;
       if (stream) stream.getTracks().forEach(track => track.stop()); 
-      if (interval) clearInterval(interval);
     };
-  }, [autoCapture, facingMode]);
+  }, [facingMode]);
 
   const takePhoto = () => {
     if (error) { onCapture('dummy_image_data'); return; }
@@ -1410,10 +1410,6 @@ function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek", facingMod
       canvas.width = video.videoWidth * scale;
       canvas.height = video.videoHeight * scale;
       const ctx = canvas.getContext('2d');
-      if (facingMode === 'user') {
-        ctx.translate(canvas.width, 0);
-        ctx.scale(-1, 1);
-      }
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       onCapture(canvas.toDataURL('image/jpeg', 0.6)); 
     }
@@ -1423,7 +1419,7 @@ function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek", facingMod
     <div className="fixed inset-0 bg-black/95 backdrop-blur-xl z-[99] flex flex-col items-center justify-center p-4 print:hidden">
       <div className="absolute top-12 text-center w-full">
          <h2 className="text-white font-bold text-xl">{title}</h2>
-         <p className="text-white/50 text-sm mt-1">{autoCapture ? "Mengambil foto otomatis..." : "Pastikan wajah atau plat nomor terlihat jelas."}</p>
+         <p className="text-white/50 text-sm mt-1">Pastikan wajah atau plat nomor terlihat jelas.</p>
       </div>
       <button onClick={onClose} className="absolute top-12 right-6 bg-white/20 p-3 rounded-full text-white hover:bg-white/30"><X size={28} /></button>
       <div className="w-full max-w-sm aspect-[3/4] bg-[#0A1A13] rounded-[32px] overflow-hidden relative shadow-2xl border border-white/10 mt-10">
@@ -1435,18 +1431,11 @@ function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek", facingMod
           </div>
         )}
         <div className="absolute inset-0 border-4 border-green-500/50 m-8 rounded-2xl pointer-events-none shadow-[inset_0_0_20px_rgba(34,197,94,0.3)]"></div>
-        {autoCapture && countdown > 0 && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-8xl font-black text-white drop-shadow-[0_0_20px_rgba(0,0,0,0.8)]">{countdown}</span>
-          </div>
-        )}
       </div>
       <canvas ref={canvasRef} className="hidden" />
-      {!autoCapture && (
-        <button onClick={takePhoto} className="mt-8 h-20 w-20 bg-white rounded-full border-4 border-transparent shadow-[0_0_0_4px_rgba(255,255,255,0.8)] active:scale-90 transition-transform flex items-center justify-center">
-          <div className="w-16 h-16 bg-white rounded-full border-2 border-gray-300"></div>
-        </button>
-      )}
+      <button onClick={takePhoto} className="mt-8 h-20 w-20 bg-white rounded-full border-4 border-transparent shadow-[0_0_0_4px_rgba(255,255,255,0.8)] active:scale-90 transition-transform flex items-center justify-center">
+        <div className="w-16 h-16 bg-white rounded-full border-2 border-gray-300"></div>
+      </button>
     </div>
   );
 }
@@ -1455,36 +1444,48 @@ function PrintModal({ transaction, onComplete }) {
   const [printSuccess, setPrintSuccess] = useState(false);
 
   useEffect(() => {
+    let isPrinted = false;
     const connectAndPrint = async () => {
+      if (isPrinted) return;
+      isPrinted = true;
       try {
-        if (!navigator.bluetooth) throw new Error("Bluetooth tidak didukung");
-        await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: PRINTER_SERVICES });
-        setTimeout(() => setPrintSuccess(true), 1500);
-      } catch (err) { setTimeout(() => setPrintSuccess(true), 1500); }
+        // Attempt to print via browser print dialog
+        setTimeout(() => {
+           window.print();
+           setPrintSuccess(true);
+           setTimeout(onComplete, 1500);
+        }, 500);
+      } catch (err) { 
+        setTimeout(() => {
+           setPrintSuccess(true);
+           setTimeout(onComplete, 1500);
+        }, 1500); 
+      }
     };
     connectAndPrint();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[99] flex flex-col items-center justify-center p-4 print:hidden">
-      <div className="bg-[#fcfcfc] w-full max-w-[320px] rounded-t-lg shadow-2xl overflow-hidden relative drop-shadow-2xl">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[99] flex flex-col items-center justify-center p-4 print:block print:absolute print:inset-0 print:bg-white print:text-black print:z-[9999]">
+      <div className="bg-[#fcfcfc] w-full max-w-[320px] rounded-t-lg shadow-2xl overflow-hidden relative drop-shadow-2xl print:shadow-none print:w-full print:max-w-full">
         <div className="h-4 w-full bg-[radial-gradient(circle,transparent_5px,#fcfcfc_5px)] bg-[length:14px_14px] -mt-1 relative z-10"></div>
-        <div className="p-6 font-mono text-center text-sm text-black flex flex-col items-center">
-          <img src={APP_LOGO} alt="Logo" className="h-12 object-contain mb-3 grayscale contrast-200" />
-          <h2 className="font-bold text-xl border-b-2 border-dashed border-gray-400 pb-3 mb-5 w-full">DEVICE KASIER PARKIR</h2>
+        <div className="p-6 font-mono text-center text-sm text-black">
+          <img src="https://cdn.lokomart.id/webcorporate/assets/img/logo/_bisnis2.png" alt="Logo" className="h-10 mx-auto mb-3 grayscale contrast-200 brightness-0" />
+          <h2 className="font-bold text-xl border-b-2 border-dashed border-gray-400 pb-3 mb-5">DEVICE KASIER PARKIR</h2>
           
-          <p className="text-xs mb-4 border-b border-black pb-2 uppercase tracking-widest font-bold w-full">LOKASI: {transaction.location}</p>
+          <p className="text-xs mb-4 border-b border-black pb-2 uppercase tracking-widest font-bold">LOKASI: {transaction.location}</p>
 
           {transaction.type === 'masuk' ? (
-            <div className="w-full">
+            <>
               <p className="mb-2 text-base">TIKET MASUK ({transaction.vehicleType})</p>
               <h1 className="text-5xl font-black my-6 tracking-tighter leading-none">{transaction.plate}</h1>
               <p className="text-xs text-gray-600">JAM MASUK</p>
               <p className="font-bold text-base mt-1">{transaction.time.toLocaleDateString('id-ID')} {transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</p>
               {transaction.isMember && <div className="mt-5 border-2 border-black p-2 text-sm font-black uppercase">Member Aktif</div>}
-            </div>
+            </>
           ) : (
-            <div className="w-full">
+            <>
               <p className="mb-2 text-base font-bold">STRUK KELUAR ({transaction.vehicleType})</p>
               <p className="text-lg font-bold my-1 border-b border-black pb-2">Plat: {transaction.plate}</p>
               <div className="text-left mt-4 text-sm space-y-2 font-medium">
@@ -1498,18 +1499,20 @@ function PrintModal({ transaction, onComplete }) {
                   <h2 className="text-3xl font-black tracking-tight">{transaction.isMember ? 'GRATIS' : `Rp ${transaction.cost.toLocaleString('id-ID')}`}</h2>
                 </div>
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>
-      <div className="mt-8 bg-white/10 border border-white/20 backdrop-blur-xl p-5 rounded-3xl w-full max-w-[320px] text-center shadow-lg">
+      <div className="mt-8 bg-white/10 border border-white/20 backdrop-blur-xl p-5 rounded-3xl w-full max-w-[320px] text-center shadow-lg print:hidden">
         {!printSuccess ? (
           <div className="flex items-center justify-center gap-4 text-white">
             <div className="w-6 h-6 border-4 border-green-400 border-t-transparent rounded-full animate-spin"></div>
-            <p className="font-bold tracking-wide">Mencetak...</p>
+            <p className="font-bold tracking-wide">Mencetak Otomatis...</p>
           </div>
         ) : (
-          <button onClick={onComplete} className="w-full bg-green-500 text-black rounded-xl py-4 font-extrabold flex justify-center gap-2 active:scale-95 transition-transform"><Check size={24} /> Selesai</button>
+          <div className="flex justify-center items-center gap-2 text-green-400 font-bold">
+             <Check size={24} /> Selesai Dicetak
+          </div>
         )}
       </div>
     </div>
