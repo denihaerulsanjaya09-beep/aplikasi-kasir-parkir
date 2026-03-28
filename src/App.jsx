@@ -10,6 +10,8 @@ if (typeof window !== 'undefined') {
   window.tailwind.config = window.tailwind.config || {};
 }
 
+const CUSTOM_LOGO_B64 = "data:image/png;base64,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";
+
 // =====================================
 // KONFIGURASI FIREBASE (WAJIB ADA)
 // =====================================
@@ -722,8 +724,8 @@ function MainApp() {
 
         <div className="bg-white/10 backdrop-blur-2xl border border-white/20 w-full max-w-sm rounded-[36px] p-8 shadow-[0_8px_32px_rgba(0,0,0,0.5)] relative z-10">
           <div className="flex flex-col items-center justify-center mb-6">
-            <div className="bg-gradient-to-br from-green-400 to-green-600 p-5 rounded-[28px] shadow-lg border border-white/20 mb-4 mt-2">
-              <Car size={72} className="text-white drop-shadow-md" />
+            <div className="bg-white p-4 rounded-[28px] shadow-lg border border-white/20 mb-4 mt-2">
+              <img src={CUSTOM_LOGO_B64} alt="Logo" className="w-20 h-20 object-contain drop-shadow-md" />
             </div>
             <h1 className="text-4xl font-extrabold tracking-tight mb-2 text-transparent bg-clip-text bg-gradient-to-r from-white to-green-300 uppercase">
               Resparking
@@ -755,9 +757,14 @@ function MainApp() {
               <Camera size={20} /> Login & Foto Wajah
             </button>
             
-            <p className="text-center text-white/30 text-[11px] font-bold tracking-widest uppercase mt-6">
-              copyright by 200041
-            </p>
+            <div className="mt-6 text-center space-y-3">
+              <p className="text-white/30 text-[11px] font-bold tracking-widest uppercase">
+                copyright by 200041
+              </p>
+              <a href="https://www.dashboardregional2bd.id/" target="_blank" rel="noopener noreferrer" className="inline-block text-green-400 hover:text-green-300 text-xs font-bold underline underline-offset-4 transition-colors">
+                Lapor Kendala Aplikasi
+              </a>
+            </div>
           </form>
         </div>
 
@@ -1712,6 +1719,7 @@ function PrintModal({ transaction, onComplete }) {
             </>
           ) : (
             <>
+              <img src={CUSTOM_LOGO_B64} alt="Logo Stasiun" className="w-14 h-auto mx-auto mb-2 grayscale" style={{ filter: 'grayscale(100%) contrast(150%) brightness(0.9)' }} />
               <p className="mb-2 text-base font-bold">STRUK KELUAR ({transaction.vehicleType})</p>
               <p className="text-lg font-bold my-1 border-b border-black pb-2">Plat: {transaction.plate}</p>
               <div className="text-left mt-4 text-sm space-y-2 font-medium">
