@@ -316,13 +316,12 @@ function MainApp() {
     const user = data.get('username'), pwd = data.get('password'), nip = data.get('nipkwt'), location = data.get('location');
     if (!user || !pwd || !nip || !location) return alert("Mohon isi semua data login termasuk lokasi stasiun!");
     
-    // ATURAN BARU: Pencarian role login HANYA dipicu dari NIPKWT dan Password.
+    // Pencarian role login HANYA dipicu dari NIPKWT dan Password.
     const foundUser = usersList.find(u => u.nipkwt === nip && u.password === pwd);
     
     if (!foundUser) return alert("Akses Ditolak: NIPKWT atau Password tidak valid!");
     
     // Variabel "user" (kolom nama yang diketik) tetap digunakan secara bebas 
-    // untuk mengakomodir jika ada beberapa kasir dalam 1 shift
     setPendingLoginUser({ name: user, nipkwt: foundUser.nipkwt, role: foundUser.role, location });
     setShowLoginCamera(true);
   };
@@ -370,7 +369,24 @@ function MainApp() {
     return stats;
   };
 
-  // --- TRANSAKSI KASIR ---
+  // --- TRANSAKSI KASIR (FIX: SIMPAN DATABASE SEBELUM MUNCUL MODAL PRINT) ---
+  const saveTransactionToDB = async (transactionData, photoData) => {
+    if (!db || !fbUser || !currentUser?.location || !transactionData) return;
+    try {
+      if (transactionData.type === 'masuk') {
+        const v = { ...transactionData, photo: photoData, time: transactionData.time.toISOString() };
+        await setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, v.plate), v);
+      } else if (transactionData.type === 'keluar') {
+        await deleteDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, transactionData.plate));
+        const tx = { ...transactionData, time: transactionData.time.toISOString(), exitTime: transactionData.exitTime.toISOString() };
+        const businessStr = getBusinessDateStr(new Date());
+        await setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${currentUser.location}_${businessStr}`, `${tx.plate}_${Date.now()}`), tx);
+      }
+    } catch (err) {
+      console.error("Error saving data:", err);
+    }
+  };
+
   const handleMasuk = () => {
     if (!plateMasuk) return alert("Masukkan Plat Nomor!");
     setCurrentTransaction({
@@ -421,21 +437,15 @@ function MainApp() {
     setShowCamera(true);
   };
 
-  const handlePrintComplete = () => {
-    if (!db || !fbUser || !currentUser?.location) return;
+  const handleReprint = (transactionData) => {
+      setCurrentTransaction(transactionData);
+      setShowPrintModal(true);
+  };
 
-    if (currentTransaction?.type === 'masuk') {
-      const v = { ...currentTransaction, photo: capturedImage, time: currentTransaction.time.toISOString() };
-      setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, v.plate), v).catch(console.error);
-      setPlateMasuk('');
-    } else if (currentTransaction?.type === 'keluar') {
-      deleteDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, currentTransaction.plate)).catch(console.error);
-      const tx = { ...currentTransaction, time: currentTransaction.time.toISOString(), exitTime: currentTransaction.exitTime.toISOString() };
-      
-      const businessStr = getBusinessDateStr(new Date());
-      setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${currentUser.location}_${businessStr}`, `${tx.plate}_${Date.now()}`), tx).catch(console.error);
-      setPlateKeluar('');
-    }
+  const handlePrintComplete = () => {
+    // Fungsi ini sekarang HANYA membersihkan UI Form. Data sudah tersimpan saat proses Kamera Selesai.
+    if (currentTransaction?.type === 'masuk') setPlateMasuk('');
+    else if (currentTransaction?.type === 'keluar') setPlateKeluar('');
     
     setShowPrintModal(false);
     setCurrentTransaction(null);
@@ -478,6 +488,9 @@ function MainApp() {
   // MODAL LAPORAN SHIFT (KASIR SPESIFIK)
   // =====================================
   const ReportModal = () => {
+    const [waSent, setWaSent] = useState(false);
+    const [pdfSent, setPdfSent] = useState(false);
+
     const myShiftTx = shiftTransactions.filter(t => 
        t.exitCashier === currentUser?.name && 
        t.exitShift === shiftInfo.name &&
@@ -491,17 +504,21 @@ function MainApp() {
       const payload = { type: 'report', title: 'LAPORAN KASIR (SHIFT)', stats: s, date: dateStr, shift: shiftInfo.name, location: currentUser?.location, cashier: currentUser?.name, role: 'Petugas Kasir', data: myShiftTx };
       
       if(actionType === 'wa') {
+        setWaSent(true);
         const msg = `*LAPORAN SHIFT KASIR*\n📍 Lokasi: ${currentUser?.location}\n🗓 ${dateStr}\n👤 ${currentUser?.name} (${currentUser?.nipkwt})\n🕒 ${shiftInfo.name}\n\n*RINCIAN:*\n🏍 Motor: ${s.motorQty} (Rp ${s.motorNom.toLocaleString()})\n🚗 Mobil: ${s.mobilQty} (Rp ${s.mobilNom.toLocaleString()})\n🚚 Box: ${s.trukQty} (Rp ${s.trukNom.toLocaleString()})\n💳 Member: ${s.memberQty}\n\n*TOTAL STORAN: Rp ${s.total.toLocaleString()}*`;
         window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
       } else if (actionType === 'pdf') {
+        setPdfSent(true);
         setReportToPrint(payload);
       }
+    };
 
-      if(isShiftLocked) {
-         setTimeout(() => confirmLogout(), 2000);
-      } else {
-         setShowReportModal(false);
-      }
+    const handleLogoutShift = () => {
+       if (isShiftLocked && (!waSent || !pdfSent)) {
+          alert("Anda wajib mengeklik tombol Kirim WA dan Cetak PDF sebelum sistem mengizinkan Logout.");
+          return;
+       }
+       confirmLogout();
     };
 
     return (
@@ -511,7 +528,7 @@ function MainApp() {
              <button onClick={() => setShowReportModal(false)} className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-red-500/80 rounded-full transition-colors"><X size={24} /></button>
           )}
           
-          <div className="flex flex-col items-center mb-6 mt-4">
+          <div className="flex flex-col items-center mb-4 mt-2">
             {isShiftLocked ? (
                <div className="bg-red-500/20 text-red-400 p-4 rounded-full mb-4 animate-pulse"><AlertTriangle size={48} /></div>
             ) : (
@@ -521,7 +538,7 @@ function MainApp() {
             <h2 className="text-2xl font-bold tracking-tight text-center">{isShiftLocked ? 'Sesi Shift Berakhir' : 'Laporan Shift Anda'}</h2>
             <p className="text-white/60 text-sm text-center mt-2 leading-relaxed">
                {isShiftLocked 
-                  ? "Waktu shift Anda telah habis. Anda wajib mencetak atau mengirim laporan ini sebagai bukti storan sebelum sistem di-logout." 
+                  ? "Waktu shift habis. Anda wajib melakukan aksi cetak PDF dan mengirim WA ke Grup sebelum dapat menekan tombol Logout." 
                   : `Rincian transaksi yang diselesaikan oleh ${currentUser?.name} pada ${shiftInfo.name} hari ini.`}
             </p>
           </div>
@@ -533,14 +550,21 @@ function MainApp() {
             <div className="flex justify-between font-bold text-lg pt-2 text-green-400"><span>TOTAL STORAN:</span> <span>Rp {s.total.toLocaleString('id-ID')}</span></div>
           </div>
           
-          <div className="flex gap-3">
-             <button onClick={() => triggerAction('wa')} className={`flex-1 ${isShiftLocked ? 'bg-red-600 hover:bg-red-500' : 'bg-green-600 hover:bg-green-500'} text-white font-bold rounded-xl py-4 shadow-lg transition-all flex justify-center items-center gap-2 text-sm`}>
-               <Send size={18} /> Kirim WA {isShiftLocked && '& Keluar'}
+          <div className="flex gap-3 mb-4">
+             <button onClick={() => triggerAction('wa')} className={`flex-1 ${waSent ? 'bg-green-700/50 text-green-300' : 'bg-green-600 hover:bg-green-500'} text-white font-bold rounded-xl py-3 shadow-lg transition-all flex justify-center items-center gap-2 text-sm`}>
+               {waSent ? <Check size={18}/> : <Send size={18} />} Kirim WA
              </button>
-             <button onClick={() => triggerAction('pdf')} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl py-4 shadow-lg transition-all flex justify-center items-center gap-2 text-sm">
-               <Download size={18} /> Cetak PDF {isShiftLocked && '& Keluar'}
+             <button onClick={() => triggerAction('pdf')} className={`flex-1 ${pdfSent ? 'bg-blue-700/50 text-blue-300' : 'bg-blue-600 hover:bg-blue-500'} text-white font-bold rounded-xl py-3 shadow-lg transition-all flex justify-center items-center gap-2 text-sm`}>
+               {pdfSent ? <Check size={18}/> : <Download size={18} />} Cetak PDF
              </button>
           </div>
+
+          <button 
+             onClick={handleLogoutShift} 
+             disabled={isShiftLocked && (!waSent || !pdfSent)}
+             className={`w-full font-bold rounded-xl py-4 transition-all flex justify-center items-center gap-2 text-sm ${isShiftLocked && (!waSent || !pdfSent) ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-red-600 hover:bg-red-500 text-white shadow-lg'}`}>
+               <LogOut size={18} /> Akhiri Shift & Logout
+          </button>
         </div>
       </div>
     );
@@ -658,12 +682,15 @@ function MainApp() {
         {/* UI SIMPLE TRANSAKSI */}
         <div className="p-4 mt-2 max-w-xl mx-auto w-full flex-1 flex flex-col">
           
-          <div className="flex gap-4 mb-6">
-              <button onClick={() => setActiveTab('masuk')} className={`flex-1 py-4 rounded-2xl font-black text-lg md:text-xl flex items-center justify-center gap-2 transition-all ${activeTab === 'masuk' ? 'bg-green-500 text-black shadow-[0_0_20px_rgba(34,197,94,0.4)]' : 'bg-black/40 text-white/50 border border-white/10 hover:bg-white/10'}`}>
-                  <ArrowRight size={24} /> MASUK
+          <div className="flex gap-2 mb-6">
+              <button onClick={() => setActiveTab('masuk')} className={`flex-1 py-4 rounded-2xl font-black text-sm md:text-lg flex items-center justify-center gap-1 md:gap-2 transition-all ${activeTab === 'masuk' ? 'bg-green-500 text-black shadow-[0_0_20px_rgba(34,197,94,0.4)]' : 'bg-black/40 text-white/50 border border-white/10 hover:bg-white/10'}`}>
+                  <ArrowRight size={20} /> MASUK
               </button>
-              <button onClick={() => setActiveTab('keluar')} className={`flex-1 py-4 rounded-2xl font-black text-lg md:text-xl flex items-center justify-center gap-2 transition-all ${activeTab === 'keluar' ? 'bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.4)]' : 'bg-black/40 text-white/50 border border-white/10 hover:bg-white/10'}`}>
-                  <ArrowLeft size={24} /> KELUAR
+              <button onClick={() => setActiveTab('keluar')} className={`flex-1 py-4 rounded-2xl font-black text-sm md:text-lg flex items-center justify-center gap-1 md:gap-2 transition-all ${activeTab === 'keluar' ? 'bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.4)]' : 'bg-black/40 text-white/50 border border-white/10 hover:bg-white/10'}`}>
+                  <ArrowLeft size={20} /> KELUAR
+              </button>
+              <button onClick={() => setActiveTab('riwayat')} className={`flex-1 py-4 rounded-2xl font-black text-sm md:text-lg flex items-center justify-center gap-1 md:gap-2 transition-all ${activeTab === 'riwayat' ? 'bg-blue-500 text-white shadow-[0_0_20px_rgba(59,130,246,0.4)]' : 'bg-black/40 text-white/50 border border-white/10 hover:bg-white/10'}`}>
+                  <FileText size={20} /> RIWAYAT
               </button>
           </div>
 
@@ -715,10 +742,11 @@ function MainApp() {
                   <div className="mt-4 bg-black/30 rounded-2xl p-3 flex-1 overflow-y-auto border border-white/5 min-h-[150px] space-y-2">
                     {parkedVehicles.filter(v => v.plate.includes(plateKeluar) && plateKeluar !== '').map((v, i) => (
                       <div key={i} onClick={() => setPlateKeluar(v.plate)} className="bg-white/10 p-4 rounded-xl flex justify-between items-center cursor-pointer hover:bg-white/20 border border-white/5 transition-colors group">
-                        <span className="font-bold text-2xl tracking-wider">{v.plate}</span>
-                        <div className="flex items-center gap-3">
+                        <span className="font-bold text-xl md:text-2xl tracking-wider">{v.plate}</span>
+                        <div className="flex items-center gap-2">
                            <span className="text-xs font-bold bg-white/20 text-white px-3 py-1.5 rounded-lg">{v.vehicleType}</span>
-                           <button onClick={(e) => { e.stopPropagation(); handleKeluar(v.plate); }} className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 shadow-lg"><Printer size={16}/> Selesaikan</button>
+                           <button onClick={(e) => { e.stopPropagation(); handleReprint({...v, type: 'masuk'}); }} className="bg-blue-500 text-white p-2 rounded-lg font-bold opacity-0 group-hover:opacity-100 transition-opacity shadow-lg" title="Cetak Ulang Tiket Masuk"><Printer size={18}/></button>
+                           <button onClick={(e) => { e.stopPropagation(); handleKeluar(v.plate); }} className="bg-red-500 text-white px-3 py-2 rounded-lg font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 shadow-lg"><Printer size={16}/><span className="hidden md:inline">Selesaikan</span></button>
                         </div>
                       </div>
                     ))}
@@ -750,9 +778,39 @@ function MainApp() {
                </button>
             </div>
           )}
+
+          {activeTab === 'riwayat' && (
+            <div className="bg-gradient-to-b from-white/5 to-transparent border border-white/10 backdrop-blur-lg rounded-[32px] p-6 shadow-2xl flex flex-col relative overflow-hidden flex-1 animate-fade-in">
+               <div className="flex justify-between items-center mb-6">
+                 <h3 className="text-xl font-bold tracking-tight">Transaksi Keluar (Hari Ini)</h3>
+               </div>
+               
+               <div className="flex-1 overflow-y-auto space-y-3 bg-black/20 p-2 rounded-2xl border border-white/5">
+                  {shiftTransactions.sort((a,b) => b.exitTime - a.exitTime).slice(0, 30).map((v, i) => (
+                     <div key={i} className="bg-white/10 p-4 rounded-xl flex justify-between items-center border border-white/5 hover:bg-white/20 transition-colors">
+                        <div>
+                           <p className="font-bold text-xl tracking-wider">{v.plate}</p>
+                           <p className="text-xs text-white/50 mt-1">{v.vehicleType} • Keluar: {v.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</p>
+                        </div>
+                        <button onClick={() => handleReprint({...v, type: 'keluar'})} className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 p-3 rounded-xl flex items-center gap-2 transition-colors">
+                           <Printer size={18}/> <span className="hidden md:inline font-bold text-sm">Cetak Ulang</span>
+                        </button>
+                     </div>
+                  ))}
+                  {shiftTransactions.length === 0 && <p className="text-center text-white/40 mt-10 font-bold tracking-widest text-sm">Belum ada kendaraan keluar.</p>}
+               </div>
+            </div>
+          )}
+
         </div>
 
-        {showCamera && <CameraModal onCapture={v => { setCapturedImage(v); setShowCamera(false); setShowPrintModal(true); }} onClose={() => setShowCamera(false)} />}
+        {showCamera && <CameraModal onCapture={v => { 
+            setCapturedImage(v); 
+            setShowCamera(false); 
+            saveTransactionToDB(currentTransaction, v); // SIMPAN KE DB SEBELUM MODAL CETAK TAMPIL
+            setShowPrintModal(true); 
+          }} onClose={() => setShowCamera(false)} />}
+          
         {showPrintModal && <PrintModal transaction={currentTransaction} onComplete={handlePrintComplete} />}
         {showReportModal && <ReportModal />}
       </div>
@@ -1433,9 +1491,13 @@ function PrintModal({ transaction, onComplete }) {
       </div>
       <div className="mt-8 bg-white/10 border border-white/20 backdrop-blur-xl p-5 rounded-3xl w-full max-w-[320px] text-center shadow-lg">
         {!printSuccess ? (
-          <div className="flex items-center justify-center gap-4 text-white">
-            <div className="w-6 h-6 border-4 border-green-400 border-t-transparent rounded-full animate-spin"></div>
-            <p className="font-bold tracking-wide">Mencetak...</p>
+          <div className="flex flex-col items-center justify-center gap-4 text-white">
+            <div className="flex items-center gap-4">
+              <div className="w-6 h-6 border-4 border-green-400 border-t-transparent rounded-full animate-spin"></div>
+              <p className="font-bold tracking-wide">Mencetak...</p>
+            </div>
+            {/* Trik Fallback: Kasir bisa lewati jika bluetooth hang */}
+            <button onClick={onComplete} className="text-white/50 text-xs underline mt-2 hover:text-white">Lewati / Tutup (Jika Printer Error)</button>
           </div>
         ) : (
           <button onClick={onComplete} className="w-full bg-green-500 text-black rounded-xl py-4 font-extrabold flex justify-center gap-2 active:scale-95 transition-transform"><Check size={24} /> Selesai</button>
