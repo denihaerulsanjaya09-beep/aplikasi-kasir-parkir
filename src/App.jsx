@@ -589,6 +589,7 @@ function MainApp() {
     if (txDataRef.current?.type === 'masuk') setPlateMasuk('');
     else if (txDataRef.current?.type === 'keluar') setPlateKeluar('');
     
+    setActiveTab('masuk');
     setShowPrintModal(false);
     setCurrentTransaction(null);
     txDataRef.current = null;
@@ -1688,12 +1689,14 @@ function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek", facingMod
 }
 
 function PrintModal({ transaction, onComplete }) {
-  const [printSuccess, setPrintSuccess] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [printSuccess, setPrintSuccess] = useState(false);
+  const hasPrinted = useRef(false);
 
   const sendToRawBT = async () => {
+    if (isPrinting) return;
     setIsPrinting(true);
-    // Menggunakan HTML native agar output di kertas 100% sama persis dengan preview web
+
     const htmlContent = `
       <!DOCTYPE html>
       <html>
@@ -1756,15 +1759,17 @@ function PrintModal({ transaction, onComplete }) {
       </html>
     `;
 
-    // --- METODE 1: RAWBT WEB SERVER (SILENT / BACKGROUND) ---
+    // --- PRIORITAS 1: RAWBT WEB SERVER (100% SILENT DI ANDROID) ---
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 800);
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
 
-      const response = await fetch('http://localhost:40213/print', {
+      // Gunakan 127.0.0.1 untuk menghindari isu resolusi nama di beberapa versi Android
+      const response = await fetch('http://127.0.0.1:40213/print', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: htmlContent, type: 'html' }),
+        mode: 'cors',
         signal: controller.signal
       });
 
@@ -1772,16 +1777,16 @@ function PrintModal({ transaction, onComplete }) {
         clearTimeout(timeoutId);
         setIsPrinting(false);
         setPrintSuccess(true);
+        // Berikan getaran kecil sebagai feedback sukses di HP
+        if (navigator.vibrate) navigator.vibrate(100);
         return;
       }
     } catch (e) {
-      // Lanjut ke metode Intent jika server tidak aktif
+      console.log("Web Server tidak merespon, mencoba Intent...");
     }
 
-    // --- METODE 2: OPTIMIZED INTENT VIA HIDDEN IFRAME ---
+    // --- PRIORITAS 2: INTENT FALLBACK (HIDDEN IFRAME) ---
     const encodedHtml = btoa(unescape(encodeURIComponent(htmlContent)));
-    
-    // Menggunakan format Intent Android agar lebih "silent" dan spesifik ke package RawBT
     const intentUrl = `intent:data:text/html;base64,${encodedHtml}#Intent;scheme=rawbt;package=ru.a40213.rawbtprinter;S.browser_fallback_url=;end;`;
     
     const iframe = document.createElement('iframe');
@@ -1797,68 +1802,96 @@ function PrintModal({ transaction, onComplete }) {
   };
 
   useEffect(() => {
-    // Otomatis cetak saat modal muncul pertama kali
-    sendToRawBT();
+    // Berikan delay 500ms agar modal muncul sempurna sebelum perintah cetak dikirim
+    const timer = setTimeout(() => {
+      if (!hasPrinted.current && transaction) {
+        sendToRawBT();
+        hasPrinted.current = true;
+      }
+    }, 500);
+    return () => clearTimeout(timer);
   }, [transaction]);
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[99] flex flex-col items-center justify-center p-4 print:hidden">
-      <div className="bg-[#fcfcfc] w-full max-w-[320px] rounded-t-lg shadow-2xl overflow-hidden relative drop-shadow-2xl">
-        <div className="h-4 w-full bg-[radial-gradient(circle,transparent_5px,#fcfcfc_5px)] bg-[length:14px_14px] -mt-1 relative z-10"></div>
-        <div className="p-6 font-mono text-center text-sm text-black">
-          {/* Menyamakan layout UI dengan format RawBT di atas (Logo & Header di atas) */}
-          <img src={CUSTOM_LOGO_B64} alt="Logo Stasiun" className="w-14 h-auto mx-auto mb-3 grayscale" style={{ filter: 'grayscale(100%) contrast(150%) brightness(0.9)' }} />
-          <h2 className="font-bold text-xl border-b-2 border-dashed border-gray-400 pb-3 mb-5">
+    <div className="fixed inset-0 bg-black/95 backdrop-blur-xl z-[99] flex flex-col items-center justify-center p-4 print:hidden">
+      {/* Status Bar Atas (Android Style) */}
+      <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center text-white/40 text-[10px] font-bold tracking-widest uppercase">
+        <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div> System Online</div>
+        <div>{new Date().toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</div>
+      </div>
+
+      <div className="bg-[#fcfcfc] w-full max-w-[320px] rounded-t-[40px] shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden relative border-x border-t border-white/10">
+        <div className="h-8 w-full bg-[radial-gradient(circle,transparent_10px,#fcfcfc_10px)] bg-[length:25px_25px] -mt-3 relative z-10 opacity-40"></div>
+        <div className="p-10 font-mono text-center text-sm text-black">
+          <img src={CUSTOM_LOGO_B64} alt="Logo" className="w-20 h-auto mx-auto mb-6 grayscale contrast-150" />
+          <h2 className="font-black text-2xl border-b-4 border-double border-gray-300 pb-6 mb-8 leading-tight">
             DEVICE KASIER PARKIR
-            <span className="text-xs uppercase tracking-widest font-bold mt-1 block">LOKASI: {transaction.location}</span>
+            <span className="text-[11px] uppercase tracking-[0.3em] font-black mt-3 block opacity-40">LOKASI: {transaction.location}</span>
           </h2>
 
           {transaction.type === 'masuk' ? (
-            <>
-              <p className="mb-2 text-base font-bold">TIKET MASUK ({transaction.vehicleType})</p>
-              <h1 className="text-5xl font-black my-6 tracking-tighter leading-none">{transaction.plate}</h1>
-              <p className="text-xs text-gray-600">JAM MASUK</p>
-              <p className="font-bold text-base mt-1">{transaction.time.toLocaleDateString('id-ID')} {transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</p>
-              {transaction.isMember && <div className="mt-5 border-t-2 border-dashed border-gray-400 pt-3 text-sm font-black uppercase">MEMBER AKTIF</div>}
-            </>
-          ) : (
-            <>
-              <p className="mb-4 text-base font-bold">STRUK KELUAR ({transaction.vehicleType})</p>
-              <div className="text-left mt-4 text-sm space-y-2 font-medium">
-                <div className="flex justify-between items-center"><span>Plat:</span><span className="font-bold text-lg">{transaction.plate}</span></div>
-                <div className="flex justify-between items-center"><span>Masuk:</span><span>{transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
-                <div className="flex justify-between items-center"><span>Keluar:</span><span>{transaction.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
-                <div className="flex justify-between items-center"><span>Durasi:</span><span>{transaction.durationHours} Jam</span></div>
+            <div className="animate-in fade-in zoom-in duration-500">
+              <p className="mb-3 text-[10px] font-black opacity-40 uppercase tracking-[0.2em]">Tiket Masuk ({transaction.vehicleType})</p>
+              <h1 className="text-7xl font-black my-8 tracking-tighter leading-none">{transaction.plate}</h1>
+              <div className="bg-gray-100 p-4 rounded-2xl inline-block border border-gray-200">
+                <p className="text-[10px] text-gray-400 uppercase font-black mb-1 tracking-widest">Waktu Masuk</p>
+                <p className="font-black text-base">{transaction.time.toLocaleDateString('id-ID')} {transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</p>
               </div>
-              <div className="border-t-2 border-dashed border-gray-400 my-5 pt-3">
-                <p className="text-sm font-bold mb-2">TOTAL BAYAR</p>
-                <div className="bg-black text-white py-3 px-2 rounded-lg border-2 border-black">
-                  <h2 className="text-3xl font-black tracking-tight">{transaction.isMember ? 'GRATIS' : `Rp ${transaction.cost.toLocaleString('id-ID')}`}</h2>
+              {transaction.isMember && <div className="mt-8 border-4 border-black py-3 text-sm font-black uppercase tracking-[0.2em] bg-black text-white">MEMBER AKTIF</div>}
+            </div>
+          ) : (
+            <div className="animate-in fade-in slide-in-from-bottom-8 duration-500">
+              <p className="mb-6 text-[10px] font-black opacity-40 uppercase tracking-[0.2em]">Struk Keluar ({transaction.vehicleType})</p>
+              <div className="text-left mt-6 text-sm space-y-4 font-bold border-y-2 border-dashed border-gray-200 py-6">
+                <div className="flex justify-between items-center"><span>Plat:</span><span className="font-black text-2xl tracking-tighter">{transaction.plate}</span></div>
+                <div className="flex justify-between items-center text-gray-500"><span>Durasi:</span><span>{transaction.durationHours} Jam</span></div>
+                <div className="flex justify-between items-center text-gray-400 text-xs"><span>Masuk:</span><span>{transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
+                <div className="flex justify-between items-center text-gray-400 text-xs"><span>Keluar:</span><span>{transaction.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
+              </div>
+              <div className="mt-8">
+                <p className="text-[10px] font-black mb-3 opacity-40 uppercase tracking-[0.2em]">Total Pembayaran</p>
+                <div className="bg-black text-white py-6 px-4 rounded-[32px] shadow-xl">
+                  <h2 className="text-5xl font-black tracking-tighter">{transaction.isMember ? 'GRATIS' : `Rp ${transaction.cost.toLocaleString('id-ID')}`}</h2>
                 </div>
               </div>
-            </>
+            </div>
           )}
+          
+          <div className="mt-10 pt-6 border-t-2 border-dashed border-gray-200">
+             <p className="text-[10px] font-black opacity-30 uppercase tracking-[0.3em] italic">Terima kasih atas kunjungan Anda</p>
+          </div>
         </div>
       </div>
-      <div className="mt-8 bg-white/10 border border-white/20 backdrop-blur-xl p-5 rounded-3xl w-full max-w-[320px] text-center shadow-lg">
+
+      <div className="mt-10 bg-white/5 border border-white/10 backdrop-blur-3xl p-8 rounded-[40px] w-full max-w-[320px] text-center shadow-2xl">
         {isPrinting ? (
-          <div className="flex flex-col items-center justify-center gap-4 text-white">
-            <div className="flex items-center gap-4">
-              <div className="w-6 h-6 border-4 border-green-400 border-t-transparent rounded-full animate-spin"></div>
-              <p className="font-bold tracking-wide">Mencetak...</p>
+          <div className="flex flex-col items-center justify-center gap-5 text-white py-2">
+            <div className="relative">
+              <div className="w-12 h-12 border-4 border-white/10 rounded-full"></div>
+              <div className="absolute inset-0 w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin shadow-[0_0_20px_rgba(34,197,94,0.6)]"></div>
             </div>
+            <p className="font-black tracking-[0.3em] uppercase text-[10px] animate-pulse text-green-400">Proses Cetak Otomatis...</p>
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
-            <button onClick={onComplete} className="w-full bg-green-500 text-black rounded-xl py-4 font-extrabold flex justify-center gap-2 active:scale-95 transition-transform shadow-[0_0_20px_rgba(34,197,94,0.3)]">
-              <Check size={24} /> Selesai
+          <div className="flex flex-col gap-4">
+            <button onClick={onComplete} className="w-full bg-green-500 text-black rounded-[24px] py-5 font-black text-lg flex justify-center items-center gap-3 active:scale-90 transition-all shadow-[0_15px_30px_rgba(34,197,94,0.4)] hover:bg-green-400">
+              <Check size={24} strokeWidth={3} /> SELESAI
             </button>
-            <button onClick={sendToRawBT} className="w-full bg-white/10 hover:bg-white/20 text-white rounded-xl py-3 font-bold flex justify-center gap-2 transition-all text-sm border border-white/10">
-              <Printer size={18} /> Cetak Ulang
-            </button>
+            <div className="flex gap-2">
+              <button onClick={sendToRawBT} className="flex-1 bg-white/5 hover:bg-white/10 text-white/50 rounded-2xl py-3 font-bold flex justify-center items-center gap-2 transition-all text-[9px] border border-white/5 tracking-widest uppercase">
+                <Printer size={14} /> Cetak Ulang
+              </button>
+            </div>
           </div>
         )}
       </div>
+
+      {/* Info Bantuan (Hanya muncul jika gagal cetak otomatis) */}
+      {!isPrinting && !printSuccess && (
+        <div className="mt-6 text-white/30 text-[9px] font-medium max-w-[280px] text-center leading-relaxed animate-in fade-in duration-1000">
+          Pastikan <span className="text-white/60">"Web Server"</span> aktif di aplikasi RawBT (Port 40213) untuk cetak tanpa pindah aplikasi.
+        </div>
+      )}
     </div>
   );
 }
