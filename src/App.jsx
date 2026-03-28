@@ -369,7 +369,7 @@ function MainApp() {
     return stats;
   };
 
-  // --- TRANSAKSI KASIR (FIX: SIMPAN DATABASE SEBELUM MUNCUL MODAL PRINT) ---
+  // --- TRANSAKSI KASIR (FIX: SIMPAN DATABASE OTOMATIS SAAT FOTO DIAMBIL) ---
   const saveTransactionToDB = async (transactionData, photoData) => {
     if (!db || !fbUser || !currentUser?.location || !transactionData) return;
     try {
@@ -378,7 +378,8 @@ function MainApp() {
         await setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, v.plate), v);
       } else if (transactionData.type === 'keluar') {
         await deleteDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, transactionData.plate));
-        const tx = { ...transactionData, time: transactionData.time.toISOString(), exitTime: transactionData.exitTime.toISOString() };
+        // Menyimpan data keluar beserta foto bukti keluarnya
+        const tx = { ...transactionData, exitPhoto: photoData, time: transactionData.time.toISOString(), exitTime: transactionData.exitTime.toISOString() };
         const businessStr = getBusinessDateStr(new Date());
         await setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${currentUser.location}_${businessStr}`, `${tx.plate}_${Date.now()}`), tx);
       }
@@ -782,22 +783,35 @@ function MainApp() {
           {activeTab === 'riwayat' && (
             <div className="bg-gradient-to-b from-white/5 to-transparent border border-white/10 backdrop-blur-lg rounded-[32px] p-6 shadow-2xl flex flex-col relative overflow-hidden flex-1 animate-fade-in">
                <div className="flex justify-between items-center mb-6">
-                 <h3 className="text-xl font-bold tracking-tight">Transaksi Keluar (Hari Ini)</h3>
+                 <h3 className="text-xl font-bold tracking-tight">Kendaraan di Area Parkir (Aktif)</h3>
+                 <span className="bg-blue-500/20 text-blue-300 px-3 py-1 rounded-lg text-sm font-bold">{parkedVehicles.length} Unit</span>
                </div>
                
                <div className="flex-1 overflow-y-auto space-y-3 bg-black/20 p-2 rounded-2xl border border-white/5">
-                  {shiftTransactions.sort((a,b) => b.exitTime - a.exitTime).slice(0, 30).map((v, i) => (
-                     <div key={i} className="bg-white/10 p-4 rounded-xl flex justify-between items-center border border-white/5 hover:bg-white/20 transition-colors">
-                        <div>
-                           <p className="font-bold text-xl tracking-wider">{v.plate}</p>
-                           <p className="text-xs text-white/50 mt-1">{v.vehicleType} • Keluar: {v.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</p>
+                  {parkedVehicles.sort((a,b) => b.time - a.time).map((v, i) => (
+                     <div key={i} className="bg-white/10 p-4 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border border-white/5 hover:bg-white/20 transition-colors">
+                        <div className="flex items-center gap-4">
+                           {v.photo ? (
+                              <img src={v.photo} alt="Foto" className="w-16 h-12 object-cover rounded-md border border-white/20 shrink-0" />
+                           ) : (
+                              <div className="w-16 h-12 bg-black/50 rounded-md border border-white/20 flex items-center justify-center text-white/30 shrink-0"><Car size={20}/></div>
+                           )}
+                           <div>
+                              <p className="font-bold text-xl tracking-wider">{v.plate}</p>
+                              <p className="text-xs text-white/50 mt-1">{v.vehicleType} • Masuk: {v.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</p>
+                           </div>
                         </div>
-                        <button onClick={() => handleReprint({...v, type: 'keluar'})} className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 p-3 rounded-xl flex items-center gap-2 transition-colors">
-                           <Printer size={18}/> <span className="hidden md:inline font-bold text-sm">Cetak Ulang</span>
-                        </button>
+                        <div className="flex gap-2 w-full md:w-auto">
+                           <button onClick={() => handleReprint({...v, type: 'masuk'})} className="flex-1 md:flex-none justify-center bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 p-2 md:px-3 md:py-2 rounded-xl flex items-center gap-2 transition-colors" title="Cetak Ulang Tiket Masuk">
+                              <Printer size={18}/> <span className="font-bold text-sm">Cetak</span>
+                           </button>
+                           <button onClick={() => { setActiveTab('keluar'); setPlateKeluar(v.plate); }} className="flex-1 md:flex-none justify-center bg-red-500/20 hover:bg-red-500/40 text-red-300 p-2 md:px-3 md:py-2 rounded-xl flex items-center gap-2 transition-colors" title="Selesaikan / Keluar">
+                              <ArrowLeft size={18}/> <span className="font-bold text-sm">Keluar</span>
+                           </button>
+                        </div>
                      </div>
                   ))}
-                  {shiftTransactions.length === 0 && <p className="text-center text-white/40 mt-10 font-bold tracking-widest text-sm">Belum ada kendaraan keluar.</p>}
+                  {parkedVehicles.length === 0 && <p className="text-center text-white/40 mt-10 font-bold tracking-widest text-sm">Area parkir kosong.</p>}
                </div>
             </div>
           )}
