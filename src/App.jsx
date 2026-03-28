@@ -1691,7 +1691,7 @@ function PrintModal({ transaction, onComplete }) {
   const [printSuccess, setPrintSuccess] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
 
-  const sendToRawBT = () => {
+  const sendToRawBT = async () => {
     setIsPrinting(true);
     // Menggunakan HTML native agar output di kertas 100% sama persis dengan preview web
     const htmlContent = `
@@ -1756,24 +1756,44 @@ function PrintModal({ transaction, onComplete }) {
       </html>
     `;
 
-    // Encode HTML ke format URI scheme yang bisa dibaca RawBT WebView
+    // --- METODE 1: RAWBT WEB SERVER (SILENT / BACKGROUND) ---
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 800);
+
+      const response = await fetch('http://localhost:40213/print', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: htmlContent, type: 'html' }),
+        signal: controller.signal
+      });
+
+      if (response.ok) {
+        clearTimeout(timeoutId);
+        setIsPrinting(false);
+        setPrintSuccess(true);
+        return;
+      }
+    } catch (e) {
+      // Lanjut ke metode Intent jika server tidak aktif
+    }
+
+    // --- METODE 2: OPTIMIZED INTENT VIA HIDDEN IFRAME ---
     const encodedHtml = btoa(unescape(encodeURIComponent(htmlContent)));
-    const intentUrl = `rawbt:data:text/html;base64,${encodedHtml}`;
     
-    // FIX: Menggunakan iframe tersembunyi agar web tidak pindah halaman (tetap stay)
+    // Menggunakan format Intent Android agar lebih "silent" dan spesifik ke package RawBT
+    const intentUrl = `intent:data:text/html;base64,${encodedHtml}#Intent;scheme=rawbt;package=ru.a40213.rawbtprinter;S.browser_fallback_url=;end;`;
+    
     const iframe = document.createElement('iframe');
     iframe.style.display = 'none';
     iframe.src = intentUrl;
     document.body.appendChild(iframe);
     
-    // Bersihkan iframe dan otomatis tandai sukses/selesai setelah (2 detik)
     setTimeout(() => {
-      if (document.body.contains(iframe)) {
-        document.body.removeChild(iframe);
-      }
+      if (document.body.contains(iframe)) document.body.removeChild(iframe);
       setIsPrinting(false);
       setPrintSuccess(true);
-    }, 2000);
+    }, 1500);
   };
 
   useEffect(() => {
