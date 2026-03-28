@@ -1513,7 +1513,10 @@ function MainApp() {
                    </div>
                    <h3 className="text-xl font-bold mb-2">Terhubung ke Aplikasi RawBT</h3>
                    <p className="text-sm text-white/50 mb-8 max-w-md">Sistem ini telah dikonfigurasi secara khusus untuk mencetak karcis dan struk menggunakan aplikasi <b>RawBT Thermal Printer</b> di Android. Pastikan aplikasi tersebut sudah terinstal dan printer Bluetooth Anda sudah disandingkan di dalamnya.</p>
-                   <button onClick={() => window.location.href = "intent:TEST%20KONEKSI%20RAWBT%0A%0A%0A#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;"} className="bg-green-500 text-black font-bold px-8 py-4 rounded-2xl hover:bg-green-400 transition-all flex items-center gap-2">
+                   <button onClick={() => {
+                       const testHtml = `<html><body style="text-align:center; font-family:monospace; padding:20px;"><img src="${CUSTOM_LOGO_B64}" style="width:80px; filter:grayscale(100%); margin-bottom:10px;"/><br/><h3 style="font-size: 24px;">KONEKSI RAWBT BERHASIL</h3><p>Sistem Parkir Resparking siap digunakan.</p></body></html>`;
+                       window.location.href = `intent:data:text/html;base64,${btoa(unescape(encodeURIComponent(testHtml)))}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
+                   }} className="bg-green-500 text-black font-bold px-8 py-4 rounded-2xl hover:bg-green-400 transition-all flex items-center gap-2">
                      <Bluetooth size={20} /> Test Buka RawBT
                    </button>
                 </div>
@@ -1680,39 +1683,63 @@ function PrintModal({ transaction, onComplete }) {
   useEffect(() => {
     // Logika mencetak menggunakan Intent Direct ke RawBT
     const sendToRawBT = () => {
-      let textToPrint = "";
-      
-      // Menyisipkan Logo via tag <img> bawaan RawBT
-      textToPrint += `[C]<img>${CUSTOM_LOGO_B64}</img>\n`;
-      textToPrint += "[C]<b>DEVICE KASIER PARKIR</b>\n";
-      textToPrint += `[C]LOKASI: ${transaction.location}\n`;
-      textToPrint += "[C]--------------------------------\n";
-      
-      if (transaction.type === 'masuk') {
-          textToPrint += `[C]<b>TIKET MASUK (${transaction.vehicleType})</b>\n\n`;
-          textToPrint += `[C]<font size="big">${transaction.plate}</font>\n\n`;
-          textToPrint += `[C]JAM MASUK\n`;
-          textToPrint += `[C]${transaction.time.toLocaleDateString('id-ID')} ${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
-          if (transaction.isMember) {
-              textToPrint += `\n[C]--------------------------------\n`;
-              textToPrint += `[C]<b>MEMBER AKTIF</b>\n`;
-          }
-      } else {
-          textToPrint += `[C]<b>STRUK KELUAR (${transaction.vehicleType})</b>\n\n`;
-          textToPrint += `[L]Plat   : <b>${transaction.plate}</b>\n`;
-          textToPrint += `[L]Masuk  : ${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
-          textToPrint += `[L]Keluar : ${transaction.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
-          textToPrint += `[L]Durasi : ${transaction.durationHours} Jam\n`;
-          textToPrint += "[C]--------------------------------\n";
-          textToPrint += `[C]TOTAL BAYAR\n`;
-          textToPrint += `[C]<font size="big">${transaction.isMember ? 'GRATIS' : `Rp ${transaction.cost.toLocaleString('id-ID')}`}</font>\n`;
-      }
-      textToPrint += "\n\n\n";
+      // Menggunakan HTML native agar output di kertas 100% sama persis dengan preview web
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { margin: 0; padding: 5px; font-family: sans-serif, monospace; color: black; text-align: center; width: 100%; }
+            .header { border-bottom: 2px dashed #000; padding-bottom: 10px; margin-bottom: 15px; }
+            .title { font-size: 24px; font-weight: 900; margin: 0; }
+            .subtitle { font-size: 14px; font-weight: bold; margin-top: 5px; text-transform: uppercase; }
+            .plate { font-size: 44px; font-weight: 900; margin: 15px 0; letter-spacing: 2px; }
+            .row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 16px; font-weight: bold; text-align: left; }
+            .total-box { border: 2px solid #000; padding: 12px; margin-top: 15px; background: #000; color: #fff; border-radius: 8px;}
+            .total-title { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
+            .total-amount { font-size: 32px; font-weight: 900; margin: 0; }
+            .logo { width: 60px; filter: grayscale(100%); margin-bottom: 10px; }
+          </style>
+        </head>
+        <body>
+          <img src="${CUSTOM_LOGO_B64}" class="logo" />
+          <div class="header">
+            <div class="title">DEVICE KASIER PARKIR</div>
+            <div class="subtitle">LOKASI: ${transaction.location}</div>
+          </div>
+          
+          ${transaction.type === 'masuk' ? `
+            <div style="font-size: 16px; font-weight: bold; margin-bottom: 10px;">TIKET MASUK (${transaction.vehicleType})</div>
+            <div class="plate">${transaction.plate}</div>
+            <div style="font-size: 14px; margin-bottom: 5px;">JAM MASUK</div>
+            <div style="font-size: 18px; font-weight: bold;">${transaction.time.toLocaleDateString('id-ID')} ${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</div>
+            ${transaction.isMember ? `<div style="margin-top: 25px; border-top: 2px dashed #000; padding-top: 15px; font-size: 18px; font-weight: bold;">MEMBER AKTIF</div>` : ''}
+          ` : `
+            <div style="font-size: 18px; font-weight: bold; margin-bottom: 20px;">STRUK KELUAR (${transaction.vehicleType})</div>
+            <div class="row"><span>Plat:</span><span style="font-size: 20px;">${transaction.plate}</span></div>
+            <div class="row"><span>Masuk:</span><span>${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
+            <div class="row"><span>Keluar:</span><span>${transaction.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
+            <div class="row"><span>Durasi:</span><span>${transaction.durationHours} Jam</span></div>
+            
+            <div style="border-top: 2px dashed #000; margin: 20px 0 10px 0; padding-top: 20px;">
+              <div class="total-title">TOTAL BAYAR</div>
+              <div class="total-box">
+                <div class="total-amount">${transaction.isMember ? 'GRATIS' : `Rp ${transaction.cost.toLocaleString('id-ID')}`}</div>
+              </div>
+            </div>
+          `}
+        </body>
+        </html>
+      `;
 
-      // Membentuk URL Intent yang memanggil aplikasi ru.a402d.rawbtprinter
-      const intentUrl = `intent:${encodeURIComponent(textToPrint)}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
+      // Encode HTML ke format URI scheme yang bisa dibaca RawBT WebView
+      const encodedHtml = btoa(unescape(encodeURIComponent(htmlContent)));
       
-      // Memicu redirect
+      // Intent URL dengan data `text/html;base64` untuk hasil rendering yang sempurna
+      const intentUrl = `intent:data:text/html;base64,${encodedHtml}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
+      
+      // Memicu redirect ke RawBT
       window.location.href = intentUrl;
       
       // Otomatis tandai sukses/selesai setelah beralih aplikasi (1.5 detik)
