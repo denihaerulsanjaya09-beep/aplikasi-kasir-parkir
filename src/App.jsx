@@ -1681,27 +1681,31 @@ function PrintModal({ transaction, onComplete }) {
     // Logika mencetak menggunakan Intent Direct ke RawBT
     const sendToRawBT = () => {
       let textToPrint = "";
+      
+      // Menyisipkan Logo via tag <img> bawaan RawBT
+      textToPrint += `[C]<img>${CUSTOM_LOGO_B64}</img>\n`;
       textToPrint += "[C]<b>DEVICE KASIER PARKIR</b>\n";
       textToPrint += `[C]LOKASI: ${transaction.location}\n`;
       textToPrint += "[C]--------------------------------\n";
       
       if (transaction.type === 'masuk') {
-          textToPrint += `[L]TIKET MASUK (${transaction.vehicleType})\n`;
-          textToPrint += `[C]<font size="wide">${transaction.plate}</font>\n`;
-          textToPrint += `[L]JAM MASUK:\n`;
-          textToPrint += `[L]${transaction.time.toLocaleDateString('id-ID')} ${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
+          textToPrint += `[C]<b>TIKET MASUK (${transaction.vehicleType})</b>\n\n`;
+          textToPrint += `[C]<font size="big">${transaction.plate}</font>\n\n`;
+          textToPrint += `[C]JAM MASUK\n`;
+          textToPrint += `[C]${transaction.time.toLocaleDateString('id-ID')} ${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
           if (transaction.isMember) {
-              textToPrint += `\n[C]<b>MEMBER AKTIF</b>\n`;
+              textToPrint += `\n[C]--------------------------------\n`;
+              textToPrint += `[C]<b>MEMBER AKTIF</b>\n`;
           }
       } else {
-          textToPrint += `[L]STRUK KELUAR (${transaction.vehicleType})\n`;
-          textToPrint += `[L]Plat  : ${transaction.plate}\n`;
-          textToPrint += `[L]Masuk : ${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
-          textToPrint += `[L]Keluar: ${transaction.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
-          textToPrint += `[L]Durasi: ${transaction.durationHours} Jam\n`;
+          textToPrint += `[C]<b>STRUK KELUAR (${transaction.vehicleType})</b>\n\n`;
+          textToPrint += `[L]Plat   : <b>${transaction.plate}</b>\n`;
+          textToPrint += `[L]Masuk  : ${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
+          textToPrint += `[L]Keluar : ${transaction.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
+          textToPrint += `[L]Durasi : ${transaction.durationHours} Jam\n`;
           textToPrint += "[C]--------------------------------\n";
           textToPrint += `[C]TOTAL BAYAR\n`;
-          textToPrint += `[C]<font size="wide">${transaction.isMember ? 'GRATIS' : `Rp ${transaction.cost.toLocaleString('id-ID')}`}</font>\n`;
+          textToPrint += `[C]<font size="big">${transaction.isMember ? 'GRATIS' : `Rp ${transaction.cost.toLocaleString('id-ID')}`}</font>\n`;
       }
       textToPrint += "\n\n\n";
 
@@ -1723,27 +1727,29 @@ function PrintModal({ transaction, onComplete }) {
       <div className="bg-[#fcfcfc] w-full max-w-[320px] rounded-t-lg shadow-2xl overflow-hidden relative drop-shadow-2xl">
         <div className="h-4 w-full bg-[radial-gradient(circle,transparent_5px,#fcfcfc_5px)] bg-[length:14px_14px] -mt-1 relative z-10"></div>
         <div className="p-6 font-mono text-center text-sm text-black">
-          <h2 className="font-bold text-xl border-b-2 border-dashed border-gray-400 pb-3 mb-5">DEVICE KASIER PARKIR</h2>
-          
-          <p className="text-xs mb-4 border-b border-black pb-2 uppercase tracking-widest font-bold">LOKASI: {transaction.location}</p>
+          {/* Menyamakan layout UI dengan format RawBT di atas (Logo & Header di atas) */}
+          <img src={CUSTOM_LOGO_B64} alt="Logo Stasiun" className="w-14 h-auto mx-auto mb-3 grayscale" style={{ filter: 'grayscale(100%) contrast(150%) brightness(0.9)' }} />
+          <h2 className="font-bold text-xl border-b-2 border-dashed border-gray-400 pb-3 mb-5">
+            DEVICE KASIER PARKIR
+            <span className="text-xs uppercase tracking-widest font-bold mt-1 block">LOKASI: {transaction.location}</span>
+          </h2>
 
           {transaction.type === 'masuk' ? (
             <>
-              <p className="mb-2 text-base">TIKET MASUK ({transaction.vehicleType})</p>
+              <p className="mb-2 text-base font-bold">TIKET MASUK ({transaction.vehicleType})</p>
               <h1 className="text-5xl font-black my-6 tracking-tighter leading-none">{transaction.plate}</h1>
               <p className="text-xs text-gray-600">JAM MASUK</p>
               <p className="font-bold text-base mt-1">{transaction.time.toLocaleDateString('id-ID')} {transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</p>
-              {transaction.isMember && <div className="mt-5 border-2 border-black p-2 text-sm font-black uppercase">Member Aktif</div>}
+              {transaction.isMember && <div className="mt-5 border-t-2 border-dashed border-gray-400 pt-3 text-sm font-black uppercase">MEMBER AKTIF</div>}
             </>
           ) : (
             <>
-              <img src={CUSTOM_LOGO_B64} alt="Logo Stasiun" className="w-14 h-auto mx-auto mb-2 grayscale" style={{ filter: 'grayscale(100%) contrast(150%) brightness(0.9)' }} />
-              <p className="mb-2 text-base font-bold">STRUK KELUAR ({transaction.vehicleType})</p>
-              <p className="text-lg font-bold my-1 border-b border-black pb-2">Plat: {transaction.plate}</p>
+              <p className="mb-4 text-base font-bold">STRUK KELUAR ({transaction.vehicleType})</p>
               <div className="text-left mt-4 text-sm space-y-2 font-medium">
-                <div className="flex justify-between"><span>Masuk:</span><span>{transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
-                <div className="flex justify-between"><span>Keluar:</span><span>{transaction.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
-                <div className="flex justify-between"><span>Durasi:</span><span>{transaction.durationHours} Jam</span></div>
+                <div className="flex justify-between items-center"><span>Plat:</span><span className="font-bold text-lg">{transaction.plate}</span></div>
+                <div className="flex justify-between items-center"><span>Masuk:</span><span>{transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
+                <div className="flex justify-between items-center"><span>Keluar:</span><span>{transaction.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
+                <div className="flex justify-between items-center"><span>Durasi:</span><span>{transaction.durationHours} Jam</span></div>
               </div>
               <div className="border-t-2 border-dashed border-gray-400 my-5 pt-3">
                 <p className="text-sm font-bold mb-2">TOTAL BAYAR</p>
