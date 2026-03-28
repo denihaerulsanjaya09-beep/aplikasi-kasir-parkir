@@ -9,7 +9,15 @@ import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, getDocs }
 // =====================================
 let app, auth, db;
 try {
-  const firebaseConfig = JSON.parse(__firebase_config);
+  const firebaseConfig = {
+  apiKey: "AIzaSyAPmH7VEU8aaawlE_QSIfrHrgU3jykn22s",
+  authDomain: "resparking-v2.firebaseapp.com",
+  projectId: "resparking-v2",
+  storageBucket: "resparking-v2.firebasestorage.app",
+  messagingSenderId: "760869381020",
+  appId: "1:760869381020:web:bb74989c1c4bb4d51b9e59"
+};
+
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
@@ -23,9 +31,9 @@ const DB_APP_ID = "Resparking_Production_DB";
 
 // --- DATA & CONFIG DEFAULT ---
 const DEFAULT_TARIFFS = {
-  Motor: { type: 'progresif', first: 2000, next: 1000, max: 10000, overnight: 15000 },
-  Mobil: { type: 'progresif', first: 5000, next: 3000, max: 30000, overnight: 50000 },
-  Truk: { type: 'progresif', first: 10000, next: 5000, max: 50000, overnight: 100000 },
+  Motor: { type: 'progresif', first: 2000, next: 2000, max: 8000, overnight: 10000 },
+  Mobil: { type: 'progresif', first: 3000, next: 3000, max: 15000, overnight: 20000 },
+  Truk: { type: 'progresif', first: 5000, next: 5000, max: 25000, overnight: 25000 },
   Sepeda: { type: 'flat', first: 1000, next: 0, max: 2000, overnight: 5000 }
 };
 
@@ -42,8 +50,10 @@ const PRINTER_SERVICES = [
 const DEFAULT_USERS = [
   { username: 'master', nipkwt: '200041', password: 'R3gional2BD!', role: 'Master' },
   { username: 'Kasier Pagi', nipkwt: '1014202601', password: '123', role: 'Kasier' },
-  { username: 'Kasier Siang', nipkwt: '1014202602', password: '123', role: 'Kasier' },
-  { username: 'Kasier Malam', nipkwt: '1014202603', password: '123', role: 'Kasier' },
+  { username: 'Kasier Pagi', nipkwt: '1014202602', password: '123', role: 'Kasier' },
+  { username: 'Kasier Pagi', nipkwt: '1014202603', password: '123', role: 'Kasier' },
+  { username: 'Kasier Siang', nipkwt: '1014202604', password: '123', role: 'Kasier' },
+  { username: 'Kasier Malam', nipkwt: '1014202605', password: '123', role: 'Kasier' },
   { username: 'Korlap', nipkwt: '1014202600', password: '123456', role: 'Korlap' },
   { username: 'Audit', nipkwt: '001', password: 'Audit123', role: 'Auditor' }
 ];
