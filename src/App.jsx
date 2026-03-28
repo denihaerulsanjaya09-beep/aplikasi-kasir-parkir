@@ -112,7 +112,7 @@ class ErrorBoundary extends React.Component {
               <AlertTriangle size={40} />
             </div>
             <h1 className="text-2xl font-bold mb-2">Terjadi Kesalahan (Crash)</h1>
-            <p className="text-white/60 text-sm mb-6">Aplikasi mengalami kendala akibat data cache yang usang. Silakan reset aplikasi untuk memulihkannya.</p>
+            <p className="text-white/60 text-sm mb-6">Aplikasi mengalami kendala sistem atau kesalahan pembacaan data. Silakan bersihkan cache dan muat ulang.</p>
             <div className="bg-black/50 p-4 rounded-xl text-red-400 text-xs text-left overflow-auto max-h-32 mb-6 font-mono border border-red-500/20">
               {this.state.error?.toString()}
             </div>
@@ -137,7 +137,7 @@ function MainApp() {
   const [fbUser, setFbUser] = useState(null);
   const [isDbReady, setIsDbReady] = useState(false);
 
-  // BUG FIX: Gunakan Try-Catch agar tidak blank putih saat localStorage corrupt
+  // Gunakan Try-Catch agar tidak blank putih saat localStorage corrupt
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const savedUser = localStorage.getItem('app_currentUser');
@@ -376,16 +376,21 @@ function MainApp() {
 
   // --- TRANSAKSI KASIR UTAMA ---
   const handleMasuk = () => {
-    if (!plateMasuk) return alert("Masukkan Plat Nomor!");
+    // FIX BUG toUpperCase: Amankan dengan konversi string + fallback kosong
+    const safePlateMasuk = (plateMasuk || '').toString().toUpperCase();
+    
+    if (!safePlateMasuk) return alert("Masukkan Plat Nomor!");
+    
     const tx = {
       type: 'masuk',
-      plate: plateMasuk.toUpperCase(),
+      plate: safePlateMasuk,
       vehicleType: vehicleTypeMasuk,
       time: new Date(),
       location: currentUser?.location,
       cashier: currentUser?.name,
       shift: shiftInfo.name,
-      isMember: members.some(m => m.plate === plateMasuk.toUpperCase())
+      // FIX BUG toUpperCase Member: Pastikan m.plate dibaca secara aman
+      isMember: members.some(m => (m.plate || '').toUpperCase() === safePlateMasuk)
     };
     txDataRef.current = tx; // Kunci data agar tidak hilang oleh re-render
     setCurrentTransaction(tx);
@@ -393,8 +398,13 @@ function MainApp() {
   };
 
   const handleKeluar = (plateInput = plateKeluar) => {
-    if (!plateInput) return alert("Masukkan Plat Nomor Keluar!");
-    const vehicle = parkedVehicles.find(v => v.plate === plateInput.toUpperCase());
+    // FIX BUG toUpperCase Keluar: Mengantisipasi jika event click masuk sebagai parameter
+    const rawPlate = typeof plateInput === 'string' ? plateInput : plateKeluar;
+    const safePlateKeluar = (rawPlate || '').toString().toUpperCase();
+
+    if (!safePlateKeluar) return alert("Masukkan Plat Nomor Keluar!");
+    
+    const vehicle = parkedVehicles.find(v => (v.plate || '').toUpperCase() === safePlateKeluar);
     if (!vehicle) return alert("Kendaraan tidak ditemukan di area parkir!");
     
     const exitTime = new Date();
@@ -429,7 +439,7 @@ function MainApp() {
     setShowCamera(true);
   };
 
-  // --- FIX PENYIMPANAN DATA INSTAN DARI KAMERA ---
+  // --- PENYIMPANAN DATA INSTAN DARI KAMERA ---
   const handleCapture = async (photoBase64) => {
     setCapturedImage(photoBase64);
     setShowCamera(false); 
@@ -471,7 +481,7 @@ function MainApp() {
   };
 
   const handlePrintComplete = () => {
-    // Fungsi ini sekarang HANYA membersihkan UI Form.
+    // Membersihkan UI Form setelah print
     if (txDataRef.current?.type === 'masuk') setPlateMasuk('');
     else if (txDataRef.current?.type === 'keluar') setPlateKeluar('');
     
@@ -739,7 +749,8 @@ function MainApp() {
               <div className="flex-1 space-y-6 z-10">
                 <div>
                   <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-2 block">Ketik Plat Nomor Masuk</label>
-                  <input value={plateMasuk} onChange={e => setPlateMasuk(e.target.value.toUpperCase())} placeholder="D 1234 XY" className="w-full bg-black/50 border border-green-500/30 rounded-2xl p-5 text-4xl font-black text-center text-white uppercase tracking-[0.2em] outline-none focus:ring-2 focus:ring-green-500 transition-all placeholder:text-white/10 shadow-inner" />
+                  {/* FIX BUG toUpperCase: Optional Chaining di form onChange */}
+                  <input value={plateMasuk} onChange={e => setPlateMasuk((e.target?.value || '').toUpperCase())} placeholder="D 1234 XY" className="w-full bg-black/50 border border-green-500/30 rounded-2xl p-5 text-4xl font-black text-center text-white uppercase tracking-[0.2em] outline-none focus:ring-2 focus:ring-green-500 transition-all placeholder:text-white/10 shadow-inner" />
                 </div>
                 
                 <div>
@@ -773,7 +784,8 @@ function MainApp() {
                     <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-2 block">Cari / Scan Plat Keluar</label>
                     <div className="relative">
                       <Search className="absolute left-5 top-5 text-white/40" size={26} />
-                      <input value={plateKeluar} onChange={e => setPlateKeluar(e.target.value.toUpperCase())} placeholder="D 12..." className="w-full bg-black/50 border border-red-500/30 rounded-2xl p-5 pl-14 text-3xl font-black text-white uppercase tracking-widest outline-none focus:ring-2 focus:ring-red-500 transition-all placeholder:text-white/10 shadow-inner" />
+                      {/* FIX BUG toUpperCase: Optional Chaining di form onChange */}
+                      <input value={plateKeluar} onChange={e => setPlateKeluar((e.target?.value || '').toUpperCase())} placeholder="D 12..." className="w-full bg-black/50 border border-red-500/30 rounded-2xl p-5 pl-14 text-3xl font-black text-white uppercase tracking-widest outline-none focus:ring-2 focus:ring-red-500 transition-all placeholder:text-white/10 shadow-inner" />
                     </div>
                   </div>
 
@@ -917,7 +929,7 @@ function MainApp() {
 
     const generatePDFReport = () => {
        const s = generateReportStats(adminReports);
-       let title = `LAPORAN PENDAPATAN (${reportFilterType.toUpperCase()})`;
+       let title = `LAPORAN PENDAPATAN (${(reportFilterType || '').toUpperCase()})`;
        let sub = adminSelectedDate;
        if(reportFilterType==='shift') sub = `${adminSelectedDate} | ${reportFilterShift}`;
        // Menyertakan nama user dan jabatannya dalam parameter laporan untuk di cetak
@@ -928,7 +940,7 @@ function MainApp() {
        const s = generateReportStats(adminReports);
        let sub = adminSelectedDate;
        if(reportFilterType==='shift') sub = `${adminSelectedDate} | ${reportFilterShift}`;
-       const msg = `*REKAP PENDAPATAN (${reportFilterType.toUpperCase()})*\n📍 Lokasi: ${currentUser?.location}\n🗓 Periode: ${sub}\n\n*RINCIAN:*\n🏍 Motor: ${s.motorQty} (Rp ${s.motorNom.toLocaleString()})\n🚗 Mobil: ${s.mobilQty} (Rp ${s.mobilNom.toLocaleString()})\n🚚 Box: ${s.trukQty} (Rp ${s.trukNom.toLocaleString()})\n💳 Member: ${s.memberQty}\n\n*TOTAL: Rp ${s.total.toLocaleString()}*`;
+       const msg = `*REKAP PENDAPATAN (${(reportFilterType || '').toUpperCase()})*\n📍 Lokasi: ${currentUser?.location}\n🗓 Periode: ${sub}\n\n*RINCIAN:*\n🏍 Motor: ${s.motorQty} (Rp ${s.motorNom.toLocaleString()})\n🚗 Mobil: ${s.mobilQty} (Rp ${s.mobilNom.toLocaleString()})\n🚚 Box: ${s.trukQty} (Rp ${s.trukNom.toLocaleString()})\n💳 Member: ${s.memberQty}\n\n*TOTAL: Rp ${s.total.toLocaleString()}*`;
        window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
     };
 
@@ -954,8 +966,9 @@ function MainApp() {
       e.preventDefault();
       if(!isEditor) return;
       if(!newMember.plate || !newMember.nip) return;
-      if(members.some(m => m.plate === newMember.plate.toUpperCase())) return alert("Plat nomor sudah terdaftar!");
-      const newMembersList = [...members, { plate: newMember.plate.toUpperCase(), nip: newMember.nip }];
+      const safeNewPlate = (newMember.plate || '').toUpperCase();
+      if(members.some(m => (m.plate || '').toUpperCase() === safeNewPlate)) return alert("Plat nomor sudah terdaftar!");
+      const newMembersList = [...members, { plate: safeNewPlate, nip: newMember.nip }];
       setMembers(newMembersList);
       updateLocConfig({ members: newMembersList });
       setNewMember({ plate: '', nip: '' });
@@ -1088,7 +1101,8 @@ function MainApp() {
                   <h3 className="text-xl font-bold mb-4 text-green-300">Daftar Member (Gratis)</h3>
                   {isEditor && (
                     <form onSubmit={handleAddMember} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                       <input required value={newMember.plate} onChange={e=>setNewMember({...newMember, plate: e.target.value.toUpperCase()})} placeholder="Plat Nomor" className="bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white" />
+                       {/* FIX BUG toUpperCase: Optional Chaining di form onChange */}
+                       <input required value={newMember.plate} onChange={e=>setNewMember({...newMember, plate: (e.target?.value || '').toUpperCase()})} placeholder="Plat Nomor" className="bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white" />
                        <input required value={newMember.nip} onChange={e=>setNewMember({...newMember, nip: e.target.value})} placeholder="NIP/NIPP Pegawai" className="bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white" />
                        <button type="submit" className="bg-green-500 text-black font-bold p-3 rounded-xl flex items-center justify-center gap-2 hover:bg-green-400"><Plus size={18}/> Tambah Member</button>
                     </form>
@@ -1136,7 +1150,7 @@ function MainApp() {
                         <tr key={i} className="border-t border-white/5 hover:bg-white/5 transition-colors">
                           <td className="p-4 font-bold">{u.username}</td><td className="p-4">{u.nipkwt}</td>
                           <td className="p-4">
-                            <span className={`px-2 py-1 rounded-md text-xs font-bold ${u.role==='Master'?'bg-orange-500/20 text-orange-400':u.role==='Auditor'?'bg-purple-500/20 text-purple-400':u.role==='Korlap'?'bg-blue-500/20 text-blue-400':'bg-green-500/20 text-green-400'}`}>{(u.role || 'KASIER').toUpperCase()}</span>
+                            <span className={`px-2 py-1 rounded-md text-xs font-bold ${u.role==='Master'?'bg-orange-500/20 text-orange-400':u.role==='Auditor'?'bg-purple-500/20 text-purple-400':u.role==='Korlap'?'bg-blue-500/20 text-blue-400':'bg-green-500/20 text-green-400'}`}>{String(u.role || 'KASIER').toUpperCase()}</span>
                           </td>
                           {isEditor && (
                             <td className="p-4 text-center">
@@ -1261,9 +1275,10 @@ function MainApp() {
                 <div className="bg-white/5 border border-white/10 p-6 rounded-[24px]">
                   <div className="relative mb-6">
                     <Search className="absolute left-4 top-4 text-white/40" size={20} />
+                    {/* FIX BUG toUpperCase: Optional Chaining di form onChange */}
                     <input 
                       value={rekapSearch} 
-                      onChange={e => setRekapSearch(e.target.value.toUpperCase())} 
+                      onChange={e => setRekapSearch((e.target?.value || '').toUpperCase())} 
                       placeholder="Cari Plat Nomor (Contoh: D 1234 XY)..." 
                       className="w-full bg-black/40 border border-white/10 rounded-xl p-4 pl-12 text-lg font-bold text-white uppercase tracking-widest outline-none focus:ring-1 focus:ring-green-500 transition-all" 
                     />
