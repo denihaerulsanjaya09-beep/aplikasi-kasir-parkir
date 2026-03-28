@@ -1689,79 +1689,95 @@ function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek", facingMod
 
 function PrintModal({ transaction, onComplete }) {
   const [printSuccess, setPrintSuccess] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
+
+  const sendToRawBT = () => {
+    setIsPrinting(true);
+    // Menggunakan HTML native agar output di kertas 100% sama persis dengan preview web
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { 
+            margin: 0; 
+            padding: 10px; 
+            font-family: 'Courier New', Courier, monospace; 
+            color: black; 
+            text-align: center; 
+            width: 100%; 
+            box-sizing: border-box; 
+            background: white;
+          }
+          .zigzag { border-top: 4px dotted #000; margin-bottom: 10px; opacity: 0.3; }
+          .header { border-bottom: 2px dashed #000; padding-bottom: 10px; margin-bottom: 15px; }
+          .title { font-size: 22px; font-weight: 900; margin: 0; line-height: 1.2; }
+          .subtitle { font-size: 12px; font-weight: bold; margin-top: 5px; text-transform: uppercase; letter-spacing: 1px; }
+          .plate { font-size: 48px; font-weight: 900; margin: 15px 0; letter-spacing: -1px; line-height: 1; }
+          .row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 14px; font-weight: bold; text-align: left; }
+          .total-box { border: 2px solid #000; padding: 10px; margin-top: 10px; background: #000; color: #fff; border-radius: 4px;}
+          .total-title { font-size: 14px; font-weight: bold; margin-bottom: 4px; }
+          .total-amount { font-size: 30px; font-weight: 900; margin: 0; }
+          .logo { width: 50px; height: auto; filter: grayscale(100%) contrast(150%); margin-bottom: 8px; }
+          .footer { margin-top: 20px; font-size: 10px; border-top: 1px dashed #000; padding-top: 10px; font-style: italic; }
+        </style>
+      </head>
+      <body>
+        <div class="zigzag"></div>
+        <img src="${CUSTOM_LOGO_B64}" class="logo" />
+        <div class="header">
+          <div class="title">DEVICE KASIER PARKIR</div>
+          <div class="subtitle">LOKASI: ${transaction.location}</div>
+        </div>
+        
+        ${transaction.type === 'masuk' ? `
+          <div style="font-size: 14px; font-weight: bold; margin-bottom: 5px;">TIKET MASUK (${transaction.vehicleType})</div>
+          <div class="plate">${transaction.plate}</div>
+          <div style="font-size: 12px; margin-bottom: 2px;">JAM MASUK</div>
+          <div style="font-size: 16px; font-weight: bold;">${transaction.time.toLocaleDateString('id-ID')} ${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</div>
+          ${transaction.isMember ? `<div style="margin-top: 20px; border-top: 2px dashed #000; padding-top: 10px; font-size: 16px; font-weight: bold;">MEMBER AKTIF</div>` : ''}
+        ` : `
+          <div style="font-size: 16px; font-weight: bold; margin-bottom: 15px;">STRUK KELUAR (${transaction.vehicleType})</div>
+          <div class="row"><span>Plat:</span><span style="font-size: 18px;">${transaction.plate}</span></div>
+          <div class="row"><span>Masuk:</span><span>${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
+          <div class="row"><span>Keluar:</span><span>${transaction.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
+          <div class="row"><span>Durasi:</span><span>${transaction.durationHours} Jam</span></div>
+          
+          <div style="border-top: 2px dashed #000; margin: 15px 0 10px 0; padding-top: 15px;">
+            <div class="total-title">TOTAL BAYAR</div>
+            <div class="total-box">
+              <div class="total-amount">${transaction.isMember ? 'GRATIS' : `Rp ${transaction.cost.toLocaleString('id-ID')}`}</div>
+            </div>
+          </div>
+        `}
+        <div class="footer">Terima kasih atas kunjungan Anda</div>
+      </body>
+      </html>
+    `;
+
+    // Encode HTML ke format URI scheme yang bisa dibaca RawBT WebView
+    const encodedHtml = btoa(unescape(encodeURIComponent(htmlContent)));
+    const intentUrl = `rawbt:data:text/html;base64,${encodedHtml}`;
+    
+    // FIX: Menggunakan iframe tersembunyi agar web tidak pindah halaman (tetap stay)
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = intentUrl;
+    document.body.appendChild(iframe);
+    
+    // Bersihkan iframe dan otomatis tandai sukses/selesai setelah (2 detik)
+    setTimeout(() => {
+      if (document.body.contains(iframe)) {
+        document.body.removeChild(iframe);
+      }
+      setIsPrinting(false);
+      setPrintSuccess(true);
+    }, 2000);
+  };
 
   useEffect(() => {
-    // Logika mencetak menggunakan Intent Direct ke RawBT
-    const sendToRawBT = () => {
-      // Menggunakan HTML native agar output di kertas 100% sama persis dengan preview web
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <style>
-            body { margin: 0; padding: 5px; font-family: sans-serif, monospace; color: black; text-align: center; width: 100%; }
-            .header { border-bottom: 2px dashed #000; padding-bottom: 10px; margin-bottom: 15px; }
-            .title { font-size: 24px; font-weight: 900; margin: 0; }
-            .subtitle { font-size: 14px; font-weight: bold; margin-top: 5px; text-transform: uppercase; }
-            .plate { font-size: 44px; font-weight: 900; margin: 15px 0; letter-spacing: 2px; }
-            .row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 16px; font-weight: bold; text-align: left; }
-            .total-box { border: 2px solid #000; padding: 12px; margin-top: 15px; background: #000; color: #fff; border-radius: 8px;}
-            .total-title { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
-            .total-amount { font-size: 32px; font-weight: 900; margin: 0; }
-            .logo { width: 60px; filter: grayscale(100%); margin-bottom: 10px; }
-          </style>
-        </head>
-        <body>
-          <img src="${CUSTOM_LOGO_B64}" class="logo" />
-          <div class="header">
-            <div class="title">DEVICE KASIER PARKIR</div>
-            <div class="subtitle">LOKASI: ${transaction.location}</div>
-          </div>
-          
-          ${transaction.type === 'masuk' ? `
-            <div style="font-size: 16px; font-weight: bold; margin-bottom: 10px;">TIKET MASUK (${transaction.vehicleType})</div>
-            <div class="plate">${transaction.plate}</div>
-            <div style="font-size: 14px; margin-bottom: 5px;">JAM MASUK</div>
-            <div style="font-size: 18px; font-weight: bold;">${transaction.time.toLocaleDateString('id-ID')} ${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</div>
-            ${transaction.isMember ? `<div style="margin-top: 25px; border-top: 2px dashed #000; padding-top: 15px; font-size: 18px; font-weight: bold;">MEMBER AKTIF</div>` : ''}
-          ` : `
-            <div style="font-size: 18px; font-weight: bold; margin-bottom: 20px;">STRUK KELUAR (${transaction.vehicleType})</div>
-            <div class="row"><span>Plat:</span><span style="font-size: 20px;">${transaction.plate}</span></div>
-            <div class="row"><span>Masuk:</span><span>${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
-            <div class="row"><span>Keluar:</span><span>${transaction.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
-            <div class="row"><span>Durasi:</span><span>${transaction.durationHours} Jam</span></div>
-            
-            <div style="border-top: 2px dashed #000; margin: 20px 0 10px 0; padding-top: 20px;">
-              <div class="total-title">TOTAL BAYAR</div>
-              <div class="total-box">
-                <div class="total-amount">${transaction.isMember ? 'GRATIS' : `Rp ${transaction.cost.toLocaleString('id-ID')}`}</div>
-              </div>
-            </div>
-          `}
-        </body>
-        </html>
-      `;
-
-      // Encode HTML ke format URI scheme yang bisa dibaca RawBT WebView
-      const encodedHtml = btoa(unescape(encodeURIComponent(htmlContent)));
-      const intentUrl = `rawbt:data:text/html;base64,${encodedHtml}`;
-      
-      // FIX: Menggunakan iframe tersembunyi agar web tidak pindah halaman (tetap stay)
-      const iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      iframe.src = intentUrl;
-      document.body.appendChild(iframe);
-      
-      // Bersihkan iframe dan otomatis tandai sukses/selesai setelah (1.5 detik)
-      setTimeout(() => {
-        if (document.body.contains(iframe)) {
-          document.body.removeChild(iframe);
-        }
-        setPrintSuccess(true);
-      }, 1500);
-    };
-
+    // Otomatis cetak saat modal muncul pertama kali
     sendToRawBT();
   }, [transaction]);
 
@@ -1805,16 +1821,22 @@ function PrintModal({ transaction, onComplete }) {
         </div>
       </div>
       <div className="mt-8 bg-white/10 border border-white/20 backdrop-blur-xl p-5 rounded-3xl w-full max-w-[320px] text-center shadow-lg">
-        {!printSuccess ? (
+        {isPrinting ? (
           <div className="flex flex-col items-center justify-center gap-4 text-white">
             <div className="flex items-center gap-4">
               <div className="w-6 h-6 border-4 border-green-400 border-t-transparent rounded-full animate-spin"></div>
-              <p className="font-bold tracking-wide">Membuka RawBT...</p>
+              <p className="font-bold tracking-wide">Mencetak...</p>
             </div>
-            <button onClick={onComplete} className="text-white/50 text-xs underline mt-2 hover:text-white cursor-pointer">Tutup Manual</button>
           </div>
         ) : (
-          <button onClick={onComplete} className="w-full bg-green-500 text-black rounded-xl py-4 font-extrabold flex justify-center gap-2 active:scale-95 transition-transform"><Check size={24} /> Selesai</button>
+          <div className="flex flex-col gap-3">
+            <button onClick={onComplete} className="w-full bg-green-500 text-black rounded-xl py-4 font-extrabold flex justify-center gap-2 active:scale-95 transition-transform shadow-[0_0_20px_rgba(34,197,94,0.3)]">
+              <Check size={24} /> Selesai
+            </button>
+            <button onClick={sendToRawBT} className="w-full bg-white/10 hover:bg-white/20 text-white rounded-xl py-3 font-bold flex justify-center gap-2 transition-all text-sm border border-white/10">
+              <Printer size={18} /> Cetak Ulang
+            </button>
+          </div>
         )}
       </div>
     </div>
