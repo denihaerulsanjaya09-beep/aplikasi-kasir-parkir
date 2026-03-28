@@ -295,6 +295,30 @@ function MainApp() {
      }
   }, [settingsMenu]);
 
+  // FUNGSI BARU: Mengambil Histori Login (Dipindahkan ke luar kondisi agar tidak melanggar aturan Hooks #310)
+  const fetchLoginHistory = async () => {
+     setIsLoadingHistory(true);
+     try {
+         const snap = await getDocs(collection(db, 'artifacts', DB_APP_ID, 'public', 'data', 'loginHistory'));
+         const items = [];
+         snap.forEach(d => {
+             items.push(d.data());
+         });
+         // Urutkan dari yang terbaru login
+         items.sort((a, b) => new Date(b.time) - new Date(a.time));
+         setLoginHistoryData(items);
+     } catch(e) {
+         console.error("Gagal menarik data histori login: ", e);
+     }
+     setIsLoadingHistory(false);
+  };
+
+  // Otomatis tarik data saat menu history diklik
+  useEffect(() => {
+      if (settingsMenu === 'history') {
+          fetchLoginHistory();
+      }
+  }, [settingsMenu]);
 
   // ==================================================
   // LOGIKA WAKTU & SISTEM LOCKOUT SHIFT KASIR
@@ -1003,31 +1027,6 @@ function MainApp() {
       } catch(e) { console.error("Error fetch historical data:", e); }
       setIsLoadingReports(false);
     };
-
-    // FUNGSI BARU: Mengambil Histori Login
-    const fetchLoginHistory = async () => {
-       setIsLoadingHistory(true);
-       try {
-           const snap = await getDocs(collection(db, 'artifacts', DB_APP_ID, 'public', 'data', 'loginHistory'));
-           const items = [];
-           snap.forEach(d => {
-               items.push(d.data());
-           });
-           // Urutkan dari yang terbaru login
-           items.sort((a, b) => new Date(b.time) - new Date(a.time));
-           setLoginHistoryData(items);
-       } catch(e) {
-           console.error("Gagal menarik data histori login: ", e);
-       }
-       setIsLoadingHistory(false);
-    };
-
-    // Otomatis tarik data saat menu history diklik
-    useEffect(() => {
-        if (settingsMenu === 'history') {
-            fetchLoginHistory();
-        }
-    }, [settingsMenu]);
 
     const generatePDFReport = () => {
        const s = generateReportStats(adminReports);
