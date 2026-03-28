@@ -532,7 +532,7 @@ function MainApp() {
                <div className="bg-orange-500/20 text-orange-400 p-4 rounded-full mb-4"><FileText size={48} /></div>
             )}
             
-            <h2 className="text-2xl font-bold tracking-tight text-center">{isShiftLocked ? 'Sesi Shift Berakhir' : 'Laporan Shift Anda'}</h2>
+            <h2 className="text-2xl font-bold tracking-tight text-center">{isShiftLocked ? 'Sesi Shift Berakhir' : 'Laporan Shift Anda (Terbaru)'}</h2>
             <p className="text-white/60 text-sm text-center mt-2 leading-relaxed">
                {isShiftLocked 
                   ? "Waktu shift Anda telah habis. Anda wajib mencetak atau mengirim laporan ini sebagai bukti storan sebelum sistem di-logout." 
