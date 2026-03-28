@@ -45,14 +45,6 @@ const DEFAULT_TARIFFS = {
 const VEHICLE_TYPES = ['Motor', 'Mobil', 'Truk', 'Sepeda'];
 const LOCATIONS = ['ST. Cimahi Selatan', 'ST. Gadobangkong', 'ST. Cianjur', 'ST. Cibatu'];
 
-const PRINTER_SERVICES = [
-  '000018f0-0000-1000-8000-00805f9b34fb', 
-  'e7810a71-73ae-499d-8c15-faa9aef0c3f2', 
-  '49535343-fe7d-4ae5-8fa9-9fafd205e455',
-  '0000af30-0000-1000-8000-00805f9b34fb',
-  '00001814-0000-1000-8000-00805f9b34fb', 
-];
-
 const DEFAULT_USERS = [
   { username: 'master', nipkwt: '200041', password: 'R3gional2BD!', role: 'Master' },
   { username: 'Kasier Pagi', nipkwt: '1014202601', password: '123', role: 'Kasier' },
@@ -176,7 +168,6 @@ function MainApp() {
   const [runningText, setRunningText] = useState('Selamat Datang di Sistem Layanan Parkir Resparking');
   const [customLogo, setCustomLogo] = useState(null);
 
-  const [connectedPrinter, setConnectedPrinter] = useState(null);
   const [settingsMenu, setSettingsMenu] = useState('tarif'); 
   const [newUser, setNewUser] = useState({ username: '', nipkwt: '', password: '', role: 'Kasier' });
   const [newMember, setNewMember] = useState({ plate: '', nip: '' });
@@ -432,24 +423,45 @@ function MainApp() {
     setCapturedImage(null);
   };
 
-  const pairBluetooth = async () => {
-    try {
-      if (!navigator.bluetooth) throw new Error("Browser ini tidak mendukung Web Bluetooth. Gunakan Chrome untuk PC/Android.");
-      const device = await navigator.bluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: PRINTER_SERVICES
-      });
-      setConnectedPrinter({ name: device.name || 'Printer Kasir Thermal', id: device.id });
-      alert(`Berhasil menyandingkan: ${device.name || 'Printer Kasir Thermal'}`);
-    } catch (err) {
-      alert("Proses sanding dibatalkan atau gagal: " + err.message);
-    }
-  };
-
   useEffect(() => {
     if (reportToPrint) {
       const timer1 = setTimeout(() => { 
-        window.print(); 
+        let textToPrint = `[C]<b>${reportToPrint.title || "LAPORAN PENDAPATAN"}</b>\n`;
+        textToPrint += `[C]--------------------------------\n`;
+        textToPrint += `[C]Periode: ${reportToPrint.date}\n`;
+        textToPrint += `[C]Lokasi: ${reportToPrint.location}\n`;
+        if (reportToPrint.shift) textToPrint += `[C]Shift: ${reportToPrint.shift}\n`;
+        textToPrint += `[C]Dicetak: ${new Date().toLocaleString('id-ID')}\n`;
+        textToPrint += `[C]--------------------------------\n\n`;
+
+        textToPrint += `[L]Total Kendaraan: [R]${reportToPrint.data.length} Unit\n`;
+        textToPrint += `[L]Total Setoran: [R]Rp ${reportToPrint.stats.total.toLocaleString('id-ID')}\n\n`;
+
+        textToPrint += `[C]<b>Rincian Kategori</b>\n`;
+        textToPrint += `[L]Motor: [R]${reportToPrint.stats.motorQty} (Rp ${reportToPrint.stats.motorNom.toLocaleString('id-ID')})\n`;
+        textToPrint += `[L]Mobil: [R]${reportToPrint.stats.mobilQty} (Rp ${reportToPrint.stats.mobilNom.toLocaleString('id-ID')})\n`;
+        textToPrint += `[L]Truk/Box: [R]${reportToPrint.stats.trukQty} (Rp ${reportToPrint.stats.trukNom.toLocaleString('id-ID')})\n`;
+        textToPrint += `[L]Member: [R]${reportToPrint.stats.memberQty} (Gratis)\n\n`;
+
+        textToPrint += `[C]<b>Statistik Durasi</b>\n`;
+        const totalP = reportToPrint.data.length;
+        textToPrint += `[L]1 Jam Pertama: [R]${reportToPrint.stats.dur1} (${totalP ? Math.round((reportToPrint.stats.dur1 / totalP) * 100) : 0}%)\n`;
+        textToPrint += `[L]< 3 Jam: [R]${reportToPrint.stats.dur3} (${totalP ? Math.round((reportToPrint.stats.dur3 / totalP) * 100) : 0}%)\n`;
+        textToPrint += `[L]< 6 Jam: [R]${reportToPrint.stats.dur6} (${totalP ? Math.round((reportToPrint.stats.dur6 / totalP) * 100) : 0}%)\n`;
+        textToPrint += `[L]< 8 Jam: [R]${reportToPrint.stats.dur8} (${totalP ? Math.round((reportToPrint.stats.dur8 / totalP) * 100) : 0}%)\n`;
+        textToPrint += `[L]< 12 Jam: [R]${reportToPrint.stats.dur12} (${totalP ? Math.round((reportToPrint.stats.dur12 / totalP) * 100) : 0}%)\n`;
+        textToPrint += `[L]> 12 Jam: [R]${reportToPrint.stats.durOver12} (${totalP ? Math.round((reportToPrint.stats.durOver12 / totalP) * 100) : 0}%)\n\n`;
+
+        textToPrint += `[C]--------------------------------\n`;
+        textToPrint += `[C]Dinyatakan Oleh,\n\n\n`;
+        textToPrint += `[C]${reportToPrint.cashier || currentUser?.name}\n`;
+        textToPrint += `[C]${reportToPrint.role || currentUser?.role}\n\n\n`;
+
+        const S = "#Intent;scheme=rawbt;";
+        const P = "package=ru.a402d.rawbtprinter;end;";
+        const textEncoded = encodeURI(textToPrint);
+        window.location.href = "intent:" + textEncoded + S + P;
+
         const timer2 = setTimeout(() => {
           setReportToPrint(null);
           if (isShiftLocked) {
@@ -1279,90 +1291,19 @@ function MainApp() {
               <div className="space-y-6 max-w-2xl animate-fade-in">
                 <h2 className="text-3xl font-extrabold mb-6">Device & Printer</h2>
                 <div className="bg-white/5 border border-white/10 p-8 rounded-[24px] flex flex-col items-center justify-center text-center">
-                   <div className={`p-6 rounded-full mb-6 ${connectedPrinter ? 'bg-green-500/20 text-green-400' : 'bg-white/10 text-white/40'}`}>
+                   <div className="p-6 rounded-full mb-6 bg-green-500/20 text-green-400">
                       <Bluetooth size={64} />
                    </div>
-                   <h3 className="text-xl font-bold mb-2">{connectedPrinter ? connectedPrinter.name : 'Belum Ada Printer Terhubung'}</h3>
-                   <p className="text-sm text-white/50 mb-8 max-w-md">Menyambungkan printer Bluetooth termal memungkinkan aplikasi untuk mencetak tiket dan struk laporan langsung dari browser Anda.</p>
-                   <button onClick={pairBluetooth} className="bg-white text-black font-bold px-8 py-4 rounded-2xl hover:bg-gray-200 transition-all flex items-center gap-2">
-                     <Plus size={20} /> Sandingkan Perangkat Baru
-                   </button>
+                   <h3 className="text-xl font-bold mb-2">Terintegrasi dengan RawBT</h3>
+                   <p className="text-sm text-white/50 mb-8 max-w-md">Aplikasi ini menggunakan aplikasi pihak ketiga <b>RawBT</b> untuk mencetak struk secara otomatis tanpa perlu pairing Bluetooth di browser.</p>
+                   <a href="intent:#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;" className="bg-white text-black font-bold px-8 py-4 rounded-2xl hover:bg-gray-200 transition-all flex items-center gap-2">
+                     Buka Aplikasi RawBT
+                   </a>
                 </div>
               </div>
             )}
           </div>
         </div>
-
-        {reportToPrint && (
-          <div className="hidden print:block print:absolute print:inset-0 print:bg-white print:text-black print:z-[9999] p-8 font-sans">
-            <div className="border-b-4 border-black pb-4 mb-6 flex justify-between items-start">
-               <div>
-                 <img src="https://cdn.lokomart.id/webcorporate/assets/img/logo/_bisnis2.png" alt="Logo" className="h-16 object-contain mb-4" />
-                 <h1 className="text-4xl font-black tracking-tight">{reportToPrint.title || "LAPORAN PENDAPATAN"}</h1>
-                 <p className="text-xl font-medium mt-2">Periode Data: {reportToPrint.date}</p>
-                 <p className="text-md">Lokasi Stasiun: <span className="font-bold">{reportToPrint.location}</span></p>
-                 {reportToPrint.shift && <p className="text-md font-bold uppercase">Shift Kerja: {reportToPrint.shift}</p>}
-                 <p className="text-md">Dicetak pada: {new Date().toLocaleString('id-ID')}</p>
-               </div>
-               {currentUser?.photo && (
-                 <div className="text-center">
-                   <img src={currentUser.photo} alt="Foto Petugas Login" className="w-24 h-24 object-cover border-2 border-black rounded-lg shadow-sm mx-auto mb-1" />
-                   <p className="text-xs font-bold uppercase">{currentUser?.name}</p>
-                 </div>
-               )}
-            </div>
-            
-            <div className="flex gap-10 mb-8">
-               <div className="flex-1 border-2 border-black p-4 rounded-xl">
-                  <p className="text-sm font-bold uppercase text-gray-500">Total Kendaraan</p>
-                  <p className="text-3xl font-black">{reportToPrint.data.length} Unit</p>
-               </div>
-               <div className="flex-1 border-2 border-black p-4 rounded-xl bg-gray-100">
-                  <p className="text-sm font-bold uppercase text-gray-500">Total Setoran Kasir (Rp)</p>
-                  <p className="text-3xl font-black">{reportToPrint.stats.total.toLocaleString('id-ID')}</p>
-               </div>
-            </div>
-
-            <h3 className="text-xl font-bold mb-4">Rincian Pendapatan Per Kategori</h3>
-            <table className="w-full text-left border-collapse border border-gray-300 mb-8">
-              <thead>
-                <tr className="bg-gray-100"><th className="border border-gray-300 p-3">Kategori</th><th className="border border-gray-300 p-3">Qty</th><th className="border border-gray-300 p-3">Nominal (Rp)</th></tr>
-              </thead>
-              <tbody>
-                <tr><td className="border border-gray-300 p-3 font-semibold">Motor / Sepeda</td><td className="border border-gray-300 p-3">{reportToPrint.stats.motorQty}</td><td className="border border-gray-300 p-3">{reportToPrint.stats.motorNom.toLocaleString('id-ID')}</td></tr>
-                <tr><td className="border border-gray-300 p-3 font-semibold">Mobil</td><td className="border border-gray-300 p-3">{reportToPrint.stats.mobilQty}</td><td className="border border-gray-300 p-3">{reportToPrint.stats.mobilNom.toLocaleString('id-ID')}</td></tr>
-                <tr><td className="border border-gray-300 p-3 font-semibold">Truk / Box</td><td className="border border-gray-300 p-3">{reportToPrint.stats.trukQty}</td><td className="border border-gray-300 p-3">{reportToPrint.stats.trukNom.toLocaleString('id-ID')}</td></tr>
-                <tr><td className="border border-gray-300 p-3 font-semibold">Member (Gratis)</td><td className="border border-gray-300 p-3">{reportToPrint.stats.memberQty}</td><td className="border border-gray-300 p-3">0</td></tr>
-              </tbody>
-            </table>
-
-            <h3 className="text-xl font-bold mb-4">Statistik Lama Parkir (Durasi)</h3>
-            <table className="w-full text-left border-collapse border border-gray-300 mb-8">
-              <thead>
-                 <tr className="bg-gray-100"><th className="border border-gray-300 p-3">Durasi</th><th className="border border-gray-300 p-3">Qty</th><th className="border border-gray-300 p-3">Persentase (%)</th></tr>
-              </thead>
-              <tbody>
-                 <tr><td className="border border-gray-300 p-3 font-semibold">1 Jam Pertama</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur1}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur1 / reportToPrint.data.length) * 100) : 0}%</td></tr>
-                 <tr><td className="border border-gray-300 p-3 font-semibold">Di Bawah 3 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur3}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur3 / reportToPrint.data.length) * 100) : 0}%</td></tr>
-                 <tr><td className="border border-gray-300 p-3 font-semibold">Di Bawah 6 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur6}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur6 / reportToPrint.data.length) * 100) : 0}%</td></tr>
-                 <tr><td className="border border-gray-300 p-3 font-semibold">Di Bawah 8 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur8}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur8 / reportToPrint.data.length) * 100) : 0}%</td></tr>
-                 <tr><td className="border border-gray-300 p-3 font-semibold">Di Bawah 12 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur12}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur12 / reportToPrint.data.length) * 100) : 0}%</td></tr>
-                 <tr><td className="border border-gray-300 p-3 font-semibold">&gt; 12 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.durOver12}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.durOver12 / reportToPrint.data.length) * 100) : 0}%</td></tr>
-              </tbody>
-            </table>
-
-            <div className="mt-10 flex justify-end">
-               <div className="text-center w-64">
-                 <p className="mb-4">Dinyatakan & Diverifikasi Oleh,</p>
-                 {currentUser?.photo && (
-                   <img src={currentUser.photo} alt="Tanda Tangan/Selfie Petugas" className="w-24 h-24 object-cover rounded-full mx-auto mb-3 border-2 border-gray-400" />
-                 )}
-                 <p className="font-bold border-b border-black inline-block px-4 pb-1">{reportToPrint.cashier || currentUser?.name}</p>
-                 <p className="text-sm mt-1">{reportToPrint.role || currentUser?.role}</p>
-               </div>
-            </div>
-          </div>
-        )}
       </>
     );
   }
@@ -1449,9 +1390,36 @@ function PrintModal({ transaction, onComplete }) {
       if (isPrinted) return;
       isPrinted = true;
       try {
-        // Attempt to print via browser print dialog
         setTimeout(() => {
-           window.print();
+           let textToPrint = "[C]<b>DEVICE KASIER PARKIR</b>\n";
+           textToPrint += "[C]--------------------------------\n";
+           textToPrint += `[C]LOKASI: ${transaction.location}\n\n`;
+           
+           if (transaction.type === 'masuk') {
+             textToPrint += `[C]TIKET MASUK (${transaction.vehicleType})\n\n`;
+             textToPrint += `[C]<font size='big'>${transaction.plate}</font>\n\n`;
+             textToPrint += `[C]JAM MASUK\n`;
+             textToPrint += `[C]${transaction.time.toLocaleDateString('id-ID')} ${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
+             if (transaction.isMember) {
+               textToPrint += `\n[C]<b>Member Aktif</b>\n`;
+             }
+           } else {
+             textToPrint += `[C]<b>STRUK KELUAR (${transaction.vehicleType})</b>\n`;
+             textToPrint += `[C]<b>Plat: ${transaction.plate}</b>\n\n`;
+             textToPrint += `[L]Masuk:  [R]${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
+             textToPrint += `[L]Keluar: [R]${transaction.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
+             textToPrint += `[L]Durasi: [R]${transaction.durationHours} Jam\n`;
+             textToPrint += "[C]--------------------------------\n";
+             textToPrint += `[C]<b>TOTAL BAYAR</b>\n`;
+             textToPrint += `[C]<font size='big'>${transaction.isMember ? 'GRATIS' : `Rp ${transaction.cost.toLocaleString('id-ID')}`}</font>\n`;
+           }
+           textToPrint += "\n\n\n";
+
+           const S = "#Intent;scheme=rawbt;";
+           const P = "package=ru.a402d.rawbtprinter;end;";
+           const textEncoded = encodeURI(textToPrint);
+           window.location.href = "intent:" + textEncoded + S + P;
+
            setPrintSuccess(true);
            setTimeout(onComplete, 1500);
         }, 500);
