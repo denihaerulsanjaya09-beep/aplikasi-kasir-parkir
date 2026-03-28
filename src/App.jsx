@@ -472,15 +472,19 @@ function MainApp() {
         let savePromise;
         let exitTxForLocal = null;
 
+        // --- PENGAMANAN FORMAT WAKTU (Mencegah error toISOString) ---
+        const safeTimeStr = tx.time instanceof Date ? tx.time.toISOString() : new Date(tx.time || Date.now()).toISOString();
+
         if (tx.type === 'masuk') {
-            const v = { ...tx, photo: photoBase64, time: tx.time.toISOString() };
+            const v = { ...tx, photo: photoBase64, time: safeTimeStr };
             const docRef = doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${safeLoc}`, safePlateId);
             savePromise = setDoc(docRef, v);
         } else if (tx.type === 'keluar') {
             const docRefDelete = doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${safeLoc}`, safePlateId);
             await deleteDoc(docRefDelete);
 
-            const exitTx = { ...tx, exitPhoto: photoBase64, time: tx.time.toISOString(), exitTime: tx.exitTime.toISOString() };
+            const safeExitTimeStr = tx.exitTime instanceof Date ? tx.exitTime.toISOString() : new Date(tx.exitTime || Date.now()).toISOString();
+            const exitTx = { ...tx, exitPhoto: photoBase64, time: safeTimeStr, exitTime: safeExitTimeStr };
             const businessStr = getBusinessDateStr(new Date());
             const historyDocRef = doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${safeLoc}_${businessStr}`, `${safePlateId}_${Date.now()}`);
             savePromise = setDoc(historyDocRef, exitTx);
@@ -503,12 +507,14 @@ function MainApp() {
         console.error("Database Error Detail:", err);
         setIsSaving(false);
         
-        if (err.message === "TIMEOUT_ERROR") {
+        const errMsg = String(err.message || err.code || err);
+        
+        if (errMsg.includes("TIMEOUT_ERROR")) {
              alert("GAGAL MENYIMPAN: Koneksi internet Anda lambat atau terputus. Data gagal terkirim ke server.");
-        } else if (err.code === 'permission-denied') {
-             alert("GAGAL MENYIMPAN (Akses Ditolak): Anda belum mengizinkan aplikasi menulis ke Database Anda.\n\nBuka Firebase Console -> Firestore Database -> Rules, ubah rules Anda menjadi:\n'allow read, write: if true;'");
+        } else if (errMsg.includes('permission-denied') || errMsg.includes('Missing or insufficient permissions')) {
+             alert("GAGAL MENYIMPAN (Akses Database Ditolak)!\n\nKonfigurasi Anda di foto 13 sudah BENAR, TAPI Aturan (Rules) Firebase Anda belum dibuka.\n\nSOLUSI WAJIB:\n1. Buka Firebase Console > Firestore Database\n2. Klik tab 'Rules' (Aturan)\n3. Ubah aturannya menjadi: allow read, write: if true;\n4. Klik Publish (Terbitkan).");
         } else {
-             alert(`Gagal menyimpan data ke server! (${err.message})`);
+             alert(`Gagal menyimpan data ke server! Detail Error: ${errMsg}`);
         }
     }
   };
