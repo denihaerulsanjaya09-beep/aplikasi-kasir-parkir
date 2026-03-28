@@ -196,7 +196,7 @@ function MainApp() {
   const [adminReports, setAdminReports] = useState([]);
   const [isLoadingReports, setIsLoadingReports] = useState(false);
 
-  // BUG FIX: Mendefinisikan canAccessSettings
+  // Mendefinisikan canAccessSettings
   const canAccessSettings = currentUser && (currentUser.role === 'Master' || currentUser.role === 'Korlap' || currentUser.role === 'Auditor');
 
   // ==================================================
@@ -206,7 +206,6 @@ function MainApp() {
     if (!auth) return;
     const initAuth = async () => {
       try {
-        // Karena memakai Firebase mandiri, kita wajibkan Anonymous Sign In
         await signInAnonymously(auth);
       } catch (e) { console.error("Firebase Auth Error:", e); }
     };
@@ -234,7 +233,6 @@ function MainApp() {
       if (snap.exists()) {
         const d = snap.data();
         
-        // BUG FIX: Merge database lama dengan Default agar tidak undefined (penyebab blank putih)
         const safeTariffs = { ...DEFAULT_TARIFFS };
         if (d.tariffs) {
            Object.keys(DEFAULT_TARIFFS).forEach(key => {
@@ -256,7 +254,7 @@ function MainApp() {
       const items = [];
       snap.forEach(d => {
          const data = d.data();
-         items.push({ ...data, time: data.time ? new Date(data.time) : new Date() }); // Cegah Date Undefined
+         items.push({ ...data, time: data.time ? new Date(data.time) : new Date() });
       });
       setParkedVehicles(items);
     }, (err) => console.error(err));
@@ -294,7 +292,6 @@ function MainApp() {
         time: now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
       });
 
-      // LOCKOUT HANYA UNTUK KASIER, MASTER/KORLAP/AUDITOR BEBAS
       if (currentUser && currentUser.role === 'Kasier' && shiftRef.current && shiftRef.current !== shiftName) {
         setIsShiftLocked(true);
         setShowReportModal(true);
@@ -318,10 +315,15 @@ function MainApp() {
     const data = new FormData(e.target);
     const user = data.get('username'), pwd = data.get('password'), nip = data.get('nipkwt'), location = data.get('location');
     if (!user || !pwd || !nip || !location) return alert("Mohon isi semua data login termasuk lokasi stasiun!");
-    const foundUser = usersList.find(u => u.username === user && u.nipkwt === nip && u.password === pwd);
-    if (!foundUser) return alert("Akses Ditolak: Username, NIPKWT, atau Password tidak valid!");
     
-    setPendingLoginUser({ name: foundUser.username, nipkwt: foundUser.nipkwt, role: foundUser.role, location });
+    // ATURAN BARU: Pencarian role login HANYA dipicu dari NIPKWT dan Password.
+    const foundUser = usersList.find(u => u.nipkwt === nip && u.password === pwd);
+    
+    if (!foundUser) return alert("Akses Ditolak: NIPKWT atau Password tidak valid!");
+    
+    // Variabel "user" (kolom nama yang diketik) tetap digunakan secara bebas 
+    // untuk mengakomodir jika ada beberapa kasir dalam 1 shift
+    setPendingLoginUser({ name: user, nipkwt: foundUser.nipkwt, role: foundUser.role, location });
     setShowLoginCamera(true);
   };
 
@@ -486,7 +488,7 @@ function MainApp() {
     const dateStr = new Date().toLocaleDateString('id-ID');
 
     const triggerAction = (actionType) => {
-      const payload = { type: 'report', title: 'LAPORAN KASIR (SHIFT)', stats: s, date: dateStr, shift: shiftInfo.name, location: currentUser?.location, cashier: currentUser?.name, data: myShiftTx };
+      const payload = { type: 'report', title: 'LAPORAN KASIR (SHIFT)', stats: s, date: dateStr, shift: shiftInfo.name, location: currentUser?.location, cashier: currentUser?.name, role: 'Petugas Kasir', data: myShiftTx };
       
       if(actionType === 'wa') {
         const msg = `*LAPORAN SHIFT KASIR*\n📍 Lokasi: ${currentUser?.location}\n🗓 ${dateStr}\n👤 ${currentUser?.name} (${currentUser?.nipkwt})\n🕒 ${shiftInfo.name}\n\n*RINCIAN:*\n🏍 Motor: ${s.motorQty} (Rp ${s.motorNom.toLocaleString()})\n🚗 Mobil: ${s.mobilQty} (Rp ${s.mobilNom.toLocaleString()})\n🚚 Box: ${s.trukQty} (Rp ${s.trukNom.toLocaleString()})\n💳 Member: ${s.memberQty}\n\n*TOTAL STORAN: Rp ${s.total.toLocaleString()}*`;
@@ -573,7 +575,7 @@ function MainApp() {
                   {LOCATIONS.map(loc => <option key={loc} value={loc}>{loc}</option>)}
                 </select>
               </div>
-              <input name="username" placeholder="Nama User" className="w-full bg-black/30 border border-white/10 rounded-xl p-4 text-[17px] outline-none focus:ring-2 focus:ring-green-500/50 transition-all placeholder:text-white/40 text-white" required />
+              <input name="username" placeholder="Nama Kasir / Petugas (Bebas)" className="w-full bg-black/30 border border-white/10 rounded-xl p-4 text-[17px] outline-none focus:ring-2 focus:ring-green-500/50 transition-all placeholder:text-white/40 text-white" required />
               <input name="nipkwt" placeholder="NIPKWT User" className="w-full bg-black/30 border border-white/10 rounded-xl p-4 text-[17px] outline-none focus:ring-2 focus:ring-green-500/50 transition-all placeholder:text-white/40 text-white" required />
               <input name="password" type="password" placeholder="Password" className="w-full bg-black/30 border border-white/10 rounded-xl p-4 text-[17px] outline-none focus:ring-2 focus:ring-green-500/50 transition-all placeholder:text-white/40 text-white" required />
             </div>
@@ -814,7 +816,8 @@ function MainApp() {
        let title = `LAPORAN PENDAPATAN (${reportFilterType.toUpperCase()})`;
        let sub = adminSelectedDate;
        if(reportFilterType==='shift') sub = `${adminSelectedDate} | ${reportFilterShift}`;
-       setReportToPrint({ type: 'report', title, date: sub, stats: s, data: adminReports, location: currentUser?.location });
+       // Menyertakan nama user dan jabatannya dalam parameter laporan untuk di cetak
+       setReportToPrint({ type: 'report', title, date: sub, stats: s, data: adminReports, location: currentUser?.location, cashier: currentUser?.name, role: currentUser?.role });
     };
 
     const exportWALaporan = () => {
@@ -866,7 +869,7 @@ function MainApp() {
         <div className="flex flex-col md:flex-row h-screen bg-[#0A1A13] text-white overflow-hidden print:hidden font-sans">
           <div className="w-full md:w-80 bg-[#0F2E1F] border-r border-white/10 p-6 flex flex-col md:h-full z-20">
             <div className="flex justify-between items-center mb-8">
-              <h1 className="text-2xl font-bold tracking-tight text-green-400">Panel Master</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-green-400">Panel Admin & Laporan</h1>
               <button onClick={() => setView('dashboard')} className="p-2 bg-white/5 hover:bg-white/20 rounded-full transition-colors"><X size={20}/></button>
             </div>
 
@@ -1010,7 +1013,7 @@ function MainApp() {
                 <h2 className="text-3xl font-extrabold mb-6">Manajemen User (Global)</h2>
                 {isEditor && (
                   <form onSubmit={handleAddUser} className="bg-white/5 border border-white/10 p-6 rounded-[24px] grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
-                    <div className="md:col-span-1"><label className="text-xs text-white/60 mb-1 block">Username</label><input required value={newUser.username} onChange={e=>setNewUser({...newUser, username: e.target.value})} className="w-full bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white" /></div>
+                    <div className="md:col-span-1"><label className="text-xs text-white/60 mb-1 block">Username Default</label><input required value={newUser.username} onChange={e=>setNewUser({...newUser, username: e.target.value})} className="w-full bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white" /></div>
                     <div className="md:col-span-1"><label className="text-xs text-white/60 mb-1 block">NIPKWT</label><input required value={newUser.nipkwt} onChange={e=>setNewUser({...newUser, nipkwt: e.target.value})} className="w-full bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white" /></div>
                     <div className="md:col-span-1"><label className="text-xs text-white/60 mb-1 block">Password</label><input required value={newUser.password} onChange={e=>setNewUser({...newUser, password: e.target.value})} className="w-full bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white" /></div>
                     <div className="md:col-span-1"><label className="text-xs text-white/60 mb-1 block">Role</label>
@@ -1023,7 +1026,7 @@ function MainApp() {
                 )}
                 <div className="bg-white/5 border border-white/10 rounded-[24px] overflow-hidden">
                   <table className="w-full text-left text-sm">
-                    <thead className="bg-black/40"><tr><th className="p-4">Username</th><th className="p-4">NIPKWT</th><th className="p-4">Role</th>{isEditor && <th className="p-4 text-center">Aksi</th>}</tr></thead>
+                    <thead className="bg-black/40"><tr><th className="p-4">Username Label</th><th className="p-4">NIPKWT (ID)</th><th className="p-4">Role</th>{isEditor && <th className="p-4 text-center">Aksi</th>}</tr></thead>
                     <tbody>
                       {usersList.map((u, i) => (
                         <tr key={i} className="border-t border-white/5 hover:bg-white/5 transition-colors">
@@ -1306,7 +1309,7 @@ function MainApp() {
                    <img src={currentUser.photo} alt="Tanda Tangan/Selfie Petugas" className="w-24 h-24 object-cover rounded-full mx-auto mb-3 border-2 border-gray-400" />
                  )}
                  <p className="font-bold border-b border-black inline-block px-4 pb-1">{reportToPrint.cashier || currentUser?.name}</p>
-                 <p className="text-sm mt-1">{reportToPrint.cashier ? "Petugas Kasir" : currentUser?.role}</p>
+                 <p className="text-sm mt-1">{reportToPrint.role || currentUser?.role}</p>
                </div>
             </div>
           </div>
