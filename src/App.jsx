@@ -4,20 +4,27 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, getDocs } from 'firebase/firestore';
 
+// --- BUG FIX: Mencegah error "tailwind is not defined" dari environment ---
+if (typeof window !== 'undefined') {
+  window.tailwind = window.tailwind || {};
+  window.tailwind.config = window.tailwind.config || {};
+}
+
 // =====================================
 // KONFIGURASI FIREBASE (WAJIB ADA)
 // =====================================
 let app, auth, db;
 try {
+  // Konfigurasi menggunakan database resparking-v2 milik Anda
   const firebaseConfig = {
-  apiKey: "AIzaSyAPmH7VEU8aaawlE_QSIfrHrgU3jykn22s",
-  authDomain: "resparking-v2.firebaseapp.com",
-  projectId: "resparking-v2",
-  storageBucket: "resparking-v2.firebasestorage.app",
-  messagingSenderId: "760869381020",
-  appId: "1:760869381020:web:bb74989c1c4bb4d51b9e59"
-};
-
+    apiKey: "AIzaSyAPmH7VEU8aaawlE_QSIfrHrgU3jykn22s",
+    authDomain: "resparking-v2.firebaseapp.com",
+    projectId: "resparking-v2",
+    storageBucket: "resparking-v2.firebasestorage.app",
+    messagingSenderId: "760869381020",
+    appId: "1:760869381020:web:bb74989c1c4bb4d51b9e59"
+  };
+  
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
@@ -82,16 +89,71 @@ const getDatesInRange = (start, end) => {
   return [...new Set(arr)]; // Unique
 };
 
-export default function App() {
+// ==========================================================
+// ERROR BOUNDARY (PENCEGAH BLANK PUTIH)
+// ==========================================================
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("App Crashed:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-[#0A1A13] flex flex-col items-center justify-center p-6 text-white font-sans">
+          <div className="bg-[#0F2E1F] border border-red-500/50 p-8 rounded-3xl max-w-md w-full text-center shadow-2xl">
+            <div className="bg-red-500/20 text-red-500 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
+              <AlertTriangle size={40} />
+            </div>
+            <h1 className="text-2xl font-bold mb-2">Terjadi Kesalahan (Crash)</h1>
+            <p className="text-white/60 text-sm mb-6">Aplikasi mengalami kendala akibat data cache yang usang. Silakan reset aplikasi untuk memulihkannya.</p>
+            <div className="bg-black/50 p-4 rounded-xl text-red-400 text-xs text-left overflow-auto max-h-32 mb-6 font-mono border border-red-500/20">
+              {this.state.error?.toString()}
+            </div>
+            <button
+              onClick={() => { localStorage.clear(); window.location.reload(); }}
+              className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-4 rounded-xl shadow-lg transition-all"
+            >
+              Hapus Cache & Muat Ulang
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// =====================================
+// KOMPONEN UTAMA
+// =====================================
+function MainApp() {
   const [fbUser, setFbUser] = useState(null);
   const [isDbReady, setIsDbReady] = useState(false);
 
+  // BUG FIX: Gunakan Try-Catch agar tidak blank putih saat localStorage corrupt
   const [currentUser, setCurrentUser] = useState(() => {
-    const savedUser = localStorage.getItem('app_currentUser');
-    return savedUser ? JSON.parse(savedUser) : null;
+    try {
+      const savedUser = localStorage.getItem('app_currentUser');
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch(e) {
+      localStorage.removeItem('app_currentUser');
+      return null;
+    }
   });
+  
   const [view, setView] = useState(() => {
-    return localStorage.getItem('app_currentUser') ? 'dashboard' : 'login';
+    try {
+      return localStorage.getItem('app_currentUser') ? 'dashboard' : 'login';
+    } catch (e) {
+      return 'login';
+    }
   }); 
 
   // --- STATE OPERASIONAL KASIR ---
@@ -141,9 +203,8 @@ export default function App() {
     if (!auth) return;
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else { await signInAnonymously(auth); }
+        // Karena memakai Firebase mandiri, kita wajibkan Anonymous Sign In
+        await signInAnonymously(auth);
       } catch (e) { console.error("Firebase Auth Error:", e); }
     };
     initAuth();
@@ -169,7 +230,17 @@ export default function App() {
     const unsubConf = onSnapshot(confRef, (snap) => {
       if (snap.exists()) {
         const d = snap.data();
-        setTariffs(d.tariffs || DEFAULT_TARIFFS); setMembers(d.members || DEFAULT_MEMBERS);
+        
+        // BUG FIX: Merge database lama dengan Default agar tidak undefined (penyebab blank putih)
+        const safeTariffs = { ...DEFAULT_TARIFFS };
+        if (d.tariffs) {
+           Object.keys(DEFAULT_TARIFFS).forEach(key => {
+              safeTariffs[key] = { ...DEFAULT_TARIFFS[key], ...(d.tariffs[key] || {}) };
+           });
+        }
+        setTariffs(safeTariffs);
+        
+        setMembers(d.members || DEFAULT_MEMBERS);
         setRunningText(d.runningText || 'Selamat Datang di Sistem Layanan Parkir Resparking');
         if (d.customLogo !== undefined) setCustomLogo(d.customLogo);
       } else {
@@ -180,7 +251,10 @@ export default function App() {
     const pvRef = collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${loc}`);
     const unsubPv = onSnapshot(pvRef, (snap) => {
       const items = [];
-      snap.forEach(d => items.push({ ...d.data(), time: new Date(d.data().time) }));
+      snap.forEach(d => {
+         const data = d.data();
+         items.push({ ...data, time: data.time ? new Date(data.time) : new Date() }); // Cegah Date Undefined
+      });
       setParkedVehicles(items);
     }, (err) => console.error(err));
 
@@ -188,7 +262,10 @@ export default function App() {
     const txRef = collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${loc}_${todayBusinessStr}`);
     const unsubTx = onSnapshot(txRef, (snap) => {
       const items = [];
-      snap.forEach(d => items.push({ ...d.data(), time: new Date(d.data().time), exitTime: d.data().exitTime ? new Date(d.data().exitTime) : null }));
+      snap.forEach(d => {
+         const data = d.data();
+         items.push({ ...data, time: data.time ? new Date(data.time) : new Date(), exitTime: data.exitTime ? new Date(data.exitTime) : null });
+      });
       setShiftTransactions(items);
     }, (err) => console.error(err));
 
@@ -258,6 +335,7 @@ export default function App() {
   };
 
   const getBusinessDate = (dateObj) => {
+    if (!dateObj) return '';
     const d = new Date(dateObj);
     if (d.getHours() < 6) d.setDate(d.getDate() - 1); 
     return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -714,7 +792,7 @@ export default function App() {
              snaps.forEach(snap => {
                  snap.forEach(doc => {
                      const data = doc.data();
-                     allData.push({ ...data, time: new Date(data.time), exitTime: data.exitTime ? new Date(data.exitTime) : null });
+                     allData.push({ ...data, time: data.time ? new Date(data.time) : new Date(), exitTime: data.exitTime ? new Date(data.exitTime) : null });
                  });
              });
          }
@@ -825,35 +903,37 @@ export default function App() {
               <div className="space-y-8 max-w-4xl animate-fade-in">
                 <h2 className="text-3xl font-extrabold mb-6">Atur Tarif Parkir</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {VEHICLE_TYPES.map(type => (
+                  {VEHICLE_TYPES.map(type => {
+                    const t = tariffs[type] || DEFAULT_TARIFFS[type]; // Cegah undefined jika kategori baru ditambahkan
+                    return (
                     <div key={type} className={`bg-white/5 border border-white/10 p-6 rounded-[24px] ${!isEditor && 'opacity-70 pointer-events-none'}`}>
                       <div className="flex justify-between items-center mb-4">
                         <h3 className="text-xl font-bold text-green-300">Tarif {type}</h3>
                         <div className="flex bg-black/50 rounded-full p-1 cursor-pointer">
-                          <button onClick={() => { if (!isEditor) return; const newTariffs = {...tariffs, [type]: {...tariffs[type], type: 'progresif'}}; setTariffs(newTariffs); updateLocConfig({ tariffs: newTariffs }); }} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${tariffs[type].type !== 'flat' ? 'bg-green-500 text-black shadow-md' : 'text-white/50 hover:text-white'}`} disabled={!isEditor}>Progresif</button>
-                          <button onClick={() => { if (!isEditor) return; const newTariffs = {...tariffs, [type]: {...tariffs[type], type: 'flat'}}; setTariffs(newTariffs); updateLocConfig({ tariffs: newTariffs }); }} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${tariffs[type].type === 'flat' ? 'bg-green-500 text-black shadow-md' : 'text-white/50 hover:text-white'}`} disabled={!isEditor}>Flat</button>
+                          <button onClick={() => { if (!isEditor) return; const newTariffs = {...tariffs, [type]: {...t, type: 'progresif'}}; setTariffs(newTariffs); updateLocConfig({ tariffs: newTariffs }); }} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${t.type !== 'flat' ? 'bg-green-500 text-black shadow-md' : 'text-white/50 hover:text-white'}`} disabled={!isEditor}>Progresif</button>
+                          <button onClick={() => { if (!isEditor) return; const newTariffs = {...tariffs, [type]: {...t, type: 'flat'}}; setTariffs(newTariffs); updateLocConfig({ tariffs: newTariffs }); }} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${t.type === 'flat' ? 'bg-green-500 text-black shadow-md' : 'text-white/50 hover:text-white'}`} disabled={!isEditor}>Flat</button>
                         </div>
                       </div>
                       <div className="space-y-4">
                         <div className="flex justify-between items-center gap-4">
                           <label className="text-sm text-white/60 w-1/3">Tarif Awal</label>
-                          <input type="number" value={tariffs[type].first} onChange={(e) => { const newTariffs = {...tariffs, [type]: {...tariffs[type], first: parseInt(e.target.value)}}; setTariffs(newTariffs); updateLocConfig({ tariffs: newTariffs }); }} readOnly={!isEditor} className={`flex-1 bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white ${!isEditor && 'bg-black/10'}`} />
+                          <input type="number" value={t.first} onChange={(e) => { const newTariffs = {...tariffs, [type]: {...t, first: parseInt(e.target.value)}}; setTariffs(newTariffs); updateLocConfig({ tariffs: newTariffs }); }} readOnly={!isEditor} className={`flex-1 bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white ${!isEditor && 'bg-black/10'}`} />
                         </div>
-                        <div className={`flex justify-between items-center gap-4 transition-opacity ${tariffs[type].type === 'flat' ? 'opacity-30 pointer-events-none' : ''}`}>
+                        <div className={`flex justify-between items-center gap-4 transition-opacity ${t.type === 'flat' ? 'opacity-30 pointer-events-none' : ''}`}>
                           <label className="text-sm text-white/60 w-1/3">Jam Berikutnya</label>
-                          <input type="number" value={tariffs[type].next} onChange={(e) => { const newTariffs = {...tariffs, [type]: {...tariffs[type], next: parseInt(e.target.value)}}; setTariffs(newTariffs); updateLocConfig({ tariffs: newTariffs }); }} readOnly={!isEditor} className={`flex-1 bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white ${!isEditor && 'bg-black/10'}`} />
+                          <input type="number" value={t.next} onChange={(e) => { const newTariffs = {...tariffs, [type]: {...t, next: parseInt(e.target.value)}}; setTariffs(newTariffs); updateLocConfig({ tariffs: newTariffs }); }} readOnly={!isEditor} className={`flex-1 bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white ${!isEditor && 'bg-black/10'}`} />
                         </div>
-                        <div className={`flex justify-between items-center gap-4 transition-opacity ${tariffs[type].type === 'flat' ? 'opacity-30 pointer-events-none' : ''}`}>
+                        <div className={`flex justify-between items-center gap-4 transition-opacity ${t.type === 'flat' ? 'opacity-30 pointer-events-none' : ''}`}>
                           <label className="text-sm text-white/60 w-1/3">Maksimal / Hari</label>
-                          <input type="number" value={tariffs[type].max} onChange={(e) => { const newTariffs = {...tariffs, [type]: {...tariffs[type], max: parseInt(e.target.value)}}; setTariffs(newTariffs); updateLocConfig({ tariffs: newTariffs }); }} readOnly={!isEditor} className={`flex-1 bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white ${!isEditor && 'bg-black/10'}`} />
+                          <input type="number" value={t.max} onChange={(e) => { const newTariffs = {...tariffs, [type]: {...t, max: parseInt(e.target.value)}}; setTariffs(newTariffs); updateLocConfig({ tariffs: newTariffs }); }} readOnly={!isEditor} className={`flex-1 bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white ${!isEditor && 'bg-black/10'}`} />
                         </div>
                         <div className="flex justify-between items-center gap-4">
                           <label className="text-sm text-white/60 w-1/3">Tarif Menginap</label>
-                          <input type="number" value={tariffs[type].overnight} onChange={(e) => { const newTariffs = {...tariffs, [type]: {...tariffs[type], overnight: parseInt(e.target.value)}}; setTariffs(newTariffs); updateLocConfig({ tariffs: newTariffs }); }} readOnly={!isEditor} className={`flex-1 bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white ${!isEditor && 'bg-black/10'}`} />
+                          <input type="number" value={t.overnight} onChange={(e) => { const newTariffs = {...tariffs, [type]: {...t, overnight: parseInt(e.target.value)}}; setTariffs(newTariffs); updateLocConfig({ tariffs: newTariffs }); }} readOnly={!isEditor} className={`flex-1 bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white ${!isEditor && 'bg-black/10'}`} />
                         </div>
                       </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
 
                 <div className={`bg-white/5 border border-white/10 p-6 rounded-[24px] ${!isEditor && 'opacity-80 pointer-events-none'}`}>
@@ -946,7 +1026,7 @@ export default function App() {
                         <tr key={i} className="border-t border-white/5 hover:bg-white/5 transition-colors">
                           <td className="p-4 font-bold">{u.username}</td><td className="p-4">{u.nipkwt}</td>
                           <td className="p-4">
-                            <span className={`px-2 py-1 rounded-md text-xs font-bold ${u.role==='Master'?'bg-orange-500/20 text-orange-400':u.role==='Auditor'?'bg-purple-500/20 text-purple-400':u.role==='Korlap'?'bg-blue-500/20 text-blue-400':'bg-green-500/20 text-green-400'}`}>{u.role.toUpperCase()}</span>
+                            <span className={`px-2 py-1 rounded-md text-xs font-bold ${u.role==='Master'?'bg-orange-500/20 text-orange-400':u.role==='Auditor'?'bg-purple-500/20 text-purple-400':u.role==='Korlap'?'bg-blue-500/20 text-blue-400':'bg-green-500/20 text-green-400'}`}>{(u.role || 'KASIER').toUpperCase()}</span>
                           </td>
                           {isEditor && (
                             <td className="p-4 text-center">
@@ -1356,5 +1436,13 @@ function PrintModal({ transaction, onComplete }) {
         )}
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <MainApp />
+    </ErrorBoundary>
   );
 }
