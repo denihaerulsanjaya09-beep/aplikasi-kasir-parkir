@@ -295,11 +295,15 @@ function MainApp() {
      }
   }, [settingsMenu]);
 
-  // FUNGSI BARU: Mengambil Histori Login (Dipindahkan ke luar kondisi agar tidak melanggar aturan Hooks #310)
+  // FUNGSI BARU: Mengambil Histori Login (Sesuai dengan Cut-Off Pendapatan)
   const fetchLoginHistory = async () => {
      setIsLoadingHistory(true);
      try {
-         const snap = await getDocs(collection(db, 'artifacts', DB_APP_ID, 'public', 'data', 'loginHistory'));
+         if (!db || !currentUser?.location) return;
+         const safeLoc = String(currentUser.location || 'default').replace(/\//g, '-');
+         const businessStr = getBusinessDateStr(new Date()); // Hanya ambil hari ini (cut off)
+         
+         const snap = await getDocs(collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `loginHistory_${safeLoc}_${businessStr}`));
          const items = [];
          snap.forEach(d => {
              items.push(d.data());
@@ -380,11 +384,14 @@ function MainApp() {
     setView('dashboard');
     setPlateMasuk(''); setPlateKeluar(''); setIsShiftLocked(false); shiftRef.current = ''; setActiveTab('masuk');
 
-    // Menuliskan Histori Login ke Firebase
+    // Menuliskan Histori Login ke Firebase (Disesuaikan dengan format cut off)
     if (db) {
         try {
             const docId = `${loggedInUser.nipkwt}_${Date.now()}`;
-            await setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', 'loginHistory', docId), {
+            const safeLoc = String(loggedInUser.location || 'default').replace(/\//g, '-');
+            const businessStr = getBusinessDateStr(new Date());
+            
+            await setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `loginHistory_${safeLoc}_${businessStr}`, docId), {
                 name: loggedInUser.name,
                 nipkwt: loggedInUser.nipkwt,
                 role: loggedInUser.role,
@@ -411,12 +418,15 @@ function MainApp() {
   };
 
   const generateReportStats = (transactions) => {
-    let stats = { motorQty: 0, motorNom: 0, mobilQty: 0, mobilNom: 0, trukQty: 0, trukNom: 0, memberQty: 0, total: 0, durUnder1: 0, dur1to3: 0, durOver3: 0 };
+    let stats = { motorQty: 0, motorNom: 0, mobilQty: 0, mobilNom: 0, trukQty: 0, trukNom: 0, memberQty: 0, total: 0, durUnder1: 0, dur1to3: 0, dur3to8: 0, dur8to12: 0, durOver12: 0 };
     transactions.forEach(t => {
       const hrs = t.durationHours || 1;
+      // Kategori Durasi Lama Parkir Baru
       if (hrs <= 1) stats.durUnder1++;
       else if (hrs <= 3) stats.dur1to3++;
-      else stats.durOver3++;
+      else if (hrs <= 8) stats.dur3to8++;
+      else if (hrs <= 12) stats.dur8to12++;
+      else stats.durOver12++;
 
       if (t.isMember) {
         stats.memberQty++;
@@ -1129,7 +1139,7 @@ function MainApp() {
                 <div className="flex justify-between items-end mb-6">
                    <div>
                      <h2 className="text-3xl font-extrabold mb-2">Histori Akses Login</h2>
-                     <p className="text-white/50 text-sm">Rekaman aktivitas login seluruh petugas dan admin, lengkap dengan foto wajah untuk keamanan dan absensi.</p>
+                     <p className="text-white/50 text-sm">Rekaman aktivitas login dari <b>hari bisnis saat ini (Cut-off Harian)</b>. Data otomatis direset setiap berganti shift cut-off.</p>
                    </div>
                    <button onClick={fetchLoginHistory} className="bg-white/10 hover:bg-white/20 p-3 rounded-xl transition-colors">
                       <Search size={20} />
@@ -1140,7 +1150,7 @@ function MainApp() {
                    {isLoadingHistory ? (
                        <div className="py-10 text-center flex flex-col items-center text-white/40"><div className="w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full animate-spin mb-4"></div>Memuat Data Akses...</div>
                    ) : loginHistoryData.length === 0 ? (
-                       <div className="py-10 text-center text-white/40 border-t border-white/5">Belum ada data histori login di sistem.</div>
+                       <div className="py-10 text-center text-white/40 border-t border-white/5">Belum ada data histori login untuk hari bisnis ini.</div>
                    ) : (
                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                            {loginHistoryData.map((log, i) => (
@@ -1373,7 +1383,9 @@ function MainApp() {
                                const totalP = adminReports.length;
                                const pUnder1 = totalP ? Math.round((stats.durUnder1 / totalP) * 100) : 0;
                                const p1to3 = totalP ? Math.round((stats.dur1to3 / totalP) * 100) : 0;
-                               const pOver3 = totalP ? Math.round((stats.durOver3 / totalP) * 100) : 0;
+                               const p3to8 = totalP ? Math.round((stats.dur3to8 / totalP) * 100) : 0;
+                               const p8to12 = totalP ? Math.round((stats.dur8to12 / totalP) * 100) : 0;
+                               const pOver12 = totalP ? Math.round((stats.durOver12 / totalP) * 100) : 0;
 
                                return (
                                  <>
@@ -1384,18 +1396,26 @@ function MainApp() {
 
                                   <div className="bg-black/30 p-5 rounded-xl col-span-2 md:col-span-4 mt-2">
                                      <h4 className="font-bold text-white/80 mb-4 border-b border-white/10 pb-2">Lama Parkir (Durasi Menginap)</h4>
-                                     <div className="flex flex-col md:flex-row gap-6">
-                                        <div className="flex-1">
-                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>&lt; 1 Jam ({stats.durUnder1} unit)</span><span className="font-bold text-green-400">{pUnder1}%</span></div>
+                                     <div className="flex flex-wrap gap-4">
+                                        <div className="flex-1 min-w-[120px]">
+                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>&lt; 1 Jam ({stats.durUnder1})</span><span className="font-bold text-green-400">{pUnder1}%</span></div>
                                            <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-green-500 h-full transition-all" style={{width: `${pUnder1}%`}}></div></div>
                                         </div>
-                                        <div className="flex-1">
-                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>1 - 3 Jam ({stats.dur1to3} unit)</span><span className="font-bold text-blue-400">{p1to3}%</span></div>
+                                        <div className="flex-1 min-w-[120px]">
+                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>1 - 3 Jam ({stats.dur1to3})</span><span className="font-bold text-blue-400">{p1to3}%</span></div>
                                            <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-blue-500 h-full transition-all" style={{width: `${p1to3}%`}}></div></div>
                                         </div>
-                                        <div className="flex-1">
-                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>&gt; 3 Jam ({stats.durOver3} unit)</span><span className="font-bold text-red-400">{pOver3}%</span></div>
-                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-red-500 h-full transition-all" style={{width: `${pOver3}%`}}></div></div>
+                                        <div className="flex-1 min-w-[120px]">
+                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>3 - 8 Jam ({stats.dur3to8})</span><span className="font-bold text-yellow-400">{p3to8}%</span></div>
+                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-yellow-500 h-full transition-all" style={{width: `${p3to8}%`}}></div></div>
+                                        </div>
+                                        <div className="flex-1 min-w-[120px]">
+                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>8 - 12 Jam ({stats.dur8to12})</span><span className="font-bold text-orange-400">{p8to12}%</span></div>
+                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-orange-500 h-full transition-all" style={{width: `${p8to12}%`}}></div></div>
+                                        </div>
+                                        <div className="flex-1 min-w-[120px]">
+                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>&gt; 12 Jam ({stats.durOver12})</span><span className="font-bold text-red-400">{pOver12}%</span></div>
+                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-red-500 h-full transition-all" style={{width: `${pOver12}%`}}></div></div>
                                         </div>
                                      </div>
                                   </div>
@@ -1557,7 +1577,9 @@ function MainApp() {
               <tbody>
                  <tr><td className="border border-gray-300 p-3 font-semibold">&lt; 1 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.durUnder1}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.durUnder1 / reportToPrint.data.length) * 100) : 0}%</td></tr>
                  <tr><td className="border border-gray-300 p-3 font-semibold">1 - 3 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur1to3}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur1to3 / reportToPrint.data.length) * 100) : 0}%</td></tr>
-                 <tr><td className="border border-gray-300 p-3 font-semibold">&gt; 3 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.durOver3}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.durOver3 / reportToPrint.data.length) * 100) : 0}%</td></tr>
+                 <tr><td className="border border-gray-300 p-3 font-semibold">3 - 8 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur3to8}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur3to8 / reportToPrint.data.length) * 100) : 0}%</td></tr>
+                 <tr><td className="border border-gray-300 p-3 font-semibold">8 - 12 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur8to12}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur8to12 / reportToPrint.data.length) * 100) : 0}%</td></tr>
+                 <tr><td className="border border-gray-300 p-3 font-semibold">&gt; 12 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.durOver12}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.durOver12 / reportToPrint.data.length) * 100) : 0}%</td></tr>
               </tbody>
             </table>
 
