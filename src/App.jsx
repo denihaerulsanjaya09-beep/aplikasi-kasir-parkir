@@ -595,19 +595,7 @@ function MainApp() {
     setCapturedImage(null);
   };
 
-  const pairBluetooth = async () => {
-    try {
-      if (!navigator.bluetooth) throw new Error("Browser ini tidak mendukung Web Bluetooth. Gunakan Chrome untuk PC/Android.");
-      const device = await navigator.bluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: PRINTER_SERVICES
-      });
-      setConnectedPrinter({ name: device.name || 'Printer Kasir Thermal', id: device.id });
-      alert(`Berhasil menyandingkan: ${device.name || 'Printer Kasir Thermal'}`);
-    } catch (err) {
-      alert("Proses sanding dibatalkan atau gagal: " + err.message);
-    }
-  };
+  // Fungsi pairBluetooth bawaan browser dihapus karena telah digantikan integrasi RawBT
 
   useEffect(() => {
     if (reportToPrint) {
@@ -1520,13 +1508,13 @@ function MainApp() {
               <div className="space-y-6 max-w-2xl animate-fade-in">
                 <h2 className="text-3xl font-extrabold mb-6">Device & Printer</h2>
                 <div className="bg-white/5 border border-white/10 p-8 rounded-[24px] flex flex-col items-center justify-center text-center">
-                   <div className={`p-6 rounded-full mb-6 ${connectedPrinter ? 'bg-green-500/20 text-green-400' : 'bg-white/10 text-white/40'}`}>
-                      <Bluetooth size={64} />
+                   <div className="p-6 rounded-full mb-6 bg-green-500/20 text-green-400">
+                      <Printer size={64} />
                    </div>
-                   <h3 className="text-xl font-bold mb-2">{connectedPrinter ? connectedPrinter.name : 'Belum Ada Printer Terhubung'}</h3>
-                   <p className="text-sm text-white/50 mb-8 max-w-md">Menyambungkan printer Bluetooth termal memungkinkan aplikasi untuk mencetak tiket dan struk laporan langsung dari browser Anda.</p>
-                   <button onClick={pairBluetooth} className="bg-white text-black font-bold px-8 py-4 rounded-2xl hover:bg-gray-200 transition-all flex items-center gap-2">
-                     <Plus size={20} /> Sandingkan Perangkat Baru
+                   <h3 className="text-xl font-bold mb-2">Terhubung ke Aplikasi RawBT</h3>
+                   <p className="text-sm text-white/50 mb-8 max-w-md">Sistem ini telah dikonfigurasi secara khusus untuk mencetak karcis dan struk menggunakan aplikasi <b>RawBT Thermal Printer</b> di Android. Pastikan aplikasi tersebut sudah terinstal dan printer Bluetooth Anda sudah disandingkan di dalamnya.</p>
+                   <button onClick={() => window.location.href = "intent:TEST%20KONEKSI%20RAWBT%0A%0A%0A#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;"} className="bg-green-500 text-black font-bold px-8 py-4 rounded-2xl hover:bg-green-400 transition-all flex items-center gap-2">
+                     <Bluetooth size={20} /> Test Buka RawBT
                    </button>
                 </div>
               </div>
@@ -1690,15 +1678,45 @@ function PrintModal({ transaction, onComplete }) {
   const [printSuccess, setPrintSuccess] = useState(false);
 
   useEffect(() => {
-    const connectAndPrint = async () => {
-      try {
-        if (!navigator.bluetooth) throw new Error("Bluetooth tidak didukung");
-        await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: PRINTER_SERVICES });
-        setTimeout(() => setPrintSuccess(true), 1500);
-      } catch (err) { setTimeout(() => setPrintSuccess(true), 1500); }
+    // Logika mencetak menggunakan Intent Direct ke RawBT
+    const sendToRawBT = () => {
+      let textToPrint = "";
+      textToPrint += "[C]<b>DEVICE KASIER PARKIR</b>\n";
+      textToPrint += `[C]LOKASI: ${transaction.location}\n`;
+      textToPrint += "[C]--------------------------------\n";
+      
+      if (transaction.type === 'masuk') {
+          textToPrint += `[L]TIKET MASUK (${transaction.vehicleType})\n`;
+          textToPrint += `[C]<font size="wide">${transaction.plate}</font>\n`;
+          textToPrint += `[L]JAM MASUK:\n`;
+          textToPrint += `[L]${transaction.time.toLocaleDateString('id-ID')} ${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
+          if (transaction.isMember) {
+              textToPrint += `\n[C]<b>MEMBER AKTIF</b>\n`;
+          }
+      } else {
+          textToPrint += `[L]STRUK KELUAR (${transaction.vehicleType})\n`;
+          textToPrint += `[L]Plat  : ${transaction.plate}\n`;
+          textToPrint += `[L]Masuk : ${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
+          textToPrint += `[L]Keluar: ${transaction.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
+          textToPrint += `[L]Durasi: ${transaction.durationHours} Jam\n`;
+          textToPrint += "[C]--------------------------------\n";
+          textToPrint += `[C]TOTAL BAYAR\n`;
+          textToPrint += `[C]<font size="wide">${transaction.isMember ? 'GRATIS' : `Rp ${transaction.cost.toLocaleString('id-ID')}`}</font>\n`;
+      }
+      textToPrint += "\n\n\n";
+
+      // Membentuk URL Intent yang memanggil aplikasi ru.a402d.rawbtprinter
+      const intentUrl = `intent:${encodeURIComponent(textToPrint)}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
+      
+      // Memicu redirect
+      window.location.href = intentUrl;
+      
+      // Otomatis tandai sukses/selesai setelah beralih aplikasi (1.5 detik)
+      setTimeout(() => setPrintSuccess(true), 1500);
     };
-    connectAndPrint();
-  }, []);
+
+    sendToRawBT();
+  }, [transaction]);
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[99] flex flex-col items-center justify-center p-4 print:hidden">
@@ -1742,10 +1760,9 @@ function PrintModal({ transaction, onComplete }) {
           <div className="flex flex-col items-center justify-center gap-4 text-white">
             <div className="flex items-center gap-4">
               <div className="w-6 h-6 border-4 border-green-400 border-t-transparent rounded-full animate-spin"></div>
-              <p className="font-bold tracking-wide">Mencetak...</p>
+              <p className="font-bold tracking-wide">Membuka RawBT...</p>
             </div>
-            {/* Trik Fallback: Kasir bisa lewati jika bluetooth hang */}
-            <button onClick={onComplete} className="text-white/50 text-xs underline mt-2 hover:text-white cursor-pointer">Lewati / Tutup (Jika Printer Error)</button>
+            <button onClick={onComplete} className="text-white/50 text-xs underline mt-2 hover:text-white cursor-pointer">Tutup Manual</button>
           </div>
         ) : (
           <button onClick={onComplete} className="w-full bg-green-500 text-black rounded-xl py-4 font-extrabold flex justify-center gap-2 active:scale-95 transition-transform"><Check size={24} /> Selesai</button>
