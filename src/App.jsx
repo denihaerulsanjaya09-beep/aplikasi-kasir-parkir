@@ -15,6 +15,7 @@ if (typeof window !== 'undefined') {
 // =====================================
 let app, auth, db;
 try {
+  // Konfigurasi menggunakan database resparking-v2 milik Anda
   const firebaseConfig = {
     apiKey: "AIzaSyAPmH7VEU8aaawlE_QSIfrHrgU3jykn22s",
     authDomain: "resparking-v2.firebaseapp.com",
@@ -85,7 +86,7 @@ const getDatesInRange = (start, end) => {
       arr.push(getBusinessDateStr(dt));
       dt.setDate(dt.getDate() + 1);
   }
-  return [...new Set(arr)]; 
+  return [...new Set(arr)]; // Unique
 };
 
 // ==========================================================
@@ -111,7 +112,7 @@ class ErrorBoundary extends React.Component {
               <AlertTriangle size={40} />
             </div>
             <h1 className="text-2xl font-bold mb-2">Terjadi Kesalahan (Crash)</h1>
-            <p className="text-white/60 text-sm mb-6">Aplikasi mengalami kendala sistem atau kesalahan pembacaan data. Silakan bersihkan cache dan muat ulang.</p>
+            <p className="text-white/60 text-sm mb-6">Aplikasi mengalami kendala akibat data cache yang usang. Silakan reset aplikasi untuk memulihkannya.</p>
             <div className="bg-black/50 p-4 rounded-xl text-red-400 text-xs text-left overflow-auto max-h-32 mb-6 font-mono border border-red-500/20">
               {this.state.error?.toString()}
             </div>
@@ -136,6 +137,7 @@ function MainApp() {
   const [fbUser, setFbUser] = useState(null);
   const [isDbReady, setIsDbReady] = useState(false);
 
+  // BUG FIX: Gunakan Try-Catch agar tidak blank putih saat localStorage corrupt
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const savedUser = localStorage.getItem('app_currentUser');
@@ -179,7 +181,6 @@ function MainApp() {
   const [reportToPrint, setReportToPrint] = useState(null); 
   const [rekapSearch, setRekapSearch] = useState('');
   
-  // States Modal & Transaction Flow
   const [showCamera, setShowCamera] = useState(false);
   const [showLoginCamera, setShowLoginCamera] = useState(false);
   const [pendingLoginUser, setPendingLoginUser] = useState(null);
@@ -187,9 +188,6 @@ function MainApp() {
   const [showReportModal, setShowReportModal] = useState(false);
   const [currentTransaction, setCurrentTransaction] = useState(null);
   const [capturedImage, setCapturedImage] = useState(null);
-  const [isSaving, setIsSaving] = useState(false); 
-  
-  const txDataRef = useRef(null); 
 
   // State Khusus Admin Laporan
   const [reportFilterType, setReportFilterType] = useState('cutoff'); 
@@ -198,6 +196,7 @@ function MainApp() {
   const [adminReports, setAdminReports] = useState([]);
   const [isLoadingReports, setIsLoadingReports] = useState(false);
 
+  // Mendefinisikan canAccessSettings
   const canAccessSettings = currentUser && (currentUser.role === 'Master' || currentUser.role === 'Korlap' || currentUser.role === 'Auditor');
 
   // ==================================================
@@ -227,14 +226,13 @@ function MainApp() {
 
   useEffect(() => {
     if (!fbUser || !db || !currentUser?.location) return;
-    
-    // Mencegah error blank putih (safe format)
-    const safeLoc = String(currentUser.location || 'default').replace(/\//g, '-');
+    const loc = currentUser.location;
 
-    const confRef = doc(db, 'artifacts', DB_APP_ID, 'public', 'data', 'locationConfigs', safeLoc);
+    const confRef = doc(db, 'artifacts', DB_APP_ID, 'public', 'data', 'locationConfigs', loc);
     const unsubConf = onSnapshot(confRef, (snap) => {
       if (snap.exists()) {
         const d = snap.data();
+        
         const safeTariffs = { ...DEFAULT_TARIFFS };
         if (d.tariffs) {
            Object.keys(DEFAULT_TARIFFS).forEach(key => {
@@ -242,6 +240,7 @@ function MainApp() {
            });
         }
         setTariffs(safeTariffs);
+        
         setMembers(d.members || DEFAULT_MEMBERS);
         setRunningText(d.runningText || 'Selamat Datang di Sistem Layanan Parkir Resparking');
         if (d.customLogo !== undefined) setCustomLogo(d.customLogo);
@@ -250,8 +249,7 @@ function MainApp() {
       }
     }, (err) => console.error(err));
 
-    // Live Sync HANYA untuk kendaraan yang sedang parkir
-    const pvRef = collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${safeLoc}`);
+    const pvRef = collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${loc}`);
     const unsubPv = onSnapshot(pvRef, (snap) => {
       const items = [];
       snap.forEach(d => {
@@ -261,35 +259,19 @@ function MainApp() {
       setParkedVehicles(items);
     }, (err) => console.error(err));
 
-    // MENGHAPUS onSnapshot UNTUK TX (MENGHEMAT 95% KUOTA FIREBASE)
-    // Transaksi keluar kini diambil (fetch on-demand)
-    return () => { unsubConf(); unsubPv(); };
-  }, [fbUser, currentUser?.location]);
-
-  // --- FUNGSI HEMAT KUOTA: Hanya fetch hari ini jika diminta ---
-  const fetchTodayTransactions = async () => {
-    if (!db || !currentUser?.location) return;
-    const safeLoc = String(currentUser.location || 'default').replace(/\//g, '-');
     const todayBusinessStr = getBusinessDateStr(new Date());
-    try {
-      const snap = await getDocs(collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${safeLoc}_${todayBusinessStr}`));
+    const txRef = collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${loc}_${todayBusinessStr}`);
+    const unsubTx = onSnapshot(txRef, (snap) => {
       const items = [];
       snap.forEach(d => {
-          const data = d.data();
-          items.push({ ...data, time: data.time ? new Date(data.time) : new Date(), exitTime: data.exitTime ? new Date(data.exitTime) : null });
+         const data = d.data();
+         items.push({ ...data, time: data.time ? new Date(data.time) : new Date(), exitTime: data.exitTime ? new Date(data.exitTime) : null });
       });
       setShiftTransactions(items);
-    } catch(e) {
-      console.error("Gagal menarik data histori: ", e);
-    }
-  };
+    }, (err) => console.error(err));
 
-  // Muat data histori ketika membuka tab rekap
-  useEffect(() => {
-     if (settingsMenu === 'rekap') {
-        fetchTodayTransactions();
-     }
-  }, [settingsMenu]);
+    return () => { unsubConf(); unsubPv(); unsubTx(); };
+  }, [fbUser, currentUser?.location]);
 
 
   // ==================================================
@@ -312,8 +294,7 @@ function MainApp() {
 
       if (currentUser && currentUser.role === 'Kasier' && shiftRef.current && shiftRef.current !== shiftName) {
         setIsShiftLocked(true);
-        // Tarik data sebelum menembakkan report
-        fetchTodayTransactions().then(() => setShowReportModal(true));
+        setShowReportModal(true);
       }
       
       if(!shiftRef.current) shiftRef.current = shiftName;
@@ -326,8 +307,7 @@ function MainApp() {
 
   const updateLocConfig = (partial) => {
     if (currentUser?.role !== 'Master' || !db || !fbUser || !currentUser?.location) return;
-    const safeLoc = String(currentUser.location || 'default').replace(/\//g, '-');
-    setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', 'locationConfigs', safeLoc), partial, { merge: true }).catch(console.error);
+    setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', 'locationConfigs', currentUser.location), partial, { merge: true }).catch(console.error);
   };
 
   const handleLogin = (e) => {
@@ -336,9 +316,13 @@ function MainApp() {
     const user = data.get('username'), pwd = data.get('password'), nip = data.get('nipkwt'), location = data.get('location');
     if (!user || !pwd || !nip || !location) return alert("Mohon isi semua data login termasuk lokasi stasiun!");
     
+    // ATURAN BARU: Pencarian role login HANYA dipicu dari NIPKWT dan Password.
     const foundUser = usersList.find(u => u.nipkwt === nip && u.password === pwd);
+    
     if (!foundUser) return alert("Akses Ditolak: NIPKWT atau Password tidak valid!");
     
+    // Variabel "user" (kolom nama yang diketik) tetap digunakan secara bebas 
+    // untuk mengakomodir jika ada beberapa kasir dalam 1 shift
     setPendingLoginUser({ name: user, nipkwt: foundUser.nipkwt, role: foundUser.role, location });
     setShowLoginCamera(true);
   };
@@ -386,33 +370,25 @@ function MainApp() {
     return stats;
   };
 
-  // --- TRANSAKSI KASIR UTAMA ---
+  // --- TRANSAKSI KASIR ---
   const handleMasuk = () => {
-    const safePlateMasuk = String(plateMasuk || '').toUpperCase().trim();
-    if (!safePlateMasuk) return alert("Masukkan Plat Nomor!");
-    
-    const tx = {
+    if (!plateMasuk) return alert("Masukkan Plat Nomor!");
+    setCurrentTransaction({
       type: 'masuk',
-      plate: safePlateMasuk,
+      plate: plateMasuk.toUpperCase(),
       vehicleType: vehicleTypeMasuk,
       time: new Date(),
       location: currentUser?.location,
       cashier: currentUser?.name,
       shift: shiftInfo.name,
-      isMember: members.some(m => String(m.plate || '').toUpperCase() === safePlateMasuk)
-    };
-    txDataRef.current = tx; 
-    setCurrentTransaction(tx);
+      isMember: members.some(m => m.plate === plateMasuk.toUpperCase())
+    });
     setShowCamera(true);
   };
 
   const handleKeluar = (plateInput = plateKeluar) => {
-    const rawPlate = typeof plateInput === 'string' ? plateInput : plateKeluar;
-    const safePlateKeluar = String(rawPlate || '').toUpperCase().trim();
-
-    if (!safePlateKeluar) return alert("Masukkan Plat Nomor Keluar!");
-    
-    const vehicle = parkedVehicles.find(v => String(v.plate || '').toUpperCase() === safePlateKeluar);
+    if (!plateInput) return alert("Masukkan Plat Nomor Keluar!");
+    const vehicle = parkedVehicles.find(v => v.plate === plateInput.toUpperCase());
     if (!vehicle) return alert("Kendaraan tidak ditemukan di area parkir!");
     
     const exitTime = new Date();
@@ -432,7 +408,7 @@ function MainApp() {
       }
     }
 
-    const tx = { 
+    setCurrentTransaction({ 
       ...vehicle, 
       type: 'keluar', 
       exitTime, 
@@ -441,97 +417,28 @@ function MainApp() {
       location: currentUser?.location,
       exitCashier: currentUser?.name,
       exitShift: shiftInfo.name
-    };
-    txDataRef.current = tx; 
-    setCurrentTransaction(tx);
+    });
     setShowCamera(true);
   };
 
-  // --- PENYIMPANAN DATA INSTAN DARI KAMERA ---
-  const handleCapture = async (photoBase64) => {
-    setCapturedImage(photoBase64);
-    setShowCamera(false); 
-    setIsSaving(true); 
-    
-    const tx = txDataRef.current || currentTransaction;
-    
-    if (!tx || !db || !currentUser?.location) {
-        setIsSaving(false);
-        alert("Sistem gagal memuat data transaksi. Silakan coba lagi.");
-        return;
-    }
-
-    try {
-        const safePlateId = String(tx.plate || 'UNKNOWN').replace(/\//g, '-');
-        const safeLoc = String(currentUser.location || 'default').replace(/\//g, '-');
-
-        const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("TIMEOUT_ERROR")), 15000)
-        );
-
-        let savePromise;
-        let exitTxForLocal = null;
-
-        // --- PENGAMANAN FORMAT WAKTU (Mencegah error toISOString) ---
-        const safeTimeStr = tx.time instanceof Date ? tx.time.toISOString() : new Date(tx.time || Date.now()).toISOString();
-
-        if (tx.type === 'masuk') {
-            const v = { ...tx, photo: photoBase64, time: safeTimeStr };
-            const docRef = doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${safeLoc}`, safePlateId);
-            savePromise = setDoc(docRef, v);
-        } else if (tx.type === 'keluar') {
-            const docRefDelete = doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${safeLoc}`, safePlateId);
-            await deleteDoc(docRefDelete);
-
-            const safeExitTimeStr = tx.exitTime instanceof Date ? tx.exitTime.toISOString() : new Date(tx.exitTime || Date.now()).toISOString();
-            const exitTx = { ...tx, exitPhoto: photoBase64, time: safeTimeStr, exitTime: safeExitTimeStr };
-            const businessStr = getBusinessDateStr(new Date());
-            const historyDocRef = doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${safeLoc}_${businessStr}`, `${safePlateId}_${Date.now()}`);
-            savePromise = setDoc(historyDocRef, exitTx);
-            
-            // Simpan referensi untuk disuntikkan ke state lokal agar UI tetap uptodate 
-            // tanpa membuang kuota DB untuk membaca ulang
-            exitTxForLocal = { ...exitTx, time: tx.time, exitTime: tx.exitTime };
-        }
-
-        await Promise.race([savePromise, timeoutPromise]);
-      
-        // Update local memori histori
-        if (exitTxForLocal) {
-            setShiftTransactions(prev => [...prev, exitTxForLocal]);
-        }
-
-        setIsSaving(false); 
-        setShowPrintModal(true); 
-    } catch (err) {
-        console.error("Database Error Detail:", err);
-        setIsSaving(false);
-        
-        const errMsg = String(err.message || err.code || err);
-        
-        if (errMsg.includes("TIMEOUT_ERROR")) {
-             alert("GAGAL MENYIMPAN: Koneksi internet Anda lambat atau terputus. Data gagal terkirim ke server.");
-        } else if (errMsg.includes('permission-denied') || errMsg.includes('Missing or insufficient permissions')) {
-             alert("GAGAL MENYIMPAN (Akses Database Ditolak)!\n\nKonfigurasi Anda di foto 13 sudah BENAR, TAPI Aturan (Rules) Firebase Anda belum dibuka.\n\nSOLUSI WAJIB:\n1. Buka Firebase Console > Firestore Database\n2. Klik tab 'Rules' (Aturan)\n3. Ubah aturannya menjadi: allow read, write: if true;\n4. Klik Publish (Terbitkan).");
-        } else {
-             alert(`Gagal menyimpan data ke server! Detail Error: ${errMsg}`);
-        }
-    }
-  };
-
-  const handleReprint = (transactionData) => {
-      txDataRef.current = transactionData;
-      setCurrentTransaction(transactionData);
-      setShowPrintModal(true);
-  };
-
   const handlePrintComplete = () => {
-    if (txDataRef.current?.type === 'masuk') setPlateMasuk('');
-    else if (txDataRef.current?.type === 'keluar') setPlateKeluar('');
+    if (!db || !fbUser || !currentUser?.location) return;
+
+    if (currentTransaction?.type === 'masuk') {
+      const v = { ...currentTransaction, photo: capturedImage, time: currentTransaction.time.toISOString() };
+      setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, v.plate), v).catch(console.error);
+      setPlateMasuk('');
+    } else if (currentTransaction?.type === 'keluar') {
+      deleteDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, currentTransaction.plate)).catch(console.error);
+      const tx = { ...currentTransaction, time: currentTransaction.time.toISOString(), exitTime: currentTransaction.exitTime.toISOString() };
+      
+      const businessStr = getBusinessDateStr(new Date());
+      setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${currentUser.location}_${businessStr}`, `${tx.plate}_${Date.now()}`), tx).catch(console.error);
+      setPlateKeluar('');
+    }
     
     setShowPrintModal(false);
     setCurrentTransaction(null);
-    txDataRef.current = null;
     setCapturedImage(null);
   };
 
@@ -556,7 +463,7 @@ function MainApp() {
   }, [reportToPrint]);
 
   // =====================================
-  // TAMPILAN LOADING DB & SAVING
+  // TAMPILAN LOADING DB
   // =====================================
   if (!isDbReady) {
     return (
@@ -571,9 +478,6 @@ function MainApp() {
   // MODAL LAPORAN SHIFT (KASIR SPESIFIK)
   // =====================================
   const ReportModal = () => {
-    const [waSent, setWaSent] = useState(false);
-    const [pdfSent, setPdfSent] = useState(false);
-
     const myShiftTx = shiftTransactions.filter(t => 
        t.exitCashier === currentUser?.name && 
        t.exitShift === shiftInfo.name &&
@@ -587,21 +491,17 @@ function MainApp() {
       const payload = { type: 'report', title: 'LAPORAN KASIR (SHIFT)', stats: s, date: dateStr, shift: shiftInfo.name, location: currentUser?.location, cashier: currentUser?.name, role: 'Petugas Kasir', data: myShiftTx };
       
       if(actionType === 'wa') {
-        setWaSent(true);
         const msg = `*LAPORAN SHIFT KASIR*\n📍 Lokasi: ${currentUser?.location}\n🗓 ${dateStr}\n👤 ${currentUser?.name} (${currentUser?.nipkwt})\n🕒 ${shiftInfo.name}\n\n*RINCIAN:*\n🏍 Motor: ${s.motorQty} (Rp ${s.motorNom.toLocaleString()})\n🚗 Mobil: ${s.mobilQty} (Rp ${s.mobilNom.toLocaleString()})\n🚚 Box: ${s.trukQty} (Rp ${s.trukNom.toLocaleString()})\n💳 Member: ${s.memberQty}\n\n*TOTAL STORAN: Rp ${s.total.toLocaleString()}*`;
         window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
       } else if (actionType === 'pdf') {
-        setPdfSent(true);
         setReportToPrint(payload);
       }
-    };
 
-    const handleLogoutShift = () => {
-       if (isShiftLocked && (!waSent || !pdfSent)) {
-          alert("Anda wajib mengeklik tombol Kirim WA dan Cetak PDF sebelum sistem mengizinkan Logout.");
-          return;
-       }
-       confirmLogout();
+      if(isShiftLocked) {
+         setTimeout(() => confirmLogout(), 2000);
+      } else {
+         setShowReportModal(false);
+      }
     };
 
     return (
@@ -611,7 +511,7 @@ function MainApp() {
              <button onClick={() => setShowReportModal(false)} className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-red-500/80 rounded-full transition-colors"><X size={24} /></button>
           )}
           
-          <div className="flex flex-col items-center mb-4 mt-2">
+          <div className="flex flex-col items-center mb-6 mt-4">
             {isShiftLocked ? (
                <div className="bg-red-500/20 text-red-400 p-4 rounded-full mb-4 animate-pulse"><AlertTriangle size={48} /></div>
             ) : (
@@ -621,7 +521,7 @@ function MainApp() {
             <h2 className="text-2xl font-bold tracking-tight text-center">{isShiftLocked ? 'Sesi Shift Berakhir' : 'Laporan Shift Anda'}</h2>
             <p className="text-white/60 text-sm text-center mt-2 leading-relaxed">
                {isShiftLocked 
-                  ? "Waktu shift habis. Anda wajib melakukan aksi cetak PDF dan mengirim WA ke Grup sebelum dapat menekan tombol Logout." 
+                  ? "Waktu shift Anda telah habis. Anda wajib mencetak atau mengirim laporan ini sebagai bukti storan sebelum sistem di-logout." 
                   : `Rincian transaksi yang diselesaikan oleh ${currentUser?.name} pada ${shiftInfo.name} hari ini.`}
             </p>
           </div>
@@ -633,21 +533,14 @@ function MainApp() {
             <div className="flex justify-between font-bold text-lg pt-2 text-green-400"><span>TOTAL STORAN:</span> <span>Rp {s.total.toLocaleString('id-ID')}</span></div>
           </div>
           
-          <div className="flex gap-3 mb-4">
-             <button onClick={() => triggerAction('wa')} className={`flex-1 ${waSent ? 'bg-green-700/50 text-green-300' : 'bg-green-600 hover:bg-green-500'} text-white font-bold rounded-xl py-3 shadow-lg transition-all flex justify-center items-center gap-2 text-sm`}>
-               {waSent ? <Check size={18}/> : <Send size={18} />} Kirim WA
+          <div className="flex gap-3">
+             <button onClick={() => triggerAction('wa')} className={`flex-1 ${isShiftLocked ? 'bg-red-600 hover:bg-red-500' : 'bg-green-600 hover:bg-green-500'} text-white font-bold rounded-xl py-4 shadow-lg transition-all flex justify-center items-center gap-2 text-sm`}>
+               <Send size={18} /> Kirim WA {isShiftLocked && '& Keluar'}
              </button>
-             <button onClick={() => triggerAction('pdf')} className={`flex-1 ${pdfSent ? 'bg-blue-700/50 text-blue-300' : 'bg-blue-600 hover:bg-blue-500'} text-white font-bold rounded-xl py-3 shadow-lg transition-all flex justify-center items-center gap-2 text-sm`}>
-               {pdfSent ? <Check size={18}/> : <Download size={18} />} Cetak PDF
+             <button onClick={() => triggerAction('pdf')} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl py-4 shadow-lg transition-all flex justify-center items-center gap-2 text-sm">
+               <Download size={18} /> Cetak PDF {isShiftLocked && '& Keluar'}
              </button>
           </div>
-
-          <button 
-             onClick={handleLogoutShift} 
-             disabled={isShiftLocked && (!waSent || !pdfSent)}
-             className={`w-full font-bold rounded-xl py-4 transition-all flex justify-center items-center gap-2 text-sm ${isShiftLocked && (!waSent || !pdfSent) ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-red-600 hover:bg-red-500 text-white shadow-lg'}`}>
-               <LogOut size={18} /> Akhiri Shift & Logout
-          </button>
         </div>
       </div>
     );
@@ -719,16 +612,7 @@ function MainApp() {
   // =====================================
   if (view === 'dashboard') {
     return (
-      <div className="min-h-screen bg-[#0A1A13] font-sans text-white pb-10 selection:bg-green-500/30 print:hidden flex flex-col relative">
-        {/* LAYAR LOADING OVERLAY (MENGAMANKAN DATA) */}
-        {isSaving && (
-          <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[999] flex flex-col items-center justify-center">
-             <div className="w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin mb-4 shadow-[0_0_15px_rgba(34,197,94,0.5)]"></div>
-             <p className="text-green-400 font-bold tracking-widest uppercase text-lg">Memproses Data...</p>
-             <p className="text-white/50 text-xs mt-2 font-medium">Jangan tutup aplikasi. Menunggu respons sistem.</p>
-          </div>
-        )}
-
+      <div className="min-h-screen bg-[#0A1A13] font-sans text-white pb-10 selection:bg-green-500/30 print:hidden flex flex-col">
         <div className="bg-[#0F2E1F]/80 backdrop-blur-xl pt-6 pb-4 px-6 sticky top-0 z-10 border-b border-white/10 shadow-lg">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">
             <div className="flex items-center gap-4">
@@ -749,12 +633,7 @@ function MainApp() {
             
             <div className="flex flex-wrap gap-2 md:gap-3 w-full md:w-auto">
               {currentUser?.role === 'Kasier' && (
-                <button onClick={async () => {
-                   setIsSaving(true);
-                   await fetchTodayTransactions();
-                   setIsSaving(false);
-                   setShowReportModal(true);
-                }} className="flex-1 md:flex-none px-4 py-2.5 bg-orange-500/20 text-orange-400 border border-orange-500/50 rounded-xl text-sm font-bold hover:bg-orange-500/30 transition-colors flex items-center justify-center gap-2 shadow-lg">
+                <button onClick={() => setShowReportModal(true)} className="flex-1 md:flex-none px-4 py-2.5 bg-orange-500/20 text-orange-400 border border-orange-500/50 rounded-xl text-sm font-bold hover:bg-orange-500/30 transition-colors flex items-center justify-center gap-2 shadow-lg">
                   <FileText size={18}/> Laporan Kasir
                 </button>
               )}
@@ -779,15 +658,12 @@ function MainApp() {
         {/* UI SIMPLE TRANSAKSI */}
         <div className="p-4 mt-2 max-w-xl mx-auto w-full flex-1 flex flex-col">
           
-          <div className="flex gap-2 mb-6">
-              <button onClick={() => setActiveTab('masuk')} className={`flex-1 py-4 rounded-2xl font-black text-sm md:text-lg flex items-center justify-center gap-1 md:gap-2 transition-all ${activeTab === 'masuk' ? 'bg-green-500 text-black shadow-[0_0_20px_rgba(34,197,94,0.4)]' : 'bg-black/40 text-white/50 border border-white/10 hover:bg-white/10'}`}>
-                  <ArrowRight size={20} /> MASUK
+          <div className="flex gap-4 mb-6">
+              <button onClick={() => setActiveTab('masuk')} className={`flex-1 py-4 rounded-2xl font-black text-lg md:text-xl flex items-center justify-center gap-2 transition-all ${activeTab === 'masuk' ? 'bg-green-500 text-black shadow-[0_0_20px_rgba(34,197,94,0.4)]' : 'bg-black/40 text-white/50 border border-white/10 hover:bg-white/10'}`}>
+                  <ArrowRight size={24} /> MASUK
               </button>
-              <button onClick={() => setActiveTab('keluar')} className={`flex-1 py-4 rounded-2xl font-black text-sm md:text-lg flex items-center justify-center gap-1 md:gap-2 transition-all ${activeTab === 'keluar' ? 'bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.4)]' : 'bg-black/40 text-white/50 border border-white/10 hover:bg-white/10'}`}>
-                  <ArrowLeft size={20} /> KELUAR
-              </button>
-              <button onClick={() => setActiveTab('riwayat')} className={`flex-1 py-4 rounded-2xl font-black text-sm md:text-lg flex items-center justify-center gap-1 md:gap-2 transition-all ${activeTab === 'riwayat' ? 'bg-blue-500 text-white shadow-[0_0_20px_rgba(59,130,246,0.4)]' : 'bg-black/40 text-white/50 border border-white/10 hover:bg-white/10'}`}>
-                  <FileText size={20} /> RIWAYAT
+              <button onClick={() => setActiveTab('keluar')} className={`flex-1 py-4 rounded-2xl font-black text-lg md:text-xl flex items-center justify-center gap-2 transition-all ${activeTab === 'keluar' ? 'bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.4)]' : 'bg-black/40 text-white/50 border border-white/10 hover:bg-white/10'}`}>
+                  <ArrowLeft size={24} /> KELUAR
               </button>
           </div>
 
@@ -798,7 +674,7 @@ function MainApp() {
               <div className="flex-1 space-y-6 z-10">
                 <div>
                   <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-2 block">Ketik Plat Nomor Masuk</label>
-                  <input value={plateMasuk} onChange={e => setPlateMasuk(String(e.target?.value || '').toUpperCase())} placeholder="D 1234 XY" className="w-full bg-black/50 border border-green-500/30 rounded-2xl p-5 text-4xl font-black text-center text-white uppercase tracking-[0.2em] outline-none focus:ring-2 focus:ring-green-500 transition-all placeholder:text-white/10 shadow-inner" />
+                  <input value={plateMasuk} onChange={e => setPlateMasuk(e.target.value.toUpperCase())} placeholder="D 1234 XY" className="w-full bg-black/50 border border-green-500/30 rounded-2xl p-5 text-4xl font-black text-center text-white uppercase tracking-[0.2em] outline-none focus:ring-2 focus:ring-green-500 transition-all placeholder:text-white/10 shadow-inner" />
                 </div>
                 
                 <div>
@@ -832,23 +708,22 @@ function MainApp() {
                     <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-2 block">Cari / Scan Plat Keluar</label>
                     <div className="relative">
                       <Search className="absolute left-5 top-5 text-white/40" size={26} />
-                      <input value={plateKeluar} onChange={e => setPlateKeluar(String(e.target?.value || '').toUpperCase())} placeholder="D 12..." className="w-full bg-black/50 border border-red-500/30 rounded-2xl p-5 pl-14 text-3xl font-black text-white uppercase tracking-widest outline-none focus:ring-2 focus:ring-red-500 transition-all placeholder:text-white/10 shadow-inner" />
+                      <input value={plateKeluar} onChange={e => setPlateKeluar(e.target.value.toUpperCase())} placeholder="D 12..." className="w-full bg-black/50 border border-red-500/30 rounded-2xl p-5 pl-14 text-3xl font-black text-white uppercase tracking-widest outline-none focus:ring-2 focus:ring-red-500 transition-all placeholder:text-white/10 shadow-inner" />
                     </div>
                   </div>
 
                   <div className="mt-4 bg-black/30 rounded-2xl p-3 flex-1 overflow-y-auto border border-white/5 min-h-[150px] space-y-2">
-                    {parkedVehicles.filter(v => String(v.plate || '').includes(plateKeluar) && plateKeluar !== '').map((v, i) => (
+                    {parkedVehicles.filter(v => v.plate.includes(plateKeluar) && plateKeluar !== '').map((v, i) => (
                       <div key={i} onClick={() => setPlateKeluar(v.plate)} className="bg-white/10 p-4 rounded-xl flex justify-between items-center cursor-pointer hover:bg-white/20 border border-white/5 transition-colors group">
-                        <span className="font-bold text-xl md:text-2xl tracking-wider">{v.plate}</span>
-                        <div className="flex items-center gap-2">
+                        <span className="font-bold text-2xl tracking-wider">{v.plate}</span>
+                        <div className="flex items-center gap-3">
                            <span className="text-xs font-bold bg-white/20 text-white px-3 py-1.5 rounded-lg">{v.vehicleType}</span>
-                           <button onClick={(e) => { e.stopPropagation(); handleReprint({...v, type: 'masuk'}); }} className="bg-blue-500 text-white p-2 rounded-lg font-bold opacity-0 group-hover:opacity-100 transition-opacity shadow-lg" title="Cetak Ulang Tiket Masuk"><Printer size={18}/></button>
-                           <button onClick={(e) => { e.stopPropagation(); handleKeluar(v.plate); }} className="bg-red-500 text-white px-3 py-2 rounded-lg font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 shadow-lg"><Printer size={16}/><span className="hidden md:inline">Selesaikan</span></button>
+                           <button onClick={(e) => { e.stopPropagation(); handleKeluar(v.plate); }} className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 shadow-lg"><Printer size={16}/> Selesaikan</button>
                         </div>
                       </div>
                     ))}
                     {plateKeluar === '' && <p className="text-center text-white/30 text-sm mt-10 font-bold tracking-widest">Ketik Plat Untuk Mencari Data</p>}
-                    {plateKeluar !== '' && parkedVehicles.filter(v => String(v.plate || '').includes(plateKeluar)).length === 0 && <p className="text-center text-red-400/50 text-sm mt-10 font-bold">Data Kendaraan Tidak Ditemukan</p>}
+                    {plateKeluar !== '' && parkedVehicles.filter(v => v.plate.includes(plateKeluar)).length === 0 && <p className="text-center text-red-400/50 text-sm mt-10 font-bold">Data Kendaraan Tidak Ditemukan</p>}
                   </div>
 
                   {parkedVehicles.find(v => v.plate === plateKeluar) && (
@@ -875,47 +750,9 @@ function MainApp() {
                </button>
             </div>
           )}
-
-          {activeTab === 'riwayat' && (
-            <div className="bg-gradient-to-b from-white/5 to-transparent border border-white/10 backdrop-blur-lg rounded-[32px] p-6 shadow-2xl flex flex-col relative overflow-hidden flex-1 animate-fade-in">
-               <div className="flex justify-between items-center mb-6">
-                 <h3 className="text-xl font-bold tracking-tight">Kendaraan di Area Parkir (Aktif)</h3>
-                 <span className="bg-blue-500/20 text-blue-300 px-3 py-1 rounded-lg text-sm font-bold">{parkedVehicles.length} Unit</span>
-               </div>
-               
-               <div className="flex-1 overflow-y-auto space-y-3 bg-black/20 p-2 rounded-2xl border border-white/5">
-                  {[...parkedVehicles].sort((a,b) => b.time - a.time).map((v, i) => (
-                     <div key={i} className="bg-white/10 p-4 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border border-white/5 hover:bg-white/20 transition-colors">
-                        <div className="flex items-center gap-4">
-                           {v.photo ? (
-                              <img src={v.photo} alt="Foto" className="w-16 h-12 object-cover rounded-md border border-white/20 shrink-0" />
-                           ) : (
-                              <div className="w-16 h-12 bg-black/50 rounded-md border border-white/20 flex items-center justify-center text-white/30 shrink-0"><Car size={20}/></div>
-                           )}
-                           <div>
-                              <p className="font-bold text-xl tracking-wider">{v.plate}</p>
-                              <p className="text-xs text-white/50 mt-1">{v.vehicleType} • Masuk: {v.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</p>
-                           </div>
-                        </div>
-                        <div className="flex gap-2 w-full md:w-auto">
-                           <button onClick={() => handleReprint({...v, type: 'masuk'})} className="flex-1 md:flex-none justify-center bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 p-2 md:px-3 md:py-2 rounded-xl flex items-center gap-2 transition-colors" title="Cetak Ulang Tiket Masuk">
-                              <Printer size={18}/> <span className="font-bold text-sm">Cetak</span>
-                           </button>
-                           <button onClick={() => { setActiveTab('keluar'); setPlateKeluar(v.plate); }} className="flex-1 md:flex-none justify-center bg-red-500/20 hover:bg-red-500/40 text-red-300 p-2 md:px-3 md:py-2 rounded-xl flex items-center gap-2 transition-colors" title="Selesaikan / Keluar">
-                              <ArrowLeft size={18}/> <span className="font-bold text-sm">Keluar</span>
-                           </button>
-                        </div>
-                     </div>
-                  ))}
-                  {parkedVehicles.length === 0 && <p className="text-center text-white/40 mt-10 font-bold tracking-widest text-sm">Area parkir kosong.</p>}
-               </div>
-            </div>
-          )}
-
         </div>
 
-        {showCamera && <CameraModal onCapture={handleCapture} onClose={() => setShowCamera(false)} />}
-          
+        {showCamera && <CameraModal onCapture={v => { setCapturedImage(v); setShowCamera(false); setShowPrintModal(true); }} onClose={() => setShowCamera(false)} />}
         {showPrintModal && <PrintModal transaction={currentTransaction} onComplete={handlePrintComplete} />}
         {showReportModal && <ReportModal />}
       </div>
@@ -953,11 +790,9 @@ function MainApp() {
 
          let allData = [];
          const chunkSize = 30; // Batch fetching to stay within limits
-         const safeLoc = String(currentUser.location || 'default').replace(/\//g, '-');
-
          for(let i=0; i<datesToFetch.length; i+=chunkSize){
              const chunk = datesToFetch.slice(i, i+chunkSize);
-             const promises = chunk.map(d => getDocs(collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${safeLoc}_${d}`)));
+             const promises = chunk.map(d => getDocs(collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${currentUser.location}_${d}`)));
              const snaps = await Promise.all(promises);
              snaps.forEach(snap => {
                  snap.forEach(doc => {
@@ -978,7 +813,7 @@ function MainApp() {
 
     const generatePDFReport = () => {
        const s = generateReportStats(adminReports);
-       let title = `LAPORAN PENDAPATAN (${(reportFilterType || '').toUpperCase()})`;
+       let title = `LAPORAN PENDAPATAN (${reportFilterType.toUpperCase()})`;
        let sub = adminSelectedDate;
        if(reportFilterType==='shift') sub = `${adminSelectedDate} | ${reportFilterShift}`;
        // Menyertakan nama user dan jabatannya dalam parameter laporan untuk di cetak
@@ -989,7 +824,7 @@ function MainApp() {
        const s = generateReportStats(adminReports);
        let sub = adminSelectedDate;
        if(reportFilterType==='shift') sub = `${adminSelectedDate} | ${reportFilterShift}`;
-       const msg = `*REKAP PENDAPATAN (${(reportFilterType || '').toUpperCase()})*\n📍 Lokasi: ${currentUser?.location}\n🗓 Periode: ${sub}\n\n*RINCIAN:*\n🏍 Motor: ${s.motorQty} (Rp ${s.motorNom.toLocaleString()})\n🚗 Mobil: ${s.mobilQty} (Rp ${s.mobilNom.toLocaleString()})\n🚚 Box: ${s.trukQty} (Rp ${s.trukNom.toLocaleString()})\n💳 Member: ${s.memberQty}\n\n*TOTAL: Rp ${s.total.toLocaleString()}*`;
+       const msg = `*REKAP PENDAPATAN (${reportFilterType.toUpperCase()})*\n📍 Lokasi: ${currentUser?.location}\n🗓 Periode: ${sub}\n\n*RINCIAN:*\n🏍 Motor: ${s.motorQty} (Rp ${s.motorNom.toLocaleString()})\n🚗 Mobil: ${s.mobilQty} (Rp ${s.mobilNom.toLocaleString()})\n🚚 Box: ${s.trukQty} (Rp ${s.trukNom.toLocaleString()})\n💳 Member: ${s.memberQty}\n\n*TOTAL: Rp ${s.total.toLocaleString()}*`;
        window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
     };
 
@@ -1015,9 +850,8 @@ function MainApp() {
       e.preventDefault();
       if(!isEditor) return;
       if(!newMember.plate || !newMember.nip) return;
-      const safeNewPlate = String(newMember.plate || '').toUpperCase();
-      if(members.some(m => String(m.plate || '').toUpperCase() === safeNewPlate)) return alert("Plat nomor sudah terdaftar!");
-      const newMembersList = [...members, { plate: safeNewPlate, nip: newMember.nip }];
+      if(members.some(m => m.plate === newMember.plate.toUpperCase())) return alert("Plat nomor sudah terdaftar!");
+      const newMembersList = [...members, { plate: newMember.plate.toUpperCase(), nip: newMember.nip }];
       setMembers(newMembersList);
       updateLocConfig({ members: newMembersList });
       setNewMember({ plate: '', nip: '' });
@@ -1076,7 +910,7 @@ function MainApp() {
                 <h2 className="text-3xl font-extrabold mb-6">Atur Tarif Parkir</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {VEHICLE_TYPES.map(type => {
-                    const t = tariffs[type] || DEFAULT_TARIFFS[type]; 
+                    const t = tariffs[type] || DEFAULT_TARIFFS[type]; // Cegah undefined jika kategori baru ditambahkan
                     return (
                     <div key={type} className={`bg-white/5 border border-white/10 p-6 rounded-[24px] ${!isEditor && 'opacity-70 pointer-events-none'}`}>
                       <div className="flex justify-between items-center mb-4">
@@ -1150,7 +984,7 @@ function MainApp() {
                   <h3 className="text-xl font-bold mb-4 text-green-300">Daftar Member (Gratis)</h3>
                   {isEditor && (
                     <form onSubmit={handleAddMember} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                       <input required value={newMember.plate} onChange={e=>setNewMember({...newMember, plate: String(e.target?.value || '').toUpperCase()})} placeholder="Plat Nomor" className="bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white" />
+                       <input required value={newMember.plate} onChange={e=>setNewMember({...newMember, plate: e.target.value.toUpperCase()})} placeholder="Plat Nomor" className="bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white" />
                        <input required value={newMember.nip} onChange={e=>setNewMember({...newMember, nip: e.target.value})} placeholder="NIP/NIPP Pegawai" className="bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white" />
                        <button type="submit" className="bg-green-500 text-black font-bold p-3 rounded-xl flex items-center justify-center gap-2 hover:bg-green-400"><Plus size={18}/> Tambah Member</button>
                     </form>
@@ -1198,7 +1032,7 @@ function MainApp() {
                         <tr key={i} className="border-t border-white/5 hover:bg-white/5 transition-colors">
                           <td className="p-4 font-bold">{u.username}</td><td className="p-4">{u.nipkwt}</td>
                           <td className="p-4">
-                            <span className={`px-2 py-1 rounded-md text-xs font-bold ${u.role==='Master'?'bg-orange-500/20 text-orange-400':u.role==='Auditor'?'bg-purple-500/20 text-purple-400':u.role==='Korlap'?'bg-blue-500/20 text-blue-400':'bg-green-500/20 text-green-400'}`}>{String(u.role || 'KASIER').toUpperCase()}</span>
+                            <span className={`px-2 py-1 rounded-md text-xs font-bold ${u.role==='Master'?'bg-orange-500/20 text-orange-400':u.role==='Auditor'?'bg-purple-500/20 text-purple-400':u.role==='Korlap'?'bg-blue-500/20 text-blue-400':'bg-green-500/20 text-green-400'}`}>{(u.role || 'KASIER').toUpperCase()}</span>
                           </td>
                           {isEditor && (
                             <td className="p-4 text-center">
@@ -1325,7 +1159,7 @@ function MainApp() {
                     <Search className="absolute left-4 top-4 text-white/40" size={20} />
                     <input 
                       value={rekapSearch} 
-                      onChange={e => setRekapSearch(String(e.target?.value || '').toUpperCase())} 
+                      onChange={e => setRekapSearch(e.target.value.toUpperCase())} 
                       placeholder="Cari Plat Nomor (Contoh: D 1234 XY)..." 
                       className="w-full bg-black/40 border border-white/10 rounded-xl p-4 pl-12 text-lg font-bold text-white uppercase tracking-widest outline-none focus:ring-1 focus:ring-green-500 transition-all" 
                     />
@@ -1344,7 +1178,7 @@ function MainApp() {
                       </thead>
                       <tbody>
                         {[...parkedVehicles, ...shiftTransactions]
-                          .filter(v => String(v.plate || '').includes(rekapSearch))
+                          .filter(v => v.plate.includes(rekapSearch))
                           .sort((a, b) => b.time - a.time)
                           .map((v, i) => (
                             <tr key={i} className="border-t border-white/5 hover:bg-white/5 transition-colors">
@@ -1360,7 +1194,7 @@ function MainApp() {
                               <td className="p-4">{v.isMember ? 'Member' : (v.cost ? `Rp ${v.cost.toLocaleString('id-ID')}` : '-')}</td>
                             </tr>
                         ))}
-                        {[...parkedVehicles, ...shiftTransactions].filter(v => String(v.plate || '').includes(rekapSearch)).length === 0 && (
+                        {[...parkedVehicles, ...shiftTransactions].filter(v => v.plate.includes(rekapSearch)).length === 0 && (
                           <tr><td colSpan="6" className="p-6 text-center text-white/40">Data tidak ditemukan.</td></tr>
                         )}
                       </tbody>
@@ -1508,15 +1342,10 @@ function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek" }) {
   }, []);
 
   const takePhoto = () => {
-    if (error) { 
-        onCapture('dummy_image_data'); 
-        return; 
-    }
-    
+    if (error) { onCapture('dummy_image_data'); return; }
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    
-    if (video && canvas && video.videoWidth > 0) {
+    if (video && canvas) {
       const MAX_WIDTH = 300; 
       const scale = Math.min(1, MAX_WIDTH / video.videoWidth);
       canvas.width = video.videoWidth * scale;
@@ -1524,8 +1353,6 @@ function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek" }) {
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       onCapture(canvas.toDataURL('image/jpeg', 0.6)); 
-    } else {
-      onCapture('dummy_image_data');
     }
   };
 
@@ -1606,13 +1433,9 @@ function PrintModal({ transaction, onComplete }) {
       </div>
       <div className="mt-8 bg-white/10 border border-white/20 backdrop-blur-xl p-5 rounded-3xl w-full max-w-[320px] text-center shadow-lg">
         {!printSuccess ? (
-          <div className="flex flex-col items-center justify-center gap-4 text-white">
-            <div className="flex items-center gap-4">
-              <div className="w-6 h-6 border-4 border-green-400 border-t-transparent rounded-full animate-spin"></div>
-              <p className="font-bold tracking-wide">Mencetak...</p>
-            </div>
-            {/* Trik Fallback: Kasir bisa lewati jika bluetooth hang */}
-            <button onClick={onComplete} className="text-white/50 text-xs underline mt-2 hover:text-white cursor-pointer">Lewati / Tutup (Jika Printer Error)</button>
+          <div className="flex items-center justify-center gap-4 text-white">
+            <div className="w-6 h-6 border-4 border-green-400 border-t-transparent rounded-full animate-spin"></div>
+            <p className="font-bold tracking-wide">Mencetak...</p>
           </div>
         ) : (
           <button onClick={onComplete} className="w-full bg-green-500 text-black rounded-xl py-4 font-extrabold flex justify-center gap-2 active:scale-95 transition-transform"><Check size={24} /> Selesai</button>
