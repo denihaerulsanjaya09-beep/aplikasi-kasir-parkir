@@ -547,13 +547,18 @@ function MainApp() {
             <div className="flex justify-between font-bold text-lg pt-2 text-green-400"><span>TOTAL STORAN:</span> <span>Rp {s.total.toLocaleString('id-ID')}</span></div>
           </div>
           
-          <div className="flex gap-3">
-             <button onClick={() => triggerAction('wa')} className={`flex-1 ${isShiftLocked ? 'bg-red-600 hover:bg-red-500' : 'bg-green-600 hover:bg-green-500'} text-white font-bold rounded-xl py-4 shadow-lg transition-all flex justify-center items-center gap-2 text-sm`}>
-               <Send size={18} /> Kirim WA {isShiftLocked && '& Keluar'}
-             </button>
-             <button onClick={() => triggerAction('pdf')} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl py-4 shadow-lg transition-all flex justify-center items-center gap-2 text-sm">
-               <Download size={18} /> Cetak PDF {isShiftLocked && '& Keluar'}
-             </button>
+          <div className="flex flex-col gap-3">
+            <div className="flex gap-3">
+               <button onClick={() => triggerAction('wa')} className={`flex-1 ${isShiftLocked ? 'bg-red-600 hover:bg-red-500' : 'bg-green-600 hover:bg-green-500'} text-white font-bold rounded-xl py-4 shadow-lg transition-all flex justify-center items-center gap-2 text-sm`}>
+                 <Send size={18} /> Kirim WA {isShiftLocked && '& Keluar'}
+               </button>
+               <button onClick={() => triggerAction('pdf')} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl py-4 shadow-lg transition-all flex justify-center items-center gap-2 text-sm">
+                 <Download size={18} /> Cetak PDF {isShiftLocked && '& Keluar'}
+               </button>
+            </div>
+            <button onClick={() => { setShowReportModal(false); confirmLogout(); }} className="w-full bg-red-600/20 hover:bg-red-600/40 text-red-500 border border-red-500/50 font-bold rounded-xl py-4 shadow-lg transition-all flex justify-center items-center gap-2 text-sm">
+              <LogOut size={18} /> Selesai Laporan & Logout
+            </button>
           </div>
         </div>
       </div>
