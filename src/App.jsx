@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Camera, Printer, Settings, LogOut, Car, Bike, Truck, ShieldCheck, Search, X, Check, Image as ImageIcon, FileText, Send, Users, BarChart3, Moon, Bluetooth, Plus, Trash2, FileDown, MapPin, Eye, Calendar, Download, AlertTriangle } from 'lucide-react';
+import { Camera, Printer, Settings, LogOut, Car, Bike, Truck, ShieldCheck, Search, X, Check, Image as ImageIcon, FileText, Send, Users, BarChart3, Moon, Bluetooth, Plus, Trash2, FileDown, MapPin, Eye, Calendar, Download, AlertTriangle, ArrowRight, ArrowLeft } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, getDocs } from 'firebase/firestore';
@@ -25,7 +25,6 @@ try {
   console.error("Gagal inisialisasi Firebase", e);
 }
 
-// --- FIX BUG SETTINGAN KEMBALI KE DEFAULT ---
 const DB_APP_ID = "Resparking_Production_DB"; 
 
 // --- DATA & CONFIG DEFAULT ---
@@ -39,13 +38,12 @@ const DEFAULT_TARIFFS = {
 const VEHICLE_TYPES = ['Motor', 'Mobil', 'Truk', 'Sepeda'];
 const LOCATIONS = ['ST. Cimahi Selatan', 'ST. Gadobangkong', 'ST. Cianjur', 'ST. Cibatu'];
 
-// Diperluas untuk mencakup hampir semua merk printer thermal bluetooth
 const PRINTER_SERVICES = [
-  '000018f0-0000-1000-8000-00805f9b34fb', // Standard BLE Printer
+  '000018f0-0000-1000-8000-00805f9b34fb', 
   'e7810a71-73ae-499d-8c15-faa9aef0c3f2', 
   '49535343-fe7d-4ae5-8fa9-9fafd205e455',
   '0000af30-0000-1000-8000-00805f9b34fb',
-  '00001814-0000-1000-8000-00805f9b34fb', // Generic UUID
+  '00001814-0000-1000-8000-00805f9b34fb', 
 ];
 
 const DEFAULT_USERS = [
@@ -59,7 +57,7 @@ const DEFAULT_USERS = [
 
 const DEFAULT_MEMBERS = [{ plate: 'B1234KWT', nip: '12345678' }];
 
-// --- HELPER FORMAT TANGGAL BISNIS ---
+// --- HELPER DATES ---
 const getBusinessDateStr = (dateObj) => {
   const d = new Date(dateObj);
   if (d.getHours() < 6) d.setDate(d.getDate() - 1);
@@ -74,9 +72,17 @@ const parseDateStrToInput = (str) => {
    return `${str.substring(0,4)}-${str.substring(4,6)}-${str.substring(6,8)}`;
 };
 
-export default function App() {
-  const sessionId = useMemo(() => Math.random().toString(36).substring(2, 10), []);
+const getDatesInRange = (start, end) => {
+  const arr = [];
+  let dt = new Date(start);
+  while (dt <= end) {
+      arr.push(getBusinessDateStr(dt));
+      dt.setDate(dt.getDate() + 1);
+  }
+  return [...new Set(arr)]; // Unique
+};
 
+export default function App() {
   const [fbUser, setFbUser] = useState(null);
   const [isDbReady, setIsDbReady] = useState(false);
 
@@ -88,7 +94,8 @@ export default function App() {
     return localStorage.getItem('app_currentUser') ? 'dashboard' : 'login';
   }); 
 
-  // --- STATE OPERASIONAL KASIR (SPLIT UI) ---
+  // --- STATE OPERASIONAL KASIR ---
+  const [activeTab, setActiveTab] = useState('masuk'); 
   const [plateMasuk, setPlateMasuk] = useState('');
   const [vehicleTypeMasuk, setVehicleTypeMasuk] = useState('Motor');
   const [plateKeluar, setPlateKeluar] = useState('');
@@ -120,7 +127,9 @@ export default function App() {
   const [currentTransaction, setCurrentTransaction] = useState(null);
   const [capturedImage, setCapturedImage] = useState(null);
 
-  // State Khusus Admin
+  // State Khusus Admin Laporan
+  const [reportFilterType, setReportFilterType] = useState('cutoff'); 
+  const [reportFilterShift, setReportFilterShift] = useState('Shift 1 (Pagi)');
   const [adminSelectedDate, setAdminSelectedDate] = useState(parseDateStrToInput(getBusinessDateStr(new Date())));
   const [adminReports, setAdminReports] = useState([]);
   const [isLoadingReports, setIsLoadingReports] = useState(false);
@@ -186,23 +195,6 @@ export default function App() {
     return () => { unsubConf(); unsubPv(); unsubTx(); };
   }, [fbUser, currentUser?.location]);
 
-  useEffect(() => {
-     if (view !== 'settings' || settingsMenu !== 'laporan' || !db || !currentUser?.location || !adminSelectedDate) return;
-     const fetchAdminReports = async () => {
-        setIsLoadingReports(true);
-        try {
-           const targetDateStr = adminSelectedDate.replace(/-/g, '');
-           const q = collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${currentUser.location}_${targetDateStr}`);
-           const snap = await getDocs(q); 
-           const items = [];
-           snap.forEach(d => items.push({ ...d.data(), time: new Date(d.data().time), exitTime: d.data().exitTime ? new Date(d.data().exitTime) : null }));
-           setAdminReports(items);
-        } catch(e) { console.error("Error fetch historical data:", e); }
-        setIsLoadingReports(false);
-     };
-     fetchAdminReports();
-  }, [view, settingsMenu, adminSelectedDate, currentUser?.location]);
-
 
   // ==================================================
   // LOGIKA WAKTU & SISTEM LOCKOUT SHIFT KASIR
@@ -222,7 +214,7 @@ export default function App() {
         time: now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
       });
 
-      // TRIGGER LOCKOUT KASIR JIKA MELEWATI SHIFT
+      // LOCKOUT HANYA UNTUK KASIER, MASTER/KORLAP/AUDITOR BEBAS
       if (currentUser && currentUser.role === 'Kasier' && shiftRef.current && shiftRef.current !== shiftName) {
         setIsShiftLocked(true);
         setShowReportModal(true);
@@ -257,8 +249,7 @@ export default function App() {
     const loggedInUser = { ...pendingLoginUser, photo: photoBase64 };
     localStorage.setItem('app_currentUser', JSON.stringify(loggedInUser));
     setCurrentUser(loggedInUser); setShowLoginCamera(false); setView('dashboard');
-    // Reset state ui
-    setPlateMasuk(''); setPlateKeluar(''); setIsShiftLocked(false); shiftRef.current = '';
+    setPlateMasuk(''); setPlateKeluar(''); setIsShiftLocked(false); shiftRef.current = ''; setActiveTab('masuk');
   };
 
   const confirmLogout = () => {
@@ -273,17 +264,22 @@ export default function App() {
   };
 
   const generateReportStats = (transactions) => {
-    let stats = { motorQty: 0, motorNom: 0, mobilQty: 0, mobilNom: 0, trukQty: 0, trukNom: 0, memberQty: 0, total: 0 };
+    let stats = { motorQty: 0, motorNom: 0, mobilQty: 0, mobilNom: 0, trukQty: 0, trukNom: 0, memberQty: 0, total: 0, durUnder1: 0, dur1to3: 0, durOver3: 0 };
     transactions.forEach(t => {
+      const hrs = t.durationHours || 1;
+      if (hrs <= 1) stats.durUnder1++;
+      else if (hrs <= 3) stats.dur1to3++;
+      else stats.durOver3++;
+
       if (t.isMember) {
         stats.memberQty++;
       } else {
         if (t.vehicleType === 'Motor' || t.vehicleType === 'Sepeda') {
-          stats.motorQty++; stats.motorNom += t.cost;
+          stats.motorQty++; stats.motorNom += (t.cost || 0);
         } else if (t.vehicleType === 'Mobil') {
-          stats.mobilQty++; stats.mobilNom += t.cost;
+          stats.mobilQty++; stats.mobilNom += (t.cost || 0);
         } else if (t.vehicleType === 'Truk') {
-          stats.trukQty++; stats.trukNom += t.cost;
+          stats.trukQty++; stats.trukNom += (t.cost || 0);
         }
         stats.total += (t.cost || 0);
       }
@@ -399,7 +395,6 @@ export default function App() {
   // MODAL LAPORAN SHIFT (KASIR SPESIFIK)
   // =====================================
   const ReportModal = () => {
-    // Filter KHUSUS untuk kasir yang sedang login, di shift saat ini, pada hari ini.
     const myShiftTx = shiftTransactions.filter(t => 
        t.exitCashier === currentUser?.name && 
        t.exitShift === shiftInfo.name &&
@@ -419,7 +414,6 @@ export default function App() {
         setReportToPrint(payload);
       }
 
-      // Jika ter-lockout, otomatis di-logout setelah aksi dilakukan (beri jeda untuk print/wa redirect)
       if(isShiftLocked) {
          setTimeout(() => confirmLogout(), 2000);
       } else {
@@ -486,7 +480,7 @@ export default function App() {
             <h1 className="text-4xl font-extrabold tracking-tight mb-2 text-transparent bg-clip-text bg-gradient-to-r from-white to-green-300 uppercase">
               Resparking
             </h1>
-            <p className="text-white/60 text-xs mb-3">Login Petugas Parkir (Hemat Kuota V2)</p>
+            <p className="text-white/60 text-xs mb-3">Login Petugas Parkir</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
@@ -531,10 +525,8 @@ export default function App() {
   }
 
   // =====================================
-  // VIEW: DASHBOARD KASIR (SPLIT SCREEN POS)
+  // VIEW: DASHBOARD KASIR (SIMPLE UI ARROWS)
   // =====================================
-  const canAccessSettings = ['Master', 'Korlap', 'Auditor'].includes(currentUser?.role);
-
   if (view === 'dashboard') {
     return (
       <div className="min-h-screen bg-[#0A1A13] font-sans text-white pb-10 selection:bg-green-500/30 print:hidden flex flex-col">
@@ -567,7 +559,7 @@ export default function App() {
                   <Settings size={20} />
                 </button>
               )}
-              <button onClick={() => setShowReportModal(true)} className="p-2.5 bg-red-500/20 border border-red-500/30 rounded-xl text-red-400 hover:bg-red-500/40 transition-colors flex justify-center items-center shadow-lg">
+              <button onClick={() => { currentUser?.role === 'Kasier' ? setShowReportModal(true) : confirmLogout() }} className="p-2.5 bg-red-500/20 border border-red-500/30 rounded-xl text-red-400 hover:bg-red-500/40 transition-colors flex justify-center items-center shadow-lg">
                 <LogOut size={20} />
               </button>
             </div>
@@ -580,92 +572,101 @@ export default function App() {
           </div>
         </div>
 
-        {/* SPLIT SCREEN LAYOUT UNTUK PELAYANAN CEPAT */}
-        <div className="p-4 mt-2 max-w-[1400px] mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1">
+        {/* UI SIMPLE TRANSAKSI */}
+        <div className="p-4 mt-2 max-w-xl mx-auto w-full flex-1 flex flex-col">
           
-          {/* KOTAK KIRI: KENDARAAN MASUK */}
-          <div className="bg-gradient-to-br from-white/5 to-transparent border border-white/10 backdrop-blur-lg rounded-[32px] p-6 shadow-2xl flex flex-col relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none"><Car size={200}/></div>
-            <h2 className="text-2xl font-extrabold text-green-400 flex items-center gap-2 mb-6 border-b border-white/10 pb-4"><Plus size={24}/> TIKET MASUK</h2>
-            
-            <div className="flex-1 space-y-6 z-10">
-              <div>
-                <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-2 block">Ketik Plat Nomor Masuk</label>
-                <input value={plateMasuk} onChange={e => setPlateMasuk(e.target.value.toUpperCase())} placeholder="D 1234 XY" className="w-full bg-black/50 border border-green-500/30 rounded-2xl p-5 text-4xl font-black text-center text-white uppercase tracking-[0.2em] outline-none focus:ring-2 focus:ring-green-500 transition-all placeholder:text-white/10 shadow-inner" />
-              </div>
+          <div className="flex gap-4 mb-6">
+              <button onClick={() => setActiveTab('masuk')} className={`flex-1 py-4 rounded-2xl font-black text-lg md:text-xl flex items-center justify-center gap-2 transition-all ${activeTab === 'masuk' ? 'bg-green-500 text-black shadow-[0_0_20px_rgba(34,197,94,0.4)]' : 'bg-black/40 text-white/50 border border-white/10 hover:bg-white/10'}`}>
+                  <ArrowRight size={24} /> MASUK
+              </button>
+              <button onClick={() => setActiveTab('keluar')} className={`flex-1 py-4 rounded-2xl font-black text-lg md:text-xl flex items-center justify-center gap-2 transition-all ${activeTab === 'keluar' ? 'bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.4)]' : 'bg-black/40 text-white/50 border border-white/10 hover:bg-white/10'}`}>
+                  <ArrowLeft size={24} /> KELUAR
+              </button>
+          </div>
+
+          {activeTab === 'masuk' && (
+            <div className="bg-gradient-to-br from-white/5 to-transparent border border-white/10 backdrop-blur-lg rounded-[32px] p-6 shadow-2xl flex flex-col relative overflow-hidden flex-1 animate-fade-in">
+              <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none"><Car size={200}/></div>
               
-              <div>
-                <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-3 block">Kategori Kendaraan</label>
-                <div className="grid grid-cols-2 gap-3">
-                  {VEHICLE_TYPES.map(type => (
-                    <button key={type} onClick={() => setVehicleTypeMasuk(type)} className={`flex flex-col items-center justify-center py-5 rounded-2xl border transition-all ${vehicleTypeMasuk === type ? 'border-green-400 bg-green-500/20 text-green-300 shadow-[0_0_15px_rgba(34,197,94,0.2)]' : 'border-white/10 bg-black/30 text-white/50 hover:bg-white/5'}`}>
-                      {type === 'Motor' && <Bike size={32} className="mb-2"/>}
-                      {type === 'Mobil' && <Car size={32} className="mb-2"/>}
-                      {type === 'Truk' && <Truck size={32} className="mb-2"/>}
-                      {type === 'Sepeda' && <Bike size={32} className="mb-2"/>}
-                      <span className="text-sm font-bold">{type}</span>
-                    </button>
-                  ))}
+              <div className="flex-1 space-y-6 z-10">
+                <div>
+                  <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-2 block">Ketik Plat Nomor Masuk</label>
+                  <input value={plateMasuk} onChange={e => setPlateMasuk(e.target.value.toUpperCase())} placeholder="D 1234 XY" className="w-full bg-black/50 border border-green-500/30 rounded-2xl p-5 text-4xl font-black text-center text-white uppercase tracking-[0.2em] outline-none focus:ring-2 focus:ring-green-500 transition-all placeholder:text-white/10 shadow-inner" />
+                </div>
+                
+                <div>
+                  <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-3 block">Kategori Kendaraan</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {VEHICLE_TYPES.map(type => (
+                      <button key={type} onClick={() => setVehicleTypeMasuk(type)} className={`flex flex-col items-center justify-center py-5 rounded-2xl border transition-all ${vehicleTypeMasuk === type ? 'border-green-400 bg-green-500/20 text-green-300 shadow-[0_0_15px_rgba(34,197,94,0.2)]' : 'border-white/10 bg-black/30 text-white/50 hover:bg-white/5'}`}>
+                        {type === 'Motor' && <Bike size={32} className="mb-2"/>}
+                        {type === 'Mobil' && <Car size={32} className="mb-2"/>}
+                        {type === 'Truk' && <Truck size={32} className="mb-2"/>}
+                        {type === 'Sepeda' && <Bike size={32} className="mb-2"/>}
+                        <span className="text-sm font-bold">{type}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
+
+              <button onClick={handleMasuk} disabled={currentUser?.role !== 'Kasier'} className={`w-full rounded-2xl py-5 text-xl font-extrabold mt-6 transition-all flex items-center justify-center gap-2 ${currentUser?.role === 'Kasier' ? 'bg-green-500 text-black hover:bg-green-400 active:scale-[0.98] shadow-[0_0_20px_rgba(34,197,94,0.3)]' : 'bg-gray-600 text-gray-400 cursor-not-allowed opacity-50'}`}>
+                <Camera size={24} /> FOTO & CETAK TIKET
+              </button>
             </div>
+          )}
 
-            <button onClick={handleMasuk} disabled={currentUser?.role !== 'Kasier'} className={`w-full rounded-2xl py-5 text-xl font-extrabold mt-6 transition-all flex items-center justify-center gap-2 ${currentUser?.role === 'Kasier' ? 'bg-green-500 text-black hover:bg-green-400 active:scale-[0.98] shadow-[0_0_20px_rgba(34,197,94,0.3)]' : 'bg-gray-600 text-gray-400 cursor-not-allowed opacity-50'}`}>
-              <Camera size={24} /> FOTO & CETAK TIKET
-            </button>
-          </div>
-
-          {/* KOTAK KANAN: KENDARAAN KELUAR */}
-          <div className="bg-gradient-to-bl from-white/5 to-transparent border border-white/10 backdrop-blur-lg rounded-[32px] p-6 shadow-2xl flex flex-col relative overflow-hidden">
-             <div className="absolute top-0 left-0 p-6 opacity-5 pointer-events-none"><LogOut size={200}/></div>
-             <h2 className="text-2xl font-extrabold text-red-400 flex items-center gap-2 mb-6 border-b border-white/10 pb-4"><Search size={24}/> SCAN KELUAR</h2>
-             
-             <div className="flex-1 flex flex-col z-10">
-                <div>
-                  <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-2 block">Cari / Scan Plat Keluar</label>
-                  <div className="relative">
-                    <Search className="absolute left-5 top-5 text-white/40" size={26} />
-                    <input value={plateKeluar} onChange={e => setPlateKeluar(e.target.value.toUpperCase())} placeholder="D 12..." className="w-full bg-black/50 border border-red-500/30 rounded-2xl p-5 pl-14 text-3xl font-black text-white uppercase tracking-widest outline-none focus:ring-2 focus:ring-red-500 transition-all placeholder:text-white/10 shadow-inner" />
-                  </div>
-                </div>
-
-                <div className="mt-4 bg-black/30 rounded-2xl p-3 flex-1 overflow-y-auto border border-white/5 min-h-[150px] space-y-2">
-                  {parkedVehicles.filter(v => v.plate.includes(plateKeluar) && plateKeluar !== '').map((v, i) => (
-                    <div key={i} onClick={() => setPlateKeluar(v.plate)} className="bg-white/10 p-4 rounded-xl flex justify-between items-center cursor-pointer hover:bg-white/20 border border-white/5 transition-colors group">
-                      <span className="font-bold text-2xl tracking-wider">{v.plate}</span>
-                      <div className="flex items-center gap-3">
-                         <span className="text-xs font-bold bg-white/20 text-white px-3 py-1.5 rounded-lg">{v.vehicleType}</span>
-                         <button onClick={(e) => { e.stopPropagation(); handleKeluar(v.plate); }} className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 shadow-lg"><Printer size={16}/> Selesaikan</button>
-                      </div>
-                    </div>
-                  ))}
-                  {plateKeluar === '' && <p className="text-center text-white/30 text-sm mt-10 font-bold tracking-widest">Ketik Plat Untuk Mencari Data</p>}
-                  {plateKeluar !== '' && parkedVehicles.filter(v => v.plate.includes(plateKeluar)).length === 0 && <p className="text-center text-red-400/50 text-sm mt-10 font-bold">Data Kendaraan Tidak Ditemukan</p>}
-                </div>
-
-                {parkedVehicles.find(v => v.plate === plateKeluar) && (
-                  <div className="mt-4 bg-black/40 p-4 rounded-2xl border border-white/10 text-center flex flex-col md:flex-row items-center gap-4 animate-fade-in shadow-xl">
-                    {parkedVehicles.find(v => v.plate === plateKeluar).photo ? (
-                      <img src={parkedVehicles.find(v => v.plate === plateKeluar).photo} alt="Foto Masuk" className="w-full md:w-48 h-32 object-cover rounded-xl border border-white/20 shadow-lg shrink-0" />
-                    ) : (
-                      <div className="w-full md:w-48 h-32 flex flex-col items-center justify-center bg-white/5 rounded-xl border border-white/20 text-white/30 shrink-0">
-                        <ImageIcon size={32} className="mb-2" />
-                        <span className="text-[10px] font-bold">TIDAK ADA FOTO</span>
-                      </div>
-                    )}
-                    <div className="flex-1 text-left w-full">
-                       <p className="text-xs text-white/50 font-bold mb-1 uppercase tracking-wider">Rincian Terpilih</p>
-                       <h3 className="text-3xl font-black tracking-widest">{plateKeluar}</h3>
-                       <p className="text-sm font-bold text-white/70 mt-1">{parkedVehicles.find(v => v.plate === plateKeluar).vehicleType} • Masuk: {parkedVehicles.find(v => v.plate === plateKeluar).time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</p>
+          {activeTab === 'keluar' && (
+            <div className="bg-gradient-to-bl from-white/5 to-transparent border border-white/10 backdrop-blur-lg rounded-[32px] p-6 shadow-2xl flex flex-col relative overflow-hidden flex-1 animate-fade-in">
+               <div className="absolute top-0 left-0 p-6 opacity-5 pointer-events-none"><LogOut size={200}/></div>
+               
+               <div className="flex-1 flex flex-col z-10">
+                  <div>
+                    <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-2 block">Cari / Scan Plat Keluar</label>
+                    <div className="relative">
+                      <Search className="absolute left-5 top-5 text-white/40" size={26} />
+                      <input value={plateKeluar} onChange={e => setPlateKeluar(e.target.value.toUpperCase())} placeholder="D 12..." className="w-full bg-black/50 border border-red-500/30 rounded-2xl p-5 pl-14 text-3xl font-black text-white uppercase tracking-widest outline-none focus:ring-2 focus:ring-red-500 transition-all placeholder:text-white/10 shadow-inner" />
                     </div>
                   </div>
-                )}
-             </div>
 
-             <button onClick={() => handleKeluar()} disabled={currentUser?.role !== 'Kasier'} className={`w-full rounded-2xl py-5 text-xl font-extrabold mt-6 transition-all flex items-center justify-center gap-2 ${currentUser?.role === 'Kasier' ? 'bg-red-500/90 text-white hover:bg-red-400 active:scale-[0.98] shadow-[0_0_20px_rgba(239,68,68,0.3)]' : 'bg-gray-600 text-gray-400 cursor-not-allowed opacity-50'}`}>
-               <Printer size={24} /> SELESAIKAN & CETAK
-             </button>
-          </div>
+                  <div className="mt-4 bg-black/30 rounded-2xl p-3 flex-1 overflow-y-auto border border-white/5 min-h-[150px] space-y-2">
+                    {parkedVehicles.filter(v => v.plate.includes(plateKeluar) && plateKeluar !== '').map((v, i) => (
+                      <div key={i} onClick={() => setPlateKeluar(v.plate)} className="bg-white/10 p-4 rounded-xl flex justify-between items-center cursor-pointer hover:bg-white/20 border border-white/5 transition-colors group">
+                        <span className="font-bold text-2xl tracking-wider">{v.plate}</span>
+                        <div className="flex items-center gap-3">
+                           <span className="text-xs font-bold bg-white/20 text-white px-3 py-1.5 rounded-lg">{v.vehicleType}</span>
+                           <button onClick={(e) => { e.stopPropagation(); handleKeluar(v.plate); }} className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 shadow-lg"><Printer size={16}/> Selesaikan</button>
+                        </div>
+                      </div>
+                    ))}
+                    {plateKeluar === '' && <p className="text-center text-white/30 text-sm mt-10 font-bold tracking-widest">Ketik Plat Untuk Mencari Data</p>}
+                    {plateKeluar !== '' && parkedVehicles.filter(v => v.plate.includes(plateKeluar)).length === 0 && <p className="text-center text-red-400/50 text-sm mt-10 font-bold">Data Kendaraan Tidak Ditemukan</p>}
+                  </div>
+
+                  {parkedVehicles.find(v => v.plate === plateKeluar) && (
+                    <div className="mt-4 bg-black/40 p-4 rounded-2xl border border-white/10 text-center flex flex-col md:flex-row items-center gap-4 animate-fade-in shadow-xl">
+                      {parkedVehicles.find(v => v.plate === plateKeluar).photo ? (
+                        <img src={parkedVehicles.find(v => v.plate === plateKeluar).photo} alt="Foto Masuk" className="w-full md:w-48 h-32 object-cover rounded-xl border border-white/20 shadow-lg shrink-0" />
+                      ) : (
+                        <div className="w-full md:w-48 h-32 flex flex-col items-center justify-center bg-white/5 rounded-xl border border-white/20 text-white/30 shrink-0">
+                          <ImageIcon size={32} className="mb-2" />
+                          <span className="text-[10px] font-bold">TIDAK ADA FOTO</span>
+                        </div>
+                      )}
+                      <div className="flex-1 text-left w-full">
+                         <p className="text-xs text-white/50 font-bold mb-1 uppercase tracking-wider">Rincian Terpilih</p>
+                         <h3 className="text-3xl font-black tracking-widest">{plateKeluar}</h3>
+                         <p className="text-sm font-bold text-white/70 mt-1">{parkedVehicles.find(v => v.plate === plateKeluar).vehicleType} • Masuk: {parkedVehicles.find(v => v.plate === plateKeluar).time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</p>
+                      </div>
+                    </div>
+                  )}
+               </div>
+
+               <button onClick={() => handleKeluar()} disabled={currentUser?.role !== 'Kasier'} className={`w-full rounded-2xl py-5 text-xl font-extrabold mt-6 transition-all flex items-center justify-center gap-2 ${currentUser?.role === 'Kasier' ? 'bg-red-500/90 text-white hover:bg-red-400 active:scale-[0.98] shadow-[0_0_20px_rgba(239,68,68,0.3)]' : 'bg-gray-600 text-gray-400 cursor-not-allowed opacity-50'}`}>
+                 <Printer size={24} /> SELESAIKAN & CETAK
+               </button>
+            </div>
+          )}
         </div>
 
         {showCamera && <CameraModal onCapture={v => { setCapturedImage(v); setShowCamera(false); setShowPrintModal(true); }} onClose={() => setShowCamera(false)} />}
@@ -681,14 +682,65 @@ export default function App() {
   if (view === 'settings' && canAccessSettings) {
     const isEditor = currentUser?.role === 'Master'; 
 
-    const generatePDFReport = (dateStr, dataArray, title="LAPORAN PENDAPATAN (CUT-OFF)") => {
-       const s = generateReportStats(dataArray);
-       setReportToPrint({ type: 'report', title, date: dateStr, stats: s, data: dataArray, location: currentUser?.location });
+    const fetchAdminReports = async () => {
+      setIsLoadingReports(true);
+      try {
+         let datesToFetch = [];
+         
+         if (reportFilterType === 'cutoff' || reportFilterType === 'shift') {
+             datesToFetch = [adminSelectedDate.replace(/-/g, '')];
+         } else if (reportFilterType === 'bulan') {
+             const [yy, mm] = adminSelectedDate.split('-');
+             if(yy && mm) {
+                 const start = new Date(parseInt(yy), parseInt(mm)-1, 1);
+                 const end = new Date(parseInt(yy), parseInt(mm), 0);
+                 datesToFetch = getDatesInRange(start, end);
+             }
+         } else if (reportFilterType === 'tahun') {
+             const yy = adminSelectedDate;
+             if(yy) {
+                 const start = new Date(parseInt(yy), 0, 1);
+                 const end = new Date(parseInt(yy), 11, 31);
+                 datesToFetch = getDatesInRange(start, end);
+             }
+         }
+
+         let allData = [];
+         const chunkSize = 30; // Batch fetching to stay within limits
+         for(let i=0; i<datesToFetch.length; i+=chunkSize){
+             const chunk = datesToFetch.slice(i, i+chunkSize);
+             const promises = chunk.map(d => getDocs(collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${currentUser.location}_${d}`)));
+             const snaps = await Promise.all(promises);
+             snaps.forEach(snap => {
+                 snap.forEach(doc => {
+                     const data = doc.data();
+                     allData.push({ ...data, time: new Date(data.time), exitTime: data.exitTime ? new Date(data.exitTime) : null });
+                 });
+             });
+         }
+
+         if (reportFilterType === 'shift') {
+             allData = allData.filter(d => d.exitShift === reportFilterShift);
+         }
+
+         setAdminReports(allData);
+      } catch(e) { console.error("Error fetch historical data:", e); }
+      setIsLoadingReports(false);
     };
 
-    const exportWALaporan = (dateStr, dataArray) => {
-       const s = generateReportStats(dataArray);
-       const msg = `*REKAP PENDAPATAN (CUT OFF)*\n📍 Lokasi: ${currentUser?.location}\n🗓 Tgl Bisnis: ${dateStr}\n\n*RINCIAN:*\n🏍 Motor: ${s.motorQty} (Rp ${s.motorNom.toLocaleString()})\n🚗 Mobil: ${s.mobilQty} (Rp ${s.mobilNom.toLocaleString()})\n🚚 Box: ${s.trukQty} (Rp ${s.trukNom.toLocaleString()})\n💳 Member: ${s.memberQty}\n\n*TOTAL: Rp ${s.total.toLocaleString()}*`;
+    const generatePDFReport = () => {
+       const s = generateReportStats(adminReports);
+       let title = `LAPORAN PENDAPATAN (${reportFilterType.toUpperCase()})`;
+       let sub = adminSelectedDate;
+       if(reportFilterType==='shift') sub = `${adminSelectedDate} | ${reportFilterShift}`;
+       setReportToPrint({ type: 'report', title, date: sub, stats: s, data: adminReports, location: currentUser?.location });
+    };
+
+    const exportWALaporan = () => {
+       const s = generateReportStats(adminReports);
+       let sub = adminSelectedDate;
+       if(reportFilterType==='shift') sub = `${adminSelectedDate} | ${reportFilterShift}`;
+       const msg = `*REKAP PENDAPATAN (${reportFilterType.toUpperCase()})*\n📍 Lokasi: ${currentUser?.location}\n🗓 Periode: ${sub}\n\n*RINCIAN:*\n🏍 Motor: ${s.motorQty} (Rp ${s.motorNom.toLocaleString()})\n🚗 Mobil: ${s.mobilQty} (Rp ${s.mobilNom.toLocaleString()})\n🚚 Box: ${s.trukQty} (Rp ${s.trukNom.toLocaleString()})\n💳 Member: ${s.memberQty}\n\n*TOTAL: Rp ${s.total.toLocaleString()}*`;
        window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
     };
 
@@ -911,45 +963,97 @@ export default function App() {
 
             {settingsMenu === 'laporan' && (
               <div className="space-y-6 max-w-4xl animate-fade-in">
-                <h2 className="text-3xl font-extrabold mb-2">Laporan Pendapatan (Mode Hemat Kuota)</h2>
-                <p className="text-white/50 text-sm mb-6">Pilih tanggal untuk memuat riwayat transaksi. Aplikasi hanya akan mendownload data saat Anda mengeklik tombol "Cari Laporan" untuk meminimalisir penggunaan kuota.</p>
+                <h2 className="text-3xl font-extrabold mb-2">Laporan Pendapatan Lanjutan</h2>
+                <p className="text-white/50 text-sm mb-6">Filter riwayat transaksi secara spesifik. Aplikasi akan otomatis menarik seluruh data berdasarkan rentang filter secara cerdas.</p>
                 
                 <div className="bg-white/5 border border-white/10 p-6 rounded-[24px]">
-                   <div className="flex flex-col md:flex-row gap-4 items-end mb-6">
-                      <div className="flex-1 w-full">
-                         <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-2 block">Pilih Tanggal Bisnis</label>
-                         <div className="relative">
-                            <Calendar className="absolute left-4 top-3.5 text-white/40" size={20} />
-                            <input type="date" value={adminSelectedDate} onChange={e => setAdminSelectedDate(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 pl-12 outline-none focus:ring-1 focus:ring-green-500 text-white" />
-                         </div>
+                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                      <div>
+                         <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-2 block">Filter Data</label>
+                         <select value={reportFilterType} onChange={e => {
+                             setReportFilterType(e.target.value);
+                             if(e.target.value === 'bulan') setAdminSelectedDate(new Date().toISOString().substring(0,7));
+                             else if(e.target.value === 'tahun') setAdminSelectedDate(new Date().getFullYear().toString());
+                             else setAdminSelectedDate(parseDateStrToInput(getBusinessDateStr(new Date())));
+                         }} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none focus:ring-1 focus:ring-green-500 text-white [&>option]:text-black">
+                             <option value="cutoff">Per Hari (Cut-Off)</option>
+                             <option value="shift">Per Shift</option>
+                             <option value="bulan">Per Bulan</option>
+                             <option value="tahun">Per Tahun</option>
+                         </select>
                       </div>
-                      <div className="w-full md:w-auto">
-                         <button className="w-full md:w-auto bg-green-500 text-black font-bold px-6 py-3 rounded-xl hover:bg-green-400 shadow-lg" onClick={() => setAdminSelectedDate(adminSelectedDate)}>Refresh Data</button>
+
+                      {reportFilterType === 'shift' && (
+                          <div>
+                            <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-2 block">Pilih Shift</label>
+                            <select value={reportFilterShift} onChange={e => setReportFilterShift(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none focus:ring-1 focus:ring-green-500 text-white [&>option]:text-black">
+                                <option>Shift 1 (Pagi)</option>
+                                <option>Shift 2 (Siang)</option>
+                                <option>Shift 3 (Malam)</option>
+                            </select>
+                          </div>
+                      )}
+
+                      <div className={reportFilterType !== 'shift' ? 'md:col-span-2' : ''}>
+                         <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-2 block">Tentukan Periode</label>
+                         <div className="flex flex-col md:flex-row gap-3">
+                             {reportFilterType === 'bulan' ? (
+                                <input type="month" value={adminSelectedDate} onChange={e => setAdminSelectedDate(e.target.value)} className="flex-1 w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none focus:ring-1 focus:ring-green-500 text-white" />
+                             ) : reportFilterType === 'tahun' ? (
+                                <input type="number" value={adminSelectedDate} min="2020" max="2100" onChange={e => setAdminSelectedDate(e.target.value)} className="flex-1 w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none focus:ring-1 focus:ring-green-500 text-white" placeholder="YYYY" />
+                             ) : (
+                                <input type="date" value={adminSelectedDate} onChange={e => setAdminSelectedDate(e.target.value)} className="flex-1 w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none focus:ring-1 focus:ring-green-500 text-white" />
+                             )}
+                             <button className="w-full md:w-auto bg-green-500 text-black font-bold px-6 py-3 rounded-xl hover:bg-green-400 shadow-lg" onClick={fetchAdminReports}>Tarik Data</button>
+                         </div>
                       </div>
                    </div>
 
                    {isLoadingReports ? (
-                      <div className="py-10 text-center flex flex-col items-center text-white/40"><div className="w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full animate-spin mb-4"></div>Memuat Data Transaksi...</div>
+                      <div className="py-10 text-center flex flex-col items-center text-white/40"><div className="w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full animate-spin mb-4"></div>Mengunduh & Merekap Data Transaksi...</div>
                    ) : adminReports.length === 0 ? (
-                      <div className="py-10 text-center text-white/40 border-t border-white/5">Tidak ada transaksi yang terselesaikan pada tanggal {adminSelectedDate}.</div>
+                      <div className="py-10 text-center text-white/40 border-t border-white/5">Klik tombol Tarik Data untuk menampilkan laporan.</div>
                    ) : (
-                      <div className="border-t border-white/10 pt-6">
-                         <div className="flex justify-between items-center mb-6">
-                           <h3 className="text-xl font-bold text-green-400">Total: {adminReports.length} Kendaraan</h3>
-                           <div className="flex gap-2">
-                              <button onClick={() => exportWALaporan(adminSelectedDate, adminReports)} className="flex items-center gap-2 bg-green-500/20 text-green-400 px-4 py-2 rounded-xl text-sm font-bold hover:bg-green-500/30 transition-colors"><Send size={16}/> Kirim WA</button>
-                              <button onClick={() => generatePDFReport(adminSelectedDate, adminReports)} className="flex items-center gap-2 bg-blue-500/20 text-blue-400 px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-500/30 transition-colors"><FileDown size={16}/> Lampiran PDF</button>
+                      <div className="border-t border-white/10 pt-6 animate-fade-in">
+                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                           <h3 className="text-xl font-bold text-green-400">Total Transaksi: {adminReports.length} Data</h3>
+                           <div className="flex gap-2 w-full md:w-auto">
+                              <button onClick={() => exportWALaporan()} className="flex-1 md:flex-none flex justify-center items-center gap-2 bg-green-500/20 text-green-400 px-4 py-2 rounded-xl text-sm font-bold hover:bg-green-500/30 transition-colors"><Send size={16}/> Kirim WA</button>
+                              <button onClick={() => generatePDFReport()} className="flex-1 md:flex-none flex justify-center items-center gap-2 bg-blue-500/20 text-blue-400 px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-500/30 transition-colors"><FileDown size={16}/> Laporan PDF</button>
                            </div>
                          </div>
                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                             {(() => {
                                const stats = generateReportStats(adminReports);
+                               const totalP = adminReports.length;
+                               const pUnder1 = totalP ? Math.round((stats.durUnder1 / totalP) * 100) : 0;
+                               const p1to3 = totalP ? Math.round((stats.dur1to3 / totalP) * 100) : 0;
+                               const pOver3 = totalP ? Math.round((stats.durOver3 / totalP) * 100) : 0;
+
                                return (
                                  <>
                                   <div className="bg-black/30 p-4 rounded-xl"><p className="text-xs text-white/50">Total Motor</p><p className="text-xl font-bold mt-1">Rp {stats.motorNom.toLocaleString()}</p></div>
                                   <div className="bg-black/30 p-4 rounded-xl"><p className="text-xs text-white/50">Total Mobil/Box</p><p className="text-xl font-bold mt-1">Rp {(stats.mobilNom + stats.trukNom).toLocaleString()}</p></div>
                                   <div className="bg-black/30 p-4 rounded-xl"><p className="text-xs text-white/50">Member Gratis</p><p className="text-xl font-bold mt-1">{stats.memberQty} Unit</p></div>
                                   <div className="bg-green-500/10 p-4 rounded-xl border border-green-500/30"><p className="text-xs text-green-400/80">Total Pendapatan</p><p className="text-2xl font-bold text-green-400 mt-1">Rp {stats.total.toLocaleString()}</p></div>
+
+                                  <div className="bg-black/30 p-5 rounded-xl col-span-2 md:col-span-4 mt-2">
+                                     <h4 className="font-bold text-white/80 mb-4 border-b border-white/10 pb-2">Lama Parkir (Durasi Menginap)</h4>
+                                     <div className="flex flex-col md:flex-row gap-6">
+                                        <div className="flex-1">
+                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>&lt; 1 Jam ({stats.durUnder1} unit)</span><span className="font-bold text-green-400">{pUnder1}%</span></div>
+                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-green-500 h-full transition-all" style={{width: `${pUnder1}%`}}></div></div>
+                                        </div>
+                                        <div className="flex-1">
+                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>1 - 3 Jam ({stats.dur1to3} unit)</span><span className="font-bold text-blue-400">{p1to3}%</span></div>
+                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-blue-500 h-full transition-all" style={{width: `${p1to3}%`}}></div></div>
+                                        </div>
+                                        <div className="flex-1">
+                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>&gt; 3 Jam ({stats.durOver3} unit)</span><span className="font-bold text-red-400">{pOver3}%</span></div>
+                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-red-500 h-full transition-all" style={{width: `${pOver3}%`}}></div></div>
+                                        </div>
+                                     </div>
+                                  </div>
                                  </>
                                )
                             })()}
@@ -1063,15 +1167,19 @@ export default function App() {
             <div className="border-b-4 border-black pb-4 mb-6 flex justify-between items-start">
                <div>
                  <h1 className="text-4xl font-black tracking-tight">{reportToPrint.title || "LAPORAN PENDAPATAN"}</h1>
-                 <p className="text-xl font-medium mt-2">Tanggal Bisnis: {reportToPrint.date}</p>
+                 <p className="text-xl font-medium mt-2">Periode Data: {reportToPrint.date}</p>
                  <p className="text-md">Lokasi Stasiun: <span className="font-bold">{reportToPrint.location}</span></p>
                  {reportToPrint.shift && <p className="text-md font-bold uppercase">Shift Kerja: {reportToPrint.shift}</p>}
-                 <p className="text-md">Dicetak oleh: {currentUser?.name} ({currentUser?.nipkwt}) - {new Date().toLocaleString('id-ID')}</p>
+                 <p className="text-md">Dicetak pada: {new Date().toLocaleString('id-ID')}</p>
                </div>
                {currentUser?.photo && (
-                 <img src={currentUser.photo} alt="Foto Petugas" className="w-24 h-24 object-cover border-2 border-black rounded-lg shadow-sm" />
+                 <div className="text-center">
+                   <img src={currentUser.photo} alt="Foto Petugas Login" className="w-24 h-24 object-cover border-2 border-black rounded-lg shadow-sm mx-auto mb-1" />
+                   <p className="text-xs font-bold uppercase">{currentUser?.name}</p>
+                 </div>
                )}
             </div>
+            
             <div className="flex gap-10 mb-8">
                <div className="flex-1 border-2 border-black p-4 rounded-xl">
                   <p className="text-sm font-bold uppercase text-gray-500">Total Kendaraan</p>
@@ -1082,7 +1190,8 @@ export default function App() {
                   <p className="text-3xl font-black">{reportToPrint.stats.total.toLocaleString('id-ID')}</p>
                </div>
             </div>
-            <h3 className="text-xl font-bold mb-4">Rincian Per Kategori</h3>
+
+            <h3 className="text-xl font-bold mb-4">Rincian Pendapatan Per Kategori</h3>
             <table className="w-full text-left border-collapse border border-gray-300 mb-8">
               <thead>
                 <tr className="bg-gray-100"><th className="border border-gray-300 p-3">Kategori</th><th className="border border-gray-300 p-3">Qty</th><th className="border border-gray-300 p-3">Nominal (Rp)</th></tr>
@@ -1094,14 +1203,27 @@ export default function App() {
                 <tr><td className="border border-gray-300 p-3 font-semibold">Member (Gratis)</td><td className="border border-gray-300 p-3">{reportToPrint.stats.memberQty}</td><td className="border border-gray-300 p-3">0</td></tr>
               </tbody>
             </table>
+
+            <h3 className="text-xl font-bold mb-4">Statistik Lama Parkir (Durasi)</h3>
+            <table className="w-full text-left border-collapse border border-gray-300 mb-8">
+              <thead>
+                 <tr className="bg-gray-100"><th className="border border-gray-300 p-3">Durasi</th><th className="border border-gray-300 p-3">Qty</th><th className="border border-gray-300 p-3">Persentase (%)</th></tr>
+              </thead>
+              <tbody>
+                 <tr><td className="border border-gray-300 p-3 font-semibold">&lt; 1 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.durUnder1}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.durUnder1 / reportToPrint.data.length) * 100) : 0}%</td></tr>
+                 <tr><td className="border border-gray-300 p-3 font-semibold">1 - 3 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur1to3}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur1to3 / reportToPrint.data.length) * 100) : 0}%</td></tr>
+                 <tr><td className="border border-gray-300 p-3 font-semibold">&gt; 3 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.durOver3}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.durOver3 / reportToPrint.data.length) * 100) : 0}%</td></tr>
+              </tbody>
+            </table>
+
             <div className="mt-10 flex justify-end">
                <div className="text-center w-64">
-                 <p className="mb-4">Mengetahui,</p>
+                 <p className="mb-4">Dinyatakan & Diverifikasi Oleh,</p>
                  {currentUser?.photo && (
-                   <img src={currentUser.photo} alt="Tanda Tangan/Selfie Petugas" className="w-20 h-20 object-cover rounded-full mx-auto mb-3 border border-gray-400" />
+                   <img src={currentUser.photo} alt="Tanda Tangan/Selfie Petugas" className="w-24 h-24 object-cover rounded-full mx-auto mb-3 border-2 border-gray-400" />
                  )}
                  <p className="font-bold border-b border-black inline-block px-4 pb-1">{reportToPrint.cashier || currentUser?.name}</p>
-                 <p className="text-sm">Petugas Kasir</p>
+                 <p className="text-sm mt-1">{reportToPrint.cashier ? "Petugas Kasir" : currentUser?.role}</p>
                </div>
             </div>
           </div>
