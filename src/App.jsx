@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Camera, Printer, Settings, LogOut, Car, Bike, Truck, ShieldCheck, Search, X, Check, Image as ImageIcon, FileText, Send, Users, BarChart3, Moon, Bluetooth, Plus, Trash2, FileDown, MapPin, Eye, Calendar } from 'lucide-react';
+import { Camera, Printer, Settings, LogOut, Car, Bike, Truck, ShieldCheck, Search, X, Check, Image as ImageIcon, FileText, Send, Users, BarChart3, Moon, Bluetooth, Plus, Trash2, FileDown, MapPin, Eye, Calendar, Download, AlertTriangle } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, getDocs } from 'firebase/firestore';
@@ -26,52 +26,49 @@ try {
 }
 
 // --- FIX BUG SETTINGAN KEMBALI KE DEFAULT ---
-// Kita patenkan ID Database ini. Jangan diubah agar data tidak hilang saat pindah hosting!
 const DB_APP_ID = "Resparking_Production_DB"; 
 
 // --- DATA & CONFIG DEFAULT ---
 const DEFAULT_TARIFFS = {
   Motor: { type: 'progresif', first: 2000, next: 2000, max: 8000, overnight: 10000 },
   Mobil: { type: 'progresif', first: 3000, next: 3000, max: 15000, overnight: 20000 },
-  Truk: { type: 'progresif', first: 5000, next: 5000, max: 25000, overnight: 25000 },
+  Truk: { type: 'progresif', first: 5000, next: 5000, max: 25000, overnight: 100000 },
   Sepeda: { type: 'flat', first: 1000, next: 0, max: 2000, overnight: 5000 }
 };
 
 const VEHICLE_TYPES = ['Motor', 'Mobil', 'Truk', 'Sepeda'];
 const LOCATIONS = ['ST. Cimahi Selatan', 'ST. Gadobangkong', 'ST. Cianjur', 'ST. Cibatu'];
 
+// Diperluas untuk mencakup hampir semua merk printer thermal bluetooth
 const PRINTER_SERVICES = [
-  '000018f0-0000-1000-8000-00805f9b34fb', 
-  '0000af30-0000-1000-8000-00805f9b34fb',
+  '000018f0-0000-1000-8000-00805f9b34fb', // Standard BLE Printer
+  'e7810a71-73ae-499d-8c15-faa9aef0c3f2', 
   '49535343-fe7d-4ae5-8fa9-9fafd205e455',
-  'e7810a71-73ae-499d-8c15-faa9aef0c3f2'
+  '0000af30-0000-1000-8000-00805f9b34fb',
+  '00001814-0000-1000-8000-00805f9b34fb', // Generic UUID
 ];
 
 const DEFAULT_USERS = [
   { username: 'master', nipkwt: '200041', password: 'R3gional2BD!', role: 'Master' },
   { username: 'Kasier Pagi', nipkwt: '1014202601', password: '123', role: 'Kasier' },
-  { username: 'Kasier Pagi', nipkwt: '1014202602', password: '123', role: 'Kasier' },
-  { username: 'Kasier Pagi', nipkwt: '1014202603', password: '123', role: 'Kasier' },
-  { username: 'Kasier Siang', nipkwt: '1014202604', password: '123', role: 'Kasier' },
-  { username: 'Kasier Malam', nipkwt: '1014202605', password: '123', role: 'Kasier' },
+  { username: 'Kasier Siang', nipkwt: '1014202602', password: '123', role: 'Kasier' },
+  { username: 'Kasier Malam', nipkwt: '1014202603', password: '123', role: 'Kasier' },
   { username: 'Korlap', nipkwt: '1014202600', password: '123456', role: 'Korlap' },
   { username: 'Audit', nipkwt: '001', password: 'Audit123', role: 'Auditor' }
 ];
 
 const DEFAULT_MEMBERS = [{ plate: 'B1234KWT', nip: '12345678' }];
 
-// --- HELPER FORMAT TANGGAL BISNIS (PENGHEMAT KUOTA FIREBASE) ---
-// Memisahkan transaksi ke dalam "laci harian" (Cut-off jam 06:00)
+// --- HELPER FORMAT TANGGAL BISNIS ---
 const getBusinessDateStr = (dateObj) => {
   const d = new Date(dateObj);
   if (d.getHours() < 6) d.setDate(d.getDate() - 1);
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}${mm}${dd}`; // Format hasil: 20260328
+  return `${yyyy}${mm}${dd}`; 
 };
 
-// Ubah format string (YYYYMMDD) kembali jadi tampilan kalender (YYYY-MM-DD)
 const parseDateStrToInput = (str) => {
    if(!str || str.length !== 8) return "";
    return `${str.substring(0,4)}-${str.substring(4,6)}-${str.substring(6,8)}`;
@@ -80,11 +77,9 @@ const parseDateStrToInput = (str) => {
 export default function App() {
   const sessionId = useMemo(() => Math.random().toString(36).substring(2, 10), []);
 
-  // --- STATE FIREBASE AUTH ---
   const [fbUser, setFbUser] = useState(null);
   const [isDbReady, setIsDbReady] = useState(false);
 
-  // --- STATE SESSION LOKAL ---
   const [currentUser, setCurrentUser] = useState(() => {
     const savedUser = localStorage.getItem('app_currentUser');
     return savedUser ? JSON.parse(savedUser) : null;
@@ -93,14 +88,18 @@ export default function App() {
     return localStorage.getItem('app_currentUser') ? 'dashboard' : 'login';
   }); 
 
-  // --- STATE OPERASIONAL ---
-  const [activeTab, setActiveTab] = useState('masuk'); 
+  // --- STATE OPERASIONAL KASIR (SPLIT UI) ---
+  const [plateMasuk, setPlateMasuk] = useState('');
+  const [vehicleTypeMasuk, setVehicleTypeMasuk] = useState('Motor');
+  const [plateKeluar, setPlateKeluar] = useState('');
+  
   const [shiftInfo, setShiftInfo] = useState({ name: '', time: '' });
   const shiftRef = useRef('');
+  const [isShiftLocked, setIsShiftLocked] = useState(false);
   
   const [usersList, setUsersList] = useState(DEFAULT_USERS);
   const [parkedVehicles, setParkedVehicles] = useState([]);
-  const [shiftTransactions, setShiftTransactions] = useState([]); // HANYA berisi transaksi HARI INI
+  const [shiftTransactions, setShiftTransactions] = useState([]); 
   const [tariffs, setTariffs] = useState(DEFAULT_TARIFFS);
   const [members, setMembers] = useState(DEFAULT_MEMBERS); 
   const [runningText, setRunningText] = useState('Selamat Datang di Sistem Layanan Parkir Resparking');
@@ -108,8 +107,6 @@ export default function App() {
 
   const [connectedPrinter, setConnectedPrinter] = useState(null);
   const [settingsMenu, setSettingsMenu] = useState('tarif'); 
-  const [plateNumber, setPlateNumber] = useState('');
-  const [vehicleType, setVehicleType] = useState('Motor');
   const [newUser, setNewUser] = useState({ username: '', nipkwt: '', password: '', role: 'Kasier' });
   const [newMember, setNewMember] = useState({ plate: '', nip: '' });
   const [reportToPrint, setReportToPrint] = useState(null); 
@@ -123,13 +120,13 @@ export default function App() {
   const [currentTransaction, setCurrentTransaction] = useState(null);
   const [capturedImage, setCapturedImage] = useState(null);
 
-  // State Khusus Admin Laporan (Hemat Kuota)
+  // State Khusus Admin
   const [adminSelectedDate, setAdminSelectedDate] = useState(parseDateStrToInput(getBusinessDateStr(new Date())));
   const [adminReports, setAdminReports] = useState([]);
   const [isLoadingReports, setIsLoadingReports] = useState(false);
 
   // ==================================================
-  // EFEK 1: LOGIN & AUTH FIREBASE (KONEKSI DATABASE)
+  // EFEK 1-4: KONEKSI & FETCHING FIREBASE
   // ==================================================
   useEffect(() => {
     if (!auth) return;
@@ -137,50 +134,33 @@ export default function App() {
       try {
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
           await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
+        } else { await signInAnonymously(auth); }
       } catch (e) { console.error("Firebase Auth Error:", e); }
     };
     initAuth();
-
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setFbUser(user);
-      setIsDbReady(!!user);
-    });
+    const unsubscribe = onAuthStateChanged(auth, (user) => { setFbUser(user); setIsDbReady(!!user); });
     return () => unsubscribe();
   }, []);
 
-  // ==================================================
-  // EFEK 2: FETCH DATA GLOBAL (USER LIST)
-  // ==================================================
   useEffect(() => {
     if (!fbUser || !db) return;
     const docRef = doc(db, 'artifacts', DB_APP_ID, 'public', 'data', 'globalSettings', 'users');
     const unsub = onSnapshot(docRef, (snap) => {
-      if (snap.exists() && snap.data().list) {
-        setUsersList(snap.data().list);
-      } else {
-        setDoc(docRef, { list: DEFAULT_USERS }, { merge: true }).catch(console.error);
-      }
+      if (snap.exists() && snap.data().list) setUsersList(snap.data().list);
+      else setDoc(docRef, { list: DEFAULT_USERS }, { merge: true }).catch(console.error);
     }, (err) => console.error(err));
     return () => unsub();
   }, [fbUser]);
 
-  // ==================================================
-  // EFEK 3: FETCH DATA LOKASI (PARKIR AKTIF & SHIFT HARI INI SAJA)
-  // ==================================================
   useEffect(() => {
     if (!fbUser || !db || !currentUser?.location) return;
     const loc = currentUser.location;
 
-    // 1. Sinkronisasi Pengaturan Lokasi
     const confRef = doc(db, 'artifacts', DB_APP_ID, 'public', 'data', 'locationConfigs', loc);
     const unsubConf = onSnapshot(confRef, (snap) => {
       if (snap.exists()) {
         const d = snap.data();
-        setTariffs(d.tariffs || DEFAULT_TARIFFS);
-        setMembers(d.members || DEFAULT_MEMBERS);
+        setTariffs(d.tariffs || DEFAULT_TARIFFS); setMembers(d.members || DEFAULT_MEMBERS);
         setRunningText(d.runningText || 'Selamat Datang di Sistem Layanan Parkir Resparking');
         if (d.customLogo !== undefined) setCustomLogo(d.customLogo);
       } else {
@@ -188,62 +168,45 @@ export default function App() {
       }
     }, (err) => console.error(err));
 
-    // 2. Sinkronisasi Kendaraan Terparkir (Masih di dalam)
     const pvRef = collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${loc}`);
     const unsubPv = onSnapshot(pvRef, (snap) => {
       const items = [];
-      snap.forEach(d => {
-        const data = d.data();
-        items.push({ ...data, time: new Date(data.time) });
-      });
+      snap.forEach(d => items.push({ ...d.data(), time: new Date(d.data().time) }));
       setParkedVehicles(items);
     }, (err) => console.error(err));
 
-    // 3. Sinkronisasi Transaksi Selesai (HANYA HARI BISNIS INI -> SANGAT HEMAT KUOTA)
     const todayBusinessStr = getBusinessDateStr(new Date());
     const txRef = collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${loc}_${todayBusinessStr}`);
     const unsubTx = onSnapshot(txRef, (snap) => {
       const items = [];
-      snap.forEach(d => {
-        const data = d.data();
-        items.push({ ...data, time: new Date(data.time), exitTime: data.exitTime ? new Date(data.exitTime) : null });
-      });
+      snap.forEach(d => items.push({ ...d.data(), time: new Date(d.data().time), exitTime: d.data().exitTime ? new Date(d.data().exitTime) : null }));
       setShiftTransactions(items);
     }, (err) => console.error(err));
 
     return () => { unsubConf(); unsubPv(); unsubTx(); };
   }, [fbUser, currentUser?.location]);
 
-
-  // ==================================================
-  // EFEK 4: AMBIL DATA LAPORAN HISTORIS (ADMIN HANYA SAAT DIMINTA)
-  // ==================================================
   useEffect(() => {
      if (view !== 'settings' || settingsMenu !== 'laporan' || !db || !currentUser?.location || !adminSelectedDate) return;
-     
      const fetchAdminReports = async () => {
         setIsLoadingReports(true);
         try {
-           // Ubah format YYYY-MM-DD ke YYYYMMDD
            const targetDateStr = adminSelectedDate.replace(/-/g, '');
            const q = collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${currentUser.location}_${targetDateStr}`);
-           const snap = await getDocs(q); // Pake getDocs untuk HEMAT KUOTA (Bukan onSnapshot)
-           
+           const snap = await getDocs(q); 
            const items = [];
-           snap.forEach(d => {
-              const data = d.data();
-              items.push({ ...data, time: new Date(data.time), exitTime: data.exitTime ? new Date(data.exitTime) : null });
-           });
+           snap.forEach(d => items.push({ ...d.data(), time: new Date(d.data().time), exitTime: d.data().exitTime ? new Date(d.data().exitTime) : null }));
            setAdminReports(items);
         } catch(e) { console.error("Error fetch historical data:", e); }
         setIsLoadingReports(false);
      };
-
      fetchAdminReports();
   }, [view, settingsMenu, adminSelectedDate, currentUser?.location]);
 
 
-  // --- LOGIKA WAKTU & SHIFT ---
+  // ==================================================
+  // LOGIKA WAKTU & SISTEM LOCKOUT SHIFT KASIR
+  // ==================================================
   useEffect(() => {
     const updateTimeAndShift = () => {
       const now = new Date();
@@ -259,10 +222,13 @@ export default function App() {
         time: now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
       });
 
-      if (shiftRef.current && shiftRef.current !== shiftName && currentUser && currentUser.role === 'Kasier') {
+      // TRIGGER LOCKOUT KASIR JIKA MELEWATI SHIFT
+      if (currentUser && currentUser.role === 'Kasier' && shiftRef.current && shiftRef.current !== shiftName) {
+        setIsShiftLocked(true);
         setShowReportModal(true);
       }
-      shiftRef.current = shiftName;
+      
+      if(!shiftRef.current) shiftRef.current = shiftName;
     };
 
     updateTimeAndShift();
@@ -270,26 +236,19 @@ export default function App() {
     return () => clearInterval(timer);
   }, [currentUser]);
 
-  // --- HANDLER UPDATE DATABASE ---
   const updateLocConfig = (partial) => {
     if (currentUser?.role !== 'Master' || !db || !fbUser || !currentUser?.location) return;
     setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', 'locationConfigs', currentUser.location), partial, { merge: true }).catch(console.error);
   };
 
-  // --- HANDLER LOGIN & LOGOUT ---
   const handleLogin = (e) => {
     e.preventDefault();
     const data = new FormData(e.target);
-    const user = data.get('username');
-    const pwd = data.get('password');
-    const nip = data.get('nipkwt');
-    const location = data.get('location');
-
+    const user = data.get('username'), pwd = data.get('password'), nip = data.get('nipkwt'), location = data.get('location');
     if (!user || !pwd || !nip || !location) return alert("Mohon isi semua data login termasuk lokasi stasiun!");
-
     const foundUser = usersList.find(u => u.username === user && u.nipkwt === nip && u.password === pwd);
     if (!foundUser) return alert("Akses Ditolak: Username, NIPKWT, atau Password tidak valid!");
-
+    
     setPendingLoginUser({ name: foundUser.username, nipkwt: foundUser.nipkwt, role: foundUser.role, location });
     setShowLoginCamera(true);
   };
@@ -297,27 +256,16 @@ export default function App() {
   const onLoginPhotoCaptured = (photoBase64) => {
     const loggedInUser = { ...pendingLoginUser, photo: photoBase64 };
     localStorage.setItem('app_currentUser', JSON.stringify(loggedInUser));
-    setCurrentUser(loggedInUser);
-    setShowLoginCamera(false);
-    setView('dashboard');
-  };
-
-  const handleLogoutClick = () => {
-    if(currentUser?.role === 'Kasier') {
-      setShowReportModal(true);
-    } else {
-      confirmLogout();
-    }
+    setCurrentUser(loggedInUser); setShowLoginCamera(false); setView('dashboard');
+    // Reset state ui
+    setPlateMasuk(''); setPlateKeluar(''); setIsShiftLocked(false); shiftRef.current = '';
   };
 
   const confirmLogout = () => {
     if(currentUser) localStorage.removeItem('app_currentUser');
-    setCurrentUser(null);
-    setShowReportModal(false);
-    setView('login');
+    setCurrentUser(null); setShowReportModal(false); setView('login');
   };
 
-  // --- HELPERS ---
   const getBusinessDate = (dateObj) => {
     const d = new Date(dateObj);
     if (d.getHours() < 6) d.setDate(d.getDate() - 1); 
@@ -337,29 +285,31 @@ export default function App() {
         } else if (t.vehicleType === 'Truk') {
           stats.trukQty++; stats.trukNom += t.cost;
         }
-        stats.total += t.cost;
+        stats.total += (t.cost || 0);
       }
     });
     return stats;
   };
 
-  // --- TRANSAKSI PARKIR ---
+  // --- TRANSAKSI KASIR ---
   const handleMasuk = () => {
-    if (!plateNumber) return alert("Masukkan Plat Nomor!");
+    if (!plateMasuk) return alert("Masukkan Plat Nomor!");
     setCurrentTransaction({
       type: 'masuk',
-      plate: plateNumber.toUpperCase(),
-      vehicleType,
+      plate: plateMasuk.toUpperCase(),
+      vehicleType: vehicleTypeMasuk,
       time: new Date(),
       location: currentUser?.location,
-      isMember: members.some(m => m.plate === plateNumber.toUpperCase())
+      cashier: currentUser?.name,
+      shift: shiftInfo.name,
+      isMember: members.some(m => m.plate === plateMasuk.toUpperCase())
     });
     setShowCamera(true);
   };
 
-  const handleKeluar = () => {
-    if (!plateNumber) return alert("Masukkan Plat Nomor!");
-    const vehicle = parkedVehicles.find(v => v.plate === plateNumber.toUpperCase());
+  const handleKeluar = (plateInput = plateKeluar) => {
+    if (!plateInput) return alert("Masukkan Plat Nomor Keluar!");
+    const vehicle = parkedVehicles.find(v => v.plate === plateInput.toUpperCase());
     if (!vehicle) return alert("Kendaraan tidak ditemukan di area parkir!");
     
     const exitTime = new Date();
@@ -379,7 +329,16 @@ export default function App() {
       }
     }
 
-    setCurrentTransaction({ ...vehicle, type: 'keluar', exitTime, durationHours: hours, cost, location: currentUser?.location });
+    setCurrentTransaction({ 
+      ...vehicle, 
+      type: 'keluar', 
+      exitTime, 
+      durationHours: hours, 
+      cost, 
+      location: currentUser?.location,
+      exitCashier: currentUser?.name,
+      exitShift: shiftInfo.name
+    });
     setShowCamera(true);
   };
 
@@ -389,24 +348,24 @@ export default function App() {
     if (currentTransaction?.type === 'masuk') {
       const v = { ...currentTransaction, photo: capturedImage, time: currentTransaction.time.toISOString() };
       setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, v.plate), v).catch(console.error);
+      setPlateMasuk('');
     } else if (currentTransaction?.type === 'keluar') {
       deleteDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, currentTransaction.plate)).catch(console.error);
       const tx = { ...currentTransaction, time: currentTransaction.time.toISOString(), exitTime: currentTransaction.exitTime.toISOString() };
       
-      // Simpan ke collection harian yang super hemat kuota (Format: tx_Lokasi_20260328)
       const businessStr = getBusinessDateStr(new Date());
       setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${currentUser.location}_${businessStr}`, `${tx.plate}_${Date.now()}`), tx).catch(console.error);
+      setPlateKeluar('');
     }
     
     setShowPrintModal(false);
-    setPlateNumber('');
     setCurrentTransaction(null);
     setCapturedImage(null);
   };
 
   const pairBluetooth = async () => {
     try {
-      if (!navigator.bluetooth) throw new Error("Browser ini tidak mendukung Web Bluetooth.");
+      if (!navigator.bluetooth) throw new Error("Browser ini tidak mendukung Web Bluetooth. Gunakan Chrome untuk PC/Android.");
       const device = await navigator.bluetooth.requestDevice({
         acceptAllDevices: true,
         optionalServices: PRINTER_SERVICES
@@ -420,10 +379,7 @@ export default function App() {
 
   useEffect(() => {
     if (reportToPrint) {
-      setTimeout(() => {
-        window.print();
-        setTimeout(() => setReportToPrint(null), 1000);
-      }, 500);
+      setTimeout(() => { window.print(); setTimeout(() => setReportToPrint(null), 1000); }, 500);
     }
   }, [reportToPrint]);
 
@@ -440,38 +396,74 @@ export default function App() {
   }
 
   // =====================================
-  // MODAL LAPORAN SHIFT
+  // MODAL LAPORAN SHIFT (KASIR SPESIFIK)
   // =====================================
   const ReportModal = () => {
-    const myShiftTx = shiftTransactions.filter(t => getBusinessDate(t.exitTime) === getBusinessDate(new Date()));
+    // Filter KHUSUS untuk kasir yang sedang login, di shift saat ini, pada hari ini.
+    const myShiftTx = shiftTransactions.filter(t => 
+       t.exitCashier === currentUser?.name && 
+       t.exitShift === shiftInfo.name &&
+       getBusinessDate(t.exitTime) === getBusinessDate(new Date())
+    );
+    
     const s = generateReportStats(myShiftTx);
     const dateStr = new Date().toLocaleDateString('id-ID');
 
-    const doExportWA = () => {
-      const msg = `*LAPORAN SHIFT KASIR*\n📍 Lokasi: ${currentUser?.location}\n🗓 ${dateStr}\n👤 ${currentUser?.name} (${currentUser?.nipkwt})\n🕒 ${shiftInfo.name}\n\n*RINCIAN:*\n🏍 Motor: ${s.motorQty} (Rp ${s.motorNom.toLocaleString()})\n🚗 Mobil: ${s.mobilQty} (Rp ${s.mobilNom.toLocaleString()})\n🚚 Box: ${s.trukQty} (Rp ${s.trukNom.toLocaleString()})\n💳 Member: ${s.memberQty}\n\n*TOTAL STORAN: Rp ${s.total.toLocaleString()}*`;
-      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
-      setCurrentTransaction({ type: 'report', stats: s, date: dateStr, shift: shiftInfo.name, location: currentUser?.location });
-      setShowPrintModal(true);
+    const triggerAction = (actionType) => {
+      const payload = { type: 'report', title: 'LAPORAN KASIR (SHIFT)', stats: s, date: dateStr, shift: shiftInfo.name, location: currentUser?.location, cashier: currentUser?.name, data: myShiftTx };
+      
+      if(actionType === 'wa') {
+        const msg = `*LAPORAN SHIFT KASIR*\n📍 Lokasi: ${currentUser?.location}\n🗓 ${dateStr}\n👤 ${currentUser?.name} (${currentUser?.nipkwt})\n🕒 ${shiftInfo.name}\n\n*RINCIAN:*\n🏍 Motor: ${s.motorQty} (Rp ${s.motorNom.toLocaleString()})\n🚗 Mobil: ${s.mobilQty} (Rp ${s.mobilNom.toLocaleString()})\n🚚 Box: ${s.trukQty} (Rp ${s.trukNom.toLocaleString()})\n💳 Member: ${s.memberQty}\n\n*TOTAL STORAN: Rp ${s.total.toLocaleString()}*`;
+        window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+      } else if (actionType === 'pdf') {
+        setReportToPrint(payload);
+      }
+
+      // Jika ter-lockout, otomatis di-logout setelah aksi dilakukan (beri jeda untuk print/wa redirect)
+      if(isShiftLocked) {
+         setTimeout(() => confirmLogout(), 2000);
+      } else {
+         setShowReportModal(false);
+      }
     };
 
     return (
-      <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 print:hidden">
-        <div className="bg-[#0F2E1F] border border-green-500/30 backdrop-blur-xl rounded-[32px] w-full max-w-md p-6 text-white shadow-[0_0_50px_rgba(34,197,94,0.1)] relative overflow-hidden">
-          <button onClick={confirmLogout} className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-red-500/80 rounded-full transition-colors"><X size={24} /></button>
+      <div className={`fixed inset-0 ${isShiftLocked ? 'bg-black/95 z-[999]' : 'bg-black/90 z-50'} backdrop-blur-md flex items-center justify-center p-4 print:hidden`}>
+        <div className={`bg-[#0F2E1F] border ${isShiftLocked ? 'border-red-500/50 shadow-[0_0_50px_rgba(239,68,68,0.2)]' : 'border-green-500/30 shadow-[0_0_50px_rgba(34,197,94,0.1)]'} backdrop-blur-xl rounded-[32px] w-full max-w-md p-6 text-white relative overflow-hidden`}>
+          {!isShiftLocked && (
+             <button onClick={() => setShowReportModal(false)} className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-red-500/80 rounded-full transition-colors"><X size={24} /></button>
+          )}
+          
           <div className="flex flex-col items-center mb-6 mt-4">
-            <div className="bg-orange-500/20 text-orange-400 p-4 rounded-full mb-4"><FileText size={48} /></div>
-            <h2 className="text-2xl font-bold tracking-tight text-center">Sudahkah Anda Laporan?</h2>
-            <p className="text-white/60 text-sm text-center mt-2">Harap cetak & kirim laporan sebelum menyelesaikan shift di {currentUser?.location}.</p>
+            {isShiftLocked ? (
+               <div className="bg-red-500/20 text-red-400 p-4 rounded-full mb-4 animate-pulse"><AlertTriangle size={48} /></div>
+            ) : (
+               <div className="bg-orange-500/20 text-orange-400 p-4 rounded-full mb-4"><FileText size={48} /></div>
+            )}
+            
+            <h2 className="text-2xl font-bold tracking-tight text-center">{isShiftLocked ? 'Sesi Shift Berakhir' : 'Laporan Shift Anda'}</h2>
+            <p className="text-white/60 text-sm text-center mt-2 leading-relaxed">
+               {isShiftLocked 
+                  ? "Waktu shift Anda telah habis. Anda wajib mencetak atau mengirim laporan ini sebagai bukti storan sebelum sistem di-logout." 
+                  : `Rincian transaksi yang diselesaikan oleh ${currentUser?.name} pada ${shiftInfo.name} hari ini.`}
+            </p>
           </div>
+          
           <div className="bg-black/40 rounded-2xl p-4 space-y-3 mb-6 text-sm border border-white/5">
-            <div className="flex justify-between border-b border-white/10 pb-2"><span>Motor/Sepeda: {s.motorQty}</span> <span>Rp {s.motorNom.toLocaleString('id-ID')}</span></div>
-            <div className="flex justify-between border-b border-white/10 pb-2"><span>Mobil: {s.mobilQty}</span> <span>Rp {s.mobilNom.toLocaleString('id-ID')}</span></div>
-            <div className="flex justify-between border-b border-white/10 pb-2"><span>Box/Truk: {s.trukQty}</span> <span>Rp {s.trukNom.toLocaleString('id-ID')}</span></div>
+            <div className="flex justify-between border-b border-white/10 pb-2"><span>Motor/Sepeda ({s.motorQty})</span> <span>Rp {s.motorNom.toLocaleString('id-ID')}</span></div>
+            <div className="flex justify-between border-b border-white/10 pb-2"><span>Mobil ({s.mobilQty})</span> <span>Rp {s.mobilNom.toLocaleString('id-ID')}</span></div>
+            <div className="flex justify-between border-b border-white/10 pb-2"><span>Box/Truk ({s.trukQty})</span> <span>Rp {s.trukNom.toLocaleString('id-ID')}</span></div>
             <div className="flex justify-between font-bold text-lg pt-2 text-green-400"><span>TOTAL STORAN:</span> <span>Rp {s.total.toLocaleString('id-ID')}</span></div>
           </div>
-          <button onClick={doExportWA} className="w-full bg-green-500 hover:bg-green-400 text-black font-extrabold rounded-xl py-4 shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all flex justify-center items-center gap-2">
-            <Send size={20} /> Export WA & Cetak Struk Laporan
-          </button>
+          
+          <div className="flex gap-3">
+             <button onClick={() => triggerAction('wa')} className={`flex-1 ${isShiftLocked ? 'bg-red-600 hover:bg-red-500' : 'bg-green-600 hover:bg-green-500'} text-white font-bold rounded-xl py-4 shadow-lg transition-all flex justify-center items-center gap-2 text-sm`}>
+               <Send size={18} /> Kirim WA {isShiftLocked && '& Keluar'}
+             </button>
+             <button onClick={() => triggerAction('pdf')} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl py-4 shadow-lg transition-all flex justify-center items-center gap-2 text-sm">
+               <Download size={18} /> Cetak PDF {isShiftLocked && '& Keluar'}
+             </button>
+          </div>
         </div>
       </div>
     );
@@ -539,73 +531,74 @@ export default function App() {
   }
 
   // =====================================
-  // VIEW: DASHBOARD KASIR
+  // VIEW: DASHBOARD KASIR (SPLIT SCREEN POS)
   // =====================================
   const canAccessSettings = ['Master', 'Korlap', 'Auditor'].includes(currentUser?.role);
 
   if (view === 'dashboard') {
     return (
-      <div className="min-h-screen bg-[#0A1A13] font-sans text-white pb-20 selection:bg-green-500/30 print:hidden">
-        <div className="bg-[#0F2E1F]/80 backdrop-blur-xl pt-10 pb-4 px-4 sticky top-0 z-10 border-b border-white/10 shadow-lg">
-          <div className="flex justify-between items-center mb-4">
-            <div className="flex items-center gap-3">
+      <div className="min-h-screen bg-[#0A1A13] font-sans text-white pb-10 selection:bg-green-500/30 print:hidden flex flex-col">
+        <div className="bg-[#0F2E1F]/80 backdrop-blur-xl pt-6 pb-4 px-6 sticky top-0 z-10 border-b border-white/10 shadow-lg">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">
+            <div className="flex items-center gap-4">
               {currentUser?.photo ? (
-                <img src={currentUser.photo} alt="User" className="w-12 h-12 rounded-full border-2 border-green-500 object-cover shadow-lg" />
+                <img src={currentUser.photo} alt="User" className="w-14 h-14 rounded-full border-2 border-green-500 object-cover shadow-lg" />
               ) : (
-                <div className="w-12 h-12 rounded-full border-2 border-green-500 flex items-center justify-center bg-black/50">
-                  <Users size={20} className="text-green-500" />
+                <div className="w-14 h-14 rounded-full border-2 border-green-500 flex items-center justify-center bg-black/50">
+                  <Users size={24} className="text-green-500" />
                 </div>
               )}
               <div>
-                <h1 className="text-xl md:text-2xl font-bold tracking-tight text-green-50">{currentUser?.name} <span className="text-xs font-normal text-white/50">({currentUser?.nipkwt}) - {currentUser?.role}</span></h1>
-                <div className="flex items-center gap-1.5 mt-0.5 text-xs md:text-sm text-green-400/80 font-medium">
-                  <MapPin size={14} /> {currentUser?.location} • {shiftInfo.name}
+                <h1 className="text-2xl font-bold tracking-tight text-green-50">{currentUser?.name} <span className="text-xs font-normal text-white/50 bg-black/30 px-2 py-0.5 rounded-md ml-2">{currentUser?.nipkwt}</span></h1>
+                <div className="flex items-center gap-2 mt-1 text-sm text-green-400/80 font-medium">
+                  <MapPin size={16} /> {currentUser?.location} <span className="text-white/30">|</span> {shiftInfo.name} <span className="text-white/30">|</span> {shiftInfo.time}
                 </div>
               </div>
             </div>
-            <div className="flex gap-2 md:gap-3">
+            
+            <div className="flex flex-wrap gap-2 md:gap-3 w-full md:w-auto">
+              {currentUser?.role === 'Kasier' && (
+                <button onClick={() => setShowReportModal(true)} className="flex-1 md:flex-none px-4 py-2.5 bg-orange-500/20 text-orange-400 border border-orange-500/50 rounded-xl text-sm font-bold hover:bg-orange-500/30 transition-colors flex items-center justify-center gap-2 shadow-lg">
+                  <FileText size={18}/> Laporan Kasir
+                </button>
+              )}
               {canAccessSettings && (
-                <button onClick={() => setView('settings')} className="p-2 md:p-3 bg-white/10 border border-white/10 rounded-full text-white hover:bg-white/20 transition-colors">
+                <button onClick={() => setView('settings')} className="p-2.5 bg-white/10 border border-white/10 rounded-xl text-white hover:bg-white/20 transition-colors flex justify-center items-center shadow-lg">
                   <Settings size={20} />
                 </button>
               )}
-              <button onClick={handleLogoutClick} className="p-2 md:p-3 bg-red-500/20 border border-red-500/30 rounded-full text-red-400 hover:bg-red-500/40 transition-colors">
+              <button onClick={() => setShowReportModal(true)} className="p-2.5 bg-red-500/20 border border-red-500/30 rounded-xl text-red-400 hover:bg-red-500/40 transition-colors flex justify-center items-center shadow-lg">
                 <LogOut size={20} />
               </button>
             </div>
           </div>
           
-          <div className="w-full bg-black py-1.5 overflow-hidden relative shadow-inner border-y border-red-500/20 mb-2 mt-2">
+          <div className="w-full bg-black py-1.5 overflow-hidden relative shadow-inner border-y border-red-500/20 mt-4 rounded-md">
             <marquee scrollamount="8" className="text-red-500 text-[11px] font-bold tracking-widest uppercase">
               {runningText}
             </marquee>
           </div>
-
-          <div className="bg-black/40 p-1.5 rounded-[12px] flex border border-white/5 mt-2">
-            <button onClick={() => setActiveTab('masuk')} className={`flex-1 py-2 text-sm font-bold rounded-[8px] transition-all ${activeTab === 'masuk' ? 'bg-white/15 shadow-sm text-white' : 'text-white/50 hover:text-white/80'}`}>Kendaraan Masuk</button>
-            <button onClick={() => setActiveTab('keluar')} className={`flex-1 py-2 text-sm font-bold rounded-[8px] transition-all ${activeTab === 'keluar' ? 'bg-white/15 shadow-sm text-white' : 'text-white/50 hover:text-white/80'}`}>Kendaraan Keluar</button>
-          </div>
         </div>
 
-        <div className="p-4 mt-4 max-w-md mx-auto">
-          {activeTab === 'masuk' ? (
-            <div className="bg-white/5 border border-white/10 backdrop-blur-lg rounded-[24px] p-6 shadow-xl space-y-6">
-              <div className="flex justify-center mb-4">
-                {customLogo ? (
-                  <img src={customLogo} alt="Logo" className="h-16 w-16 object-contain" />
-                ) : (
-                  <Car size={48} className="text-white/30" />
-                )}
-              </div>
+        {/* SPLIT SCREEN LAYOUT UNTUK PELAYANAN CEPAT */}
+        <div className="p-4 mt-2 max-w-[1400px] mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1">
+          
+          {/* KOTAK KIRI: KENDARAAN MASUK */}
+          <div className="bg-gradient-to-br from-white/5 to-transparent border border-white/10 backdrop-blur-lg rounded-[32px] p-6 shadow-2xl flex flex-col relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none"><Car size={200}/></div>
+            <h2 className="text-2xl font-extrabold text-green-400 flex items-center gap-2 mb-6 border-b border-white/10 pb-4"><Plus size={24}/> TIKET MASUK</h2>
+            
+            <div className="flex-1 space-y-6 z-10">
               <div>
-                <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1">Input Plat Nomor</label>
-                <input value={plateNumber} onChange={e => setPlateNumber(e.target.value.toUpperCase())} placeholder="D 1234 XY" className="w-full mt-2 bg-black/40 border border-white/10 rounded-2xl p-5 text-4xl font-black text-center text-white uppercase tracking-[0.2em] outline-none focus:ring-2 focus:ring-green-500/50 focus:bg-black/60 transition-all placeholder:text-white/20" />
+                <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-2 block">Ketik Plat Nomor Masuk</label>
+                <input value={plateMasuk} onChange={e => setPlateMasuk(e.target.value.toUpperCase())} placeholder="D 1234 XY" className="w-full bg-black/50 border border-green-500/30 rounded-2xl p-5 text-4xl font-black text-center text-white uppercase tracking-[0.2em] outline-none focus:ring-2 focus:ring-green-500 transition-all placeholder:text-white/10 shadow-inner" />
               </div>
+              
               <div>
-                <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-3 block">Pilih Kategori</label>
+                <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-3 block">Kategori Kendaraan</label>
                 <div className="grid grid-cols-2 gap-3">
                   {VEHICLE_TYPES.map(type => (
-                    <button key={type} onClick={() => setVehicleType(type)} className={`flex flex-col items-center justify-center py-5 rounded-2xl border transition-all ${vehicleType === type ? 'border-green-400 bg-green-400/10 text-green-300' : 'border-white/10 bg-black/30 text-white/60'}`}>
+                    <button key={type} onClick={() => setVehicleTypeMasuk(type)} className={`flex flex-col items-center justify-center py-5 rounded-2xl border transition-all ${vehicleTypeMasuk === type ? 'border-green-400 bg-green-500/20 text-green-300 shadow-[0_0_15px_rgba(34,197,94,0.2)]' : 'border-white/10 bg-black/30 text-white/50 hover:bg-white/5'}`}>
                       {type === 'Motor' && <Bike size={32} className="mb-2"/>}
                       {type === 'Mobil' && <Car size={32} className="mb-2"/>}
                       {type === 'Truk' && <Truck size={32} className="mb-2"/>}
@@ -615,48 +608,64 @@ export default function App() {
                   ))}
                 </div>
               </div>
-              <button onClick={handleMasuk} disabled={currentUser?.role !== 'Kasier'} className={`w-full rounded-2xl py-4 text-lg font-extrabold shadow-[0_0_20px_rgba(34,197,94,0.25)] flex items-center justify-center gap-2 mt-4 transition-all ${currentUser?.role === 'Kasier' ? 'bg-green-500 text-black hover:bg-green-400 active:scale-[0.98]' : 'bg-gray-600 text-gray-400 cursor-not-allowed opacity-50'}`}>
-                <Printer size={22} /> Cetak Tiket Masuk
-              </button>
             </div>
-          ) : (
-            <div className="bg-white/5 border border-white/10 backdrop-blur-lg rounded-[24px] p-6 shadow-xl space-y-6">
-               <div>
-                <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1">Cari Plat Kendaraan Keluar</label>
-                <div className="relative mt-2">
-                  <Search className="absolute left-5 top-5 text-white/40" size={26} />
-                  <input value={plateNumber} onChange={e => setPlateNumber(e.target.value.toUpperCase())} placeholder="D 12..." className="w-full bg-black/40 border border-white/10 rounded-2xl p-5 pl-14 text-3xl font-black text-white uppercase tracking-widest outline-none focus:ring-2 focus:ring-red-500/50 transition-all placeholder:text-white/20" />
-                </div>
-              </div>
-              <div className="bg-black/20 rounded-2xl p-3 max-h-48 overflow-y-auto space-y-2 border border-white/5">
-                {parkedVehicles.filter(v => v.plate.includes(plateNumber) && plateNumber !== '').map((v, i) => (
-                  <div key={i} onClick={() => setPlateNumber(v.plate)} className="bg-white/10 p-4 rounded-xl flex justify-between items-center cursor-pointer hover:bg-white/20 border border-white/5 transition-colors">
-                    <span className="font-bold text-xl tracking-wider">{v.plate}</span>
-                    <span className="text-xs font-bold bg-white/20 text-white px-3 py-1.5 rounded-lg">{v.vehicleType}</span>
+
+            <button onClick={handleMasuk} disabled={currentUser?.role !== 'Kasier'} className={`w-full rounded-2xl py-5 text-xl font-extrabold mt-6 transition-all flex items-center justify-center gap-2 ${currentUser?.role === 'Kasier' ? 'bg-green-500 text-black hover:bg-green-400 active:scale-[0.98] shadow-[0_0_20px_rgba(34,197,94,0.3)]' : 'bg-gray-600 text-gray-400 cursor-not-allowed opacity-50'}`}>
+              <Camera size={24} /> FOTO & CETAK TIKET
+            </button>
+          </div>
+
+          {/* KOTAK KANAN: KENDARAAN KELUAR */}
+          <div className="bg-gradient-to-bl from-white/5 to-transparent border border-white/10 backdrop-blur-lg rounded-[32px] p-6 shadow-2xl flex flex-col relative overflow-hidden">
+             <div className="absolute top-0 left-0 p-6 opacity-5 pointer-events-none"><LogOut size={200}/></div>
+             <h2 className="text-2xl font-extrabold text-red-400 flex items-center gap-2 mb-6 border-b border-white/10 pb-4"><Search size={24}/> SCAN KELUAR</h2>
+             
+             <div className="flex-1 flex flex-col z-10">
+                <div>
+                  <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-2 block">Cari / Scan Plat Keluar</label>
+                  <div className="relative">
+                    <Search className="absolute left-5 top-5 text-white/40" size={26} />
+                    <input value={plateKeluar} onChange={e => setPlateKeluar(e.target.value.toUpperCase())} placeholder="D 12..." className="w-full bg-black/50 border border-red-500/30 rounded-2xl p-5 pl-14 text-3xl font-black text-white uppercase tracking-widest outline-none focus:ring-2 focus:ring-red-500 transition-all placeholder:text-white/10 shadow-inner" />
                   </div>
-                ))}
-                {parkedVehicles.length === 0 && <p className="text-center text-white/40 text-sm py-6">Area parkir kosong / data tidak ditemukan.</p>}
-              </div>
-
-              {parkedVehicles.find(v => v.plate === plateNumber) && (
-                <div className="bg-black/40 p-4 rounded-2xl border border-white/10 text-center animate-fade-in">
-                  <p className="text-xs font-bold text-white/50 uppercase mb-3">Validasi Foto Masuk Kendaraan</p>
-                  {parkedVehicles.find(v => v.plate === plateNumber).photo ? (
-                    <img src={parkedVehicles.find(v => v.plate === plateNumber).photo} alt="Foto Masuk" className="w-full h-48 object-cover rounded-xl border border-white/20 shadow-lg" />
-                  ) : (
-                    <div className="w-full h-48 flex flex-col items-center justify-center bg-white/5 rounded-xl border border-white/20 text-white/30">
-                      <ImageIcon size={48} className="mb-2" />
-                      <span className="text-sm">Tidak ada foto terekam</span>
-                    </div>
-                  )}
                 </div>
-              )}
 
-              <button onClick={handleKeluar} disabled={currentUser?.role !== 'Kasier'} className={`w-full rounded-2xl py-4 text-lg font-extrabold shadow-[0_0_20px_rgba(239,68,68,0.3)] flex items-center justify-center gap-2 mt-4 transition-all ${currentUser?.role === 'Kasier' ? 'bg-red-500/90 text-white hover:bg-red-400 active:scale-[0.98]' : 'bg-gray-600 text-gray-400 cursor-not-allowed opacity-50'}`}>
-                <Printer size={22} /> Selesaikan & Cetak Struk
-              </button>
-            </div>
-          )}
+                <div className="mt-4 bg-black/30 rounded-2xl p-3 flex-1 overflow-y-auto border border-white/5 min-h-[150px] space-y-2">
+                  {parkedVehicles.filter(v => v.plate.includes(plateKeluar) && plateKeluar !== '').map((v, i) => (
+                    <div key={i} onClick={() => setPlateKeluar(v.plate)} className="bg-white/10 p-4 rounded-xl flex justify-between items-center cursor-pointer hover:bg-white/20 border border-white/5 transition-colors group">
+                      <span className="font-bold text-2xl tracking-wider">{v.plate}</span>
+                      <div className="flex items-center gap-3">
+                         <span className="text-xs font-bold bg-white/20 text-white px-3 py-1.5 rounded-lg">{v.vehicleType}</span>
+                         <button onClick={(e) => { e.stopPropagation(); handleKeluar(v.plate); }} className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 shadow-lg"><Printer size={16}/> Selesaikan</button>
+                      </div>
+                    </div>
+                  ))}
+                  {plateKeluar === '' && <p className="text-center text-white/30 text-sm mt-10 font-bold tracking-widest">Ketik Plat Untuk Mencari Data</p>}
+                  {plateKeluar !== '' && parkedVehicles.filter(v => v.plate.includes(plateKeluar)).length === 0 && <p className="text-center text-red-400/50 text-sm mt-10 font-bold">Data Kendaraan Tidak Ditemukan</p>}
+                </div>
+
+                {parkedVehicles.find(v => v.plate === plateKeluar) && (
+                  <div className="mt-4 bg-black/40 p-4 rounded-2xl border border-white/10 text-center flex flex-col md:flex-row items-center gap-4 animate-fade-in shadow-xl">
+                    {parkedVehicles.find(v => v.plate === plateKeluar).photo ? (
+                      <img src={parkedVehicles.find(v => v.plate === plateKeluar).photo} alt="Foto Masuk" className="w-full md:w-48 h-32 object-cover rounded-xl border border-white/20 shadow-lg shrink-0" />
+                    ) : (
+                      <div className="w-full md:w-48 h-32 flex flex-col items-center justify-center bg-white/5 rounded-xl border border-white/20 text-white/30 shrink-0">
+                        <ImageIcon size={32} className="mb-2" />
+                        <span className="text-[10px] font-bold">TIDAK ADA FOTO</span>
+                      </div>
+                    )}
+                    <div className="flex-1 text-left w-full">
+                       <p className="text-xs text-white/50 font-bold mb-1 uppercase tracking-wider">Rincian Terpilih</p>
+                       <h3 className="text-3xl font-black tracking-widest">{plateKeluar}</h3>
+                       <p className="text-sm font-bold text-white/70 mt-1">{parkedVehicles.find(v => v.plate === plateKeluar).vehicleType} • Masuk: {parkedVehicles.find(v => v.plate === plateKeluar).time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</p>
+                    </div>
+                  </div>
+                )}
+             </div>
+
+             <button onClick={() => handleKeluar()} disabled={currentUser?.role !== 'Kasier'} className={`w-full rounded-2xl py-5 text-xl font-extrabold mt-6 transition-all flex items-center justify-center gap-2 ${currentUser?.role === 'Kasier' ? 'bg-red-500/90 text-white hover:bg-red-400 active:scale-[0.98] shadow-[0_0_20px_rgba(239,68,68,0.3)]' : 'bg-gray-600 text-gray-400 cursor-not-allowed opacity-50'}`}>
+               <Printer size={24} /> SELESAIKAN & CETAK
+             </button>
+          </div>
         </div>
 
         {showCamera && <CameraModal onCapture={v => { setCapturedImage(v); setShowCamera(false); setShowPrintModal(true); }} onClose={() => setShowCamera(false)} />}
@@ -672,9 +681,9 @@ export default function App() {
   if (view === 'settings' && canAccessSettings) {
     const isEditor = currentUser?.role === 'Master'; 
 
-    const generatePDFReport = (dateStr, dataArray) => {
+    const generatePDFReport = (dateStr, dataArray, title="LAPORAN PENDAPATAN (CUT-OFF)") => {
        const s = generateReportStats(dataArray);
-       setReportToPrint({ date: dateStr, stats: s, data: dataArray });
+       setReportToPrint({ type: 'report', title, date: dateStr, stats: s, data: dataArray, location: currentUser?.location });
     };
 
     const exportWALaporan = (dateStr, dataArray) => {
@@ -687,7 +696,6 @@ export default function App() {
       e.preventDefault();
       if(!isEditor || !db) return;
       if(usersList.find(u => u.username === newUser.username)) return alert("Username sudah ada!");
-      
       const newList = [...usersList, newUser];
       setUsersList(newList);
       setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', 'globalSettings', 'users'), { list: newList }, {merge: true}).catch(console.error);
@@ -697,7 +705,6 @@ export default function App() {
     const handleDeleteUser = (username) => {
       if(!isEditor || !db) return;
       if(username === 'master') return alert("Akun Master default tidak bisa dihapus!");
-      
       const newList = usersList.filter(u => u.username !== username);
       setUsersList(newList);
       setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', 'globalSettings', 'users'), { list: newList }, {merge: true}).catch(console.error);
@@ -708,7 +715,6 @@ export default function App() {
       if(!isEditor) return;
       if(!newMember.plate || !newMember.nip) return;
       if(members.some(m => m.plate === newMember.plate.toUpperCase())) return alert("Plat nomor sudah terdaftar!");
-      
       const newMembersList = [...members, { plate: newMember.plate.toUpperCase(), nip: newMember.nip }];
       setMembers(newMembersList);
       updateLocConfig({ members: newMembersList });
@@ -1056,13 +1062,14 @@ export default function App() {
           <div className="hidden print:block print:absolute print:inset-0 print:bg-white print:text-black print:z-[9999] p-8 font-sans">
             <div className="border-b-4 border-black pb-4 mb-6 flex justify-between items-start">
                <div>
-                 <h1 className="text-4xl font-black tracking-tight">LAPORAN PENDAPATAN (CUT-OFF)</h1>
+                 <h1 className="text-4xl font-black tracking-tight">{reportToPrint.title || "LAPORAN PENDAPATAN"}</h1>
                  <p className="text-xl font-medium mt-2">Tanggal Bisnis: {reportToPrint.date}</p>
-                 <p className="text-md">Lokasi Stasiun: <span className="font-bold">{currentUser?.location}</span></p>
+                 <p className="text-md">Lokasi Stasiun: <span className="font-bold">{reportToPrint.location}</span></p>
+                 {reportToPrint.shift && <p className="text-md font-bold uppercase">Shift Kerja: {reportToPrint.shift}</p>}
                  <p className="text-md">Dicetak oleh: {currentUser?.name} ({currentUser?.nipkwt}) - {new Date().toLocaleString('id-ID')}</p>
                </div>
                {currentUser?.photo && (
-                 <img src={currentUser.photo} alt="Foto Petugas Login" className="w-24 h-24 object-cover border-2 border-black rounded-lg shadow-sm" />
+                 <img src={currentUser.photo} alt="Foto Petugas" className="w-24 h-24 object-cover border-2 border-black rounded-lg shadow-sm" />
                )}
             </div>
             <div className="flex gap-10 mb-8">
@@ -1071,7 +1078,7 @@ export default function App() {
                   <p className="text-3xl font-black">{reportToPrint.data.length} Unit</p>
                </div>
                <div className="flex-1 border-2 border-black p-4 rounded-xl bg-gray-100">
-                  <p className="text-sm font-bold uppercase text-gray-500">Total Pendapatan (Rp)</p>
+                  <p className="text-sm font-bold uppercase text-gray-500">Total Setoran Kasir (Rp)</p>
                   <p className="text-3xl font-black">{reportToPrint.stats.total.toLocaleString('id-ID')}</p>
                </div>
             </div>
@@ -1093,8 +1100,8 @@ export default function App() {
                  {currentUser?.photo && (
                    <img src={currentUser.photo} alt="Tanda Tangan/Selfie Petugas" className="w-20 h-20 object-cover rounded-full mx-auto mb-3 border border-gray-400" />
                  )}
-                 <p className="font-bold border-b border-black inline-block px-4 pb-1">{currentUser?.name}</p>
-                 <p className="text-sm">Petugas</p>
+                 <p className="font-bold border-b border-black inline-block px-4 pb-1">{reportToPrint.cashier || currentUser?.name}</p>
+                 <p className="text-sm">Petugas Kasir</p>
                </div>
             </div>
           </div>
@@ -1130,18 +1137,13 @@ function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek" }) {
     if (error) { onCapture('dummy_image_data'); return; }
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    
-    // LOGIKA KOMPRESI EKSTRIM (HEMAT STORAGE & BANDWIDTH)
     if (video && canvas) {
-      const MAX_WIDTH = 300; // Resize resolusi secara drastis untuk plat/selfie
+      const MAX_WIDTH = 300; 
       const scale = Math.min(1, MAX_WIDTH / video.videoWidth);
       canvas.width = video.videoWidth * scale;
       canvas.height = video.videoHeight * scale;
-      
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      
-      // Kompres ke format JPEG dengan kualitas 60%
       onCapture(canvas.toDataURL('image/jpeg', 0.6)); 
     }
   };
@@ -1194,21 +1196,7 @@ function PrintModal({ transaction, onComplete }) {
           
           <p className="text-xs mb-4 border-b border-black pb-2 uppercase tracking-widest font-bold">LOKASI: {transaction.location}</p>
 
-          {transaction.type === 'report' ? (
-             <>
-              <p className="mb-2 font-bold text-lg border border-black p-1">LAPORAN SHIFT</p>
-              <div className="text-left text-xs space-y-2 mt-4"><p>TGL: {transaction.date}</p><p>SHIFT: {transaction.shift}</p></div>
-              <div className="border-t-2 border-dashed border-gray-400 my-4 pt-4 text-left space-y-2 text-xs">
-                 <div className="flex justify-between"><span>Motor:</span><span>Rp {transaction.stats.motorNom.toLocaleString('id-ID')}</span></div>
-                 <div className="flex justify-between"><span>Mobil:</span><span>Rp {transaction.stats.mobilNom.toLocaleString('id-ID')}</span></div>
-                 <div className="flex justify-between"><span>Box:</span><span>Rp {transaction.stats.trukNom.toLocaleString('id-ID')}</span></div>
-                 <div className="flex justify-between"><span>Member:</span><span>{transaction.stats.memberQty} unit</span></div>
-              </div>
-              <div className="border-t-2 border-black mt-4 pt-2">
-                <p className="text-xs">TOTAL STORAN</p><h2 className="text-2xl font-bold">Rp {transaction.stats.total.toLocaleString('id-ID')}</h2>
-              </div>
-             </>
-          ) : transaction.type === 'masuk' ? (
+          {transaction.type === 'masuk' ? (
             <>
               <p className="mb-2 text-base">TIKET MASUK ({transaction.vehicleType})</p>
               <h1 className="text-5xl font-black my-6 tracking-tighter leading-none">{transaction.plate}</h1>
