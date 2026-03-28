@@ -1515,7 +1515,7 @@ function MainApp() {
                    <p className="text-sm text-white/50 mb-8 max-w-md">Sistem ini telah dikonfigurasi secara khusus untuk mencetak karcis dan struk menggunakan aplikasi <b>RawBT Thermal Printer</b> di Android. Pastikan aplikasi tersebut sudah terinstal dan printer Bluetooth Anda sudah disandingkan di dalamnya.</p>
                    <button onClick={() => {
                        const testHtml = `<html><body style="text-align:center; font-family:monospace; padding:20px;"><img src="${CUSTOM_LOGO_B64}" style="width:80px; filter:grayscale(100%); margin-bottom:10px;"/><br/><h3 style="font-size: 24px;">KONEKSI RAWBT BERHASIL</h3><p>Sistem Parkir Resparking siap digunakan.</p></body></html>`;
-                       window.location.href = `intent:data:text/html;base64,${btoa(unescape(encodeURIComponent(testHtml)))}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
+                       window.location.href = `rawbt:data:text/html;base64,${btoa(unescape(encodeURIComponent(testHtml)))}`;
                    }} className="bg-green-500 text-black font-bold px-8 py-4 rounded-2xl hover:bg-green-400 transition-all flex items-center gap-2">
                      <Bluetooth size={20} /> Test Buka RawBT
                    </button>
@@ -1736,11 +1736,8 @@ function PrintModal({ transaction, onComplete }) {
       // Encode HTML ke format URI scheme yang bisa dibaca RawBT WebView
       const encodedHtml = btoa(unescape(encodeURIComponent(htmlContent)));
       
-      // Intent URL dengan data `text/html;base64` untuk hasil rendering yang sempurna
-      const intentUrl = `intent:data:text/html;base64,${encodedHtml}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
-      
-      // Memicu redirect ke RawBT
-      window.location.href = intentUrl;
+      // Perbaikan: Gunakan URI rawbt: secara langsung agar prefix data:text/html tidak terhapus
+      window.location.href = `rawbt:data:text/html;base64,${encodedHtml}`;
       
       // Otomatis tandai sukses/selesai setelah beralih aplikasi (1.5 detik)
       setTimeout(() => setPrintSuccess(true), 1500);
