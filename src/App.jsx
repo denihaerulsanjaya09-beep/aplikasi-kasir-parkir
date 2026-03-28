@@ -10,8 +10,6 @@ if (typeof window !== 'undefined') {
   window.tailwind.config = window.tailwind.config || {};
 }
 
-const CUSTOM_LOGO_B64 = "data:image/png;base64,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";
-
 // =====================================
 // KONFIGURASI FIREBASE (WAJIB ADA)
 // =====================================
@@ -297,15 +295,11 @@ function MainApp() {
      }
   }, [settingsMenu]);
 
-  // FUNGSI BARU: Mengambil Histori Login (Sesuai dengan Cut-Off Pendapatan)
+  // FUNGSI BARU: Mengambil Histori Login (Dipindahkan ke luar kondisi agar tidak melanggar aturan Hooks #310)
   const fetchLoginHistory = async () => {
      setIsLoadingHistory(true);
      try {
-         if (!db || !currentUser?.location) return;
-         const safeLoc = String(currentUser.location || 'default').replace(/\//g, '-');
-         const businessStr = getBusinessDateStr(new Date()); // Hanya ambil hari ini (cut off)
-         
-         const snap = await getDocs(collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `loginHistory_${safeLoc}_${businessStr}`));
+         const snap = await getDocs(collection(db, 'artifacts', DB_APP_ID, 'public', 'data', 'loginHistory'));
          const items = [];
          snap.forEach(d => {
              items.push(d.data());
@@ -386,14 +380,11 @@ function MainApp() {
     setView('dashboard');
     setPlateMasuk(''); setPlateKeluar(''); setIsShiftLocked(false); shiftRef.current = ''; setActiveTab('masuk');
 
-    // Menuliskan Histori Login ke Firebase (Disesuaikan dengan format cut off)
+    // Menuliskan Histori Login ke Firebase
     if (db) {
         try {
             const docId = `${loggedInUser.nipkwt}_${Date.now()}`;
-            const safeLoc = String(loggedInUser.location || 'default').replace(/\//g, '-');
-            const businessStr = getBusinessDateStr(new Date());
-            
-            await setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `loginHistory_${safeLoc}_${businessStr}`, docId), {
+            await setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', 'loginHistory', docId), {
                 name: loggedInUser.name,
                 nipkwt: loggedInUser.nipkwt,
                 role: loggedInUser.role,
@@ -420,15 +411,12 @@ function MainApp() {
   };
 
   const generateReportStats = (transactions) => {
-    let stats = { motorQty: 0, motorNom: 0, mobilQty: 0, mobilNom: 0, trukQty: 0, trukNom: 0, memberQty: 0, total: 0, durUnder1: 0, dur1to3: 0, dur3to8: 0, dur8to12: 0, durOver12: 0 };
+    let stats = { motorQty: 0, motorNom: 0, mobilQty: 0, mobilNom: 0, trukQty: 0, trukNom: 0, memberQty: 0, total: 0, durUnder1: 0, dur1to3: 0, durOver3: 0 };
     transactions.forEach(t => {
       const hrs = t.durationHours || 1;
-      // Kategori Durasi Lama Parkir Baru
       if (hrs <= 1) stats.durUnder1++;
       else if (hrs <= 3) stats.dur1to3++;
-      else if (hrs <= 8) stats.dur3to8++;
-      else if (hrs <= 12) stats.dur8to12++;
-      else stats.durOver12++;
+      else stats.durOver3++;
 
       if (t.isMember) {
         stats.memberQty++;
@@ -589,14 +577,25 @@ function MainApp() {
     if (txDataRef.current?.type === 'masuk') setPlateMasuk('');
     else if (txDataRef.current?.type === 'keluar') setPlateKeluar('');
     
-    setActiveTab('masuk');
     setShowPrintModal(false);
     setCurrentTransaction(null);
     txDataRef.current = null;
     setCapturedImage(null);
   };
 
-  // Fungsi pairBluetooth bawaan browser dihapus karena telah digantikan integrasi RawBT
+  const pairBluetooth = async () => {
+    try {
+      if (!navigator.bluetooth) throw new Error("Browser ini tidak mendukung Web Bluetooth. Gunakan Chrome untuk PC/Android.");
+      const device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: PRINTER_SERVICES
+      });
+      setConnectedPrinter({ name: device.name || 'Printer Kasir Thermal', id: device.id });
+      alert(`Berhasil menyandingkan: ${device.name || 'Printer Kasir Thermal'}`);
+    } catch (err) {
+      alert("Proses sanding dibatalkan atau gagal: " + err.message);
+    }
+  };
 
   useEffect(() => {
     if (reportToPrint) {
@@ -713,8 +712,8 @@ function MainApp() {
 
         <div className="bg-white/10 backdrop-blur-2xl border border-white/20 w-full max-w-sm rounded-[36px] p-8 shadow-[0_8px_32px_rgba(0,0,0,0.5)] relative z-10">
           <div className="flex flex-col items-center justify-center mb-6">
-            <div className="bg-white p-4 rounded-[28px] shadow-lg border border-white/20 mb-4 mt-2">
-              <img src={CUSTOM_LOGO_B64} alt="Logo" className="w-20 h-20 object-contain drop-shadow-md" />
+            <div className="bg-gradient-to-br from-green-400 to-green-600 p-5 rounded-[28px] shadow-lg border border-white/20 mb-4 mt-2">
+              <Car size={72} className="text-white drop-shadow-md" />
             </div>
             <h1 className="text-4xl font-extrabold tracking-tight mb-2 text-transparent bg-clip-text bg-gradient-to-r from-white to-green-300 uppercase">
               Resparking
@@ -746,14 +745,9 @@ function MainApp() {
               <Camera size={20} /> Login & Foto Wajah
             </button>
             
-            <div className="mt-6 text-center space-y-3">
-              <p className="text-white/30 text-[11px] font-bold tracking-widest uppercase">
-                copyright by 200041
-              </p>
-              <a href="https://www.dashboardregional2bd.id/" target="_blank" rel="noopener noreferrer" className="inline-block text-green-400 hover:text-green-300 text-xs font-bold underline underline-offset-4 transition-colors">
-                Lapor Kendala Aplikasi
-              </a>
-            </div>
+            <p className="text-center text-white/30 text-[11px] font-bold tracking-widest uppercase mt-6">
+              copyright by 200041
+            </p>
           </form>
         </div>
 
@@ -1135,7 +1129,7 @@ function MainApp() {
                 <div className="flex justify-between items-end mb-6">
                    <div>
                      <h2 className="text-3xl font-extrabold mb-2">Histori Akses Login</h2>
-                     <p className="text-white/50 text-sm">Rekaman aktivitas login dari <b>hari bisnis saat ini (Cut-off Harian)</b>. Data otomatis direset setiap berganti shift cut-off.</p>
+                     <p className="text-white/50 text-sm">Rekaman aktivitas login seluruh petugas dan admin, lengkap dengan foto wajah untuk keamanan dan absensi.</p>
                    </div>
                    <button onClick={fetchLoginHistory} className="bg-white/10 hover:bg-white/20 p-3 rounded-xl transition-colors">
                       <Search size={20} />
@@ -1146,7 +1140,7 @@ function MainApp() {
                    {isLoadingHistory ? (
                        <div className="py-10 text-center flex flex-col items-center text-white/40"><div className="w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full animate-spin mb-4"></div>Memuat Data Akses...</div>
                    ) : loginHistoryData.length === 0 ? (
-                       <div className="py-10 text-center text-white/40 border-t border-white/5">Belum ada data histori login untuk hari bisnis ini.</div>
+                       <div className="py-10 text-center text-white/40 border-t border-white/5">Belum ada data histori login di sistem.</div>
                    ) : (
                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                            {loginHistoryData.map((log, i) => (
@@ -1379,9 +1373,7 @@ function MainApp() {
                                const totalP = adminReports.length;
                                const pUnder1 = totalP ? Math.round((stats.durUnder1 / totalP) * 100) : 0;
                                const p1to3 = totalP ? Math.round((stats.dur1to3 / totalP) * 100) : 0;
-                               const p3to8 = totalP ? Math.round((stats.dur3to8 / totalP) * 100) : 0;
-                               const p8to12 = totalP ? Math.round((stats.dur8to12 / totalP) * 100) : 0;
-                               const pOver12 = totalP ? Math.round((stats.durOver12 / totalP) * 100) : 0;
+                               const pOver3 = totalP ? Math.round((stats.durOver3 / totalP) * 100) : 0;
 
                                return (
                                  <>
@@ -1392,26 +1384,18 @@ function MainApp() {
 
                                   <div className="bg-black/30 p-5 rounded-xl col-span-2 md:col-span-4 mt-2">
                                      <h4 className="font-bold text-white/80 mb-4 border-b border-white/10 pb-2">Lama Parkir (Durasi Menginap)</h4>
-                                     <div className="flex flex-wrap gap-4">
-                                        <div className="flex-1 min-w-[120px]">
-                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>&lt; 1 Jam ({stats.durUnder1})</span><span className="font-bold text-green-400">{pUnder1}%</span></div>
+                                     <div className="flex flex-col md:flex-row gap-6">
+                                        <div className="flex-1">
+                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>&lt; 1 Jam ({stats.durUnder1} unit)</span><span className="font-bold text-green-400">{pUnder1}%</span></div>
                                            <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-green-500 h-full transition-all" style={{width: `${pUnder1}%`}}></div></div>
                                         </div>
-                                        <div className="flex-1 min-w-[120px]">
-                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>1 - 3 Jam ({stats.dur1to3})</span><span className="font-bold text-blue-400">{p1to3}%</span></div>
+                                        <div className="flex-1">
+                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>1 - 3 Jam ({stats.dur1to3} unit)</span><span className="font-bold text-blue-400">{p1to3}%</span></div>
                                            <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-blue-500 h-full transition-all" style={{width: `${p1to3}%`}}></div></div>
                                         </div>
-                                        <div className="flex-1 min-w-[120px]">
-                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>3 - 8 Jam ({stats.dur3to8})</span><span className="font-bold text-yellow-400">{p3to8}%</span></div>
-                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-yellow-500 h-full transition-all" style={{width: `${p3to8}%`}}></div></div>
-                                        </div>
-                                        <div className="flex-1 min-w-[120px]">
-                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>8 - 12 Jam ({stats.dur8to12})</span><span className="font-bold text-orange-400">{p8to12}%</span></div>
-                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-orange-500 h-full transition-all" style={{width: `${p8to12}%`}}></div></div>
-                                        </div>
-                                        <div className="flex-1 min-w-[120px]">
-                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>&gt; 12 Jam ({stats.durOver12})</span><span className="font-bold text-red-400">{pOver12}%</span></div>
-                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-red-500 h-full transition-all" style={{width: `${pOver12}%`}}></div></div>
+                                        <div className="flex-1">
+                                           <div className="flex justify-between text-xs text-white/60 mb-1"><span>&gt; 3 Jam ({stats.durOver3} unit)</span><span className="font-bold text-red-400">{pOver3}%</span></div>
+                                           <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden"><div className="bg-red-500 h-full transition-all" style={{width: `${pOver3}%`}}></div></div>
                                         </div>
                                      </div>
                                   </div>
@@ -1509,26 +1493,13 @@ function MainApp() {
               <div className="space-y-6 max-w-2xl animate-fade-in">
                 <h2 className="text-3xl font-extrabold mb-6">Device & Printer</h2>
                 <div className="bg-white/5 border border-white/10 p-8 rounded-[24px] flex flex-col items-center justify-center text-center">
-                   <div className="p-6 rounded-full mb-6 bg-green-500/20 text-green-400">
-                      <Printer size={64} />
+                   <div className={`p-6 rounded-full mb-6 ${connectedPrinter ? 'bg-green-500/20 text-green-400' : 'bg-white/10 text-white/40'}`}>
+                      <Bluetooth size={64} />
                    </div>
-                   <h3 className="text-xl font-bold mb-2">Terhubung ke Aplikasi RawBT</h3>
-                   <p className="text-sm text-white/50 mb-8 max-w-md">Sistem ini telah dikonfigurasi secara khusus untuk mencetak karcis dan struk menggunakan aplikasi <b>RawBT Thermal Printer</b> di Android. Pastikan aplikasi tersebut sudah terinstal dan printer Bluetooth Anda sudah disandingkan di dalamnya.</p>
-                   <button onClick={() => {
-                       const testHtml = `<html><body style="text-align:center; font-family:monospace; padding:20px;"><img src="${CUSTOM_LOGO_B64}" style="width:80px; filter:grayscale(100%); margin-bottom:10px;"/><br/><h3 style="font-size: 24px;">KONEKSI RAWBT BERHASIL</h3><p>Sistem Parkir Resparking siap digunakan.</p></body></html>`;
-                       const intentUrl = `rawbt:data:text/html;base64,${btoa(unescape(encodeURIComponent(testHtml)))}`;
-                       
-                       // FIX: Gunakan iframe tersembunyi agar web tidak pindah halaman
-                       const iframe = document.createElement('iframe');
-                       iframe.style.display = 'none';
-                       iframe.src = intentUrl;
-                       document.body.appendChild(iframe);
-                       
-                       setTimeout(() => {
-                           if (document.body.contains(iframe)) document.body.removeChild(iframe);
-                       }, 1500);
-                   }} className="bg-green-500 text-black font-bold px-8 py-4 rounded-2xl hover:bg-green-400 transition-all flex items-center gap-2">
-                     <Bluetooth size={20} /> Test Buka RawBT
+                   <h3 className="text-xl font-bold mb-2">{connectedPrinter ? connectedPrinter.name : 'Belum Ada Printer Terhubung'}</h3>
+                   <p className="text-sm text-white/50 mb-8 max-w-md">Menyambungkan printer Bluetooth termal memungkinkan aplikasi untuk mencetak tiket dan struk laporan langsung dari browser Anda.</p>
+                   <button onClick={pairBluetooth} className="bg-white text-black font-bold px-8 py-4 rounded-2xl hover:bg-gray-200 transition-all flex items-center gap-2">
+                     <Plus size={20} /> Sandingkan Perangkat Baru
                    </button>
                 </div>
               </div>
@@ -1586,9 +1557,7 @@ function MainApp() {
               <tbody>
                  <tr><td className="border border-gray-300 p-3 font-semibold">&lt; 1 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.durUnder1}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.durUnder1 / reportToPrint.data.length) * 100) : 0}%</td></tr>
                  <tr><td className="border border-gray-300 p-3 font-semibold">1 - 3 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur1to3}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur1to3 / reportToPrint.data.length) * 100) : 0}%</td></tr>
-                 <tr><td className="border border-gray-300 p-3 font-semibold">3 - 8 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur3to8}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur3to8 / reportToPrint.data.length) * 100) : 0}%</td></tr>
-                 <tr><td className="border border-gray-300 p-3 font-semibold">8 - 12 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.dur8to12}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.dur8to12 / reportToPrint.data.length) * 100) : 0}%</td></tr>
-                 <tr><td className="border border-gray-300 p-3 font-semibold">&gt; 12 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.durOver12}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.durOver12 / reportToPrint.data.length) * 100) : 0}%</td></tr>
+                 <tr><td className="border border-gray-300 p-3 font-semibold">&gt; 3 Jam</td><td className="border border-gray-300 p-3">{reportToPrint.stats.durOver3}</td><td className="border border-gray-300 p-3">{reportToPrint.data.length ? Math.round((reportToPrint.stats.durOver3 / reportToPrint.data.length) * 100) : 0}%</td></tr>
               </tbody>
             </table>
 
@@ -1689,209 +1658,69 @@ function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek", facingMod
 }
 
 function PrintModal({ transaction, onComplete }) {
-  const [isPrinting, setIsPrinting] = useState(false);
   const [printSuccess, setPrintSuccess] = useState(false);
-  const hasPrinted = useRef(false);
-
-  const sendToRawBT = async () => {
-    if (isPrinting) return;
-    setIsPrinting(true);
-
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <style>
-          body { 
-            margin: 0; 
-            padding: 10px; 
-            font-family: 'Courier New', Courier, monospace; 
-            color: black; 
-            text-align: center; 
-            width: 100%; 
-            box-sizing: border-box; 
-            background: white;
-          }
-          .zigzag { border-top: 4px dotted #000; margin-bottom: 10px; opacity: 0.3; }
-          .header { border-bottom: 2px dashed #000; padding-bottom: 10px; margin-bottom: 15px; }
-          .title { font-size: 22px; font-weight: 900; margin: 0; line-height: 1.2; }
-          .subtitle { font-size: 12px; font-weight: bold; margin-top: 5px; text-transform: uppercase; letter-spacing: 1px; }
-          .plate { font-size: 48px; font-weight: 900; margin: 15px 0; letter-spacing: -1px; line-height: 1; }
-          .row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 14px; font-weight: bold; text-align: left; }
-          .total-box { border: 2px solid #000; padding: 10px; margin-top: 10px; background: #000; color: #fff; border-radius: 4px;}
-          .total-title { font-size: 14px; font-weight: bold; margin-bottom: 4px; }
-          .total-amount { font-size: 30px; font-weight: 900; margin: 0; }
-          .logo { width: 50px; height: auto; filter: grayscale(100%) contrast(150%); margin-bottom: 8px; }
-          .footer { margin-top: 20px; font-size: 10px; border-top: 1px dashed #000; padding-top: 10px; font-style: italic; }
-        </style>
-      </head>
-      <body>
-        <div class="zigzag"></div>
-        <img src="${CUSTOM_LOGO_B64}" class="logo" />
-        <div class="header">
-          <div class="title">DEVICE KASIER PARKIR</div>
-          <div class="subtitle">LOKASI: ${transaction.location}</div>
-        </div>
-        
-        ${transaction.type === 'masuk' ? `
-          <div style="font-size: 14px; font-weight: bold; margin-bottom: 5px;">TIKET MASUK (${transaction.vehicleType})</div>
-          <div class="plate">${transaction.plate}</div>
-          <div style="font-size: 12px; margin-bottom: 2px;">JAM MASUK</div>
-          <div style="font-size: 16px; font-weight: bold;">${transaction.time.toLocaleDateString('id-ID')} ${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</div>
-          ${transaction.isMember ? `<div style="margin-top: 20px; border-top: 2px dashed #000; padding-top: 10px; font-size: 16px; font-weight: bold;">MEMBER AKTIF</div>` : ''}
-        ` : `
-          <div style="font-size: 16px; font-weight: bold; margin-bottom: 15px;">STRUK KELUAR (${transaction.vehicleType})</div>
-          <div class="row"><span>Plat:</span><span style="font-size: 18px;">${transaction.plate}</span></div>
-          <div class="row"><span>Masuk:</span><span>${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
-          <div class="row"><span>Keluar:</span><span>${transaction.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
-          <div class="row"><span>Durasi:</span><span>${transaction.durationHours} Jam</span></div>
-          
-          <div style="border-top: 2px dashed #000; margin: 15px 0 10px 0; padding-top: 15px;">
-            <div class="total-title">TOTAL BAYAR</div>
-            <div class="total-box">
-              <div class="total-amount">${transaction.isMember ? 'GRATIS' : `Rp ${transaction.cost.toLocaleString('id-ID')}`}</div>
-            </div>
-          </div>
-        `}
-        <div class="footer">Terima kasih atas kunjungan Anda</div>
-      </body>
-      </html>
-    `;
-
-    // --- PRIORITAS 1: RAWBT WEB SERVER (100% SILENT DI ANDROID) ---
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
-
-      // Gunakan 127.0.0.1 untuk menghindari isu resolusi nama di beberapa versi Android
-      const response = await fetch('http://127.0.0.1:40213/print', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: htmlContent, type: 'html' }),
-        mode: 'cors',
-        signal: controller.signal
-      });
-
-      if (response.ok) {
-        clearTimeout(timeoutId);
-        setIsPrinting(false);
-        setPrintSuccess(true);
-        // Berikan getaran kecil sebagai feedback sukses di HP
-        if (navigator.vibrate) navigator.vibrate(100);
-        return;
-      }
-    } catch (e) {
-      console.log("Web Server tidak merespon, mencoba Intent...");
-    }
-
-    // --- PRIORITAS 2: INTENT FALLBACK (HIDDEN IFRAME) ---
-    const encodedHtml = btoa(unescape(encodeURIComponent(htmlContent)));
-    const intentUrl = `intent:data:text/html;base64,${encodedHtml}#Intent;scheme=rawbt;package=ru.a40213.rawbtprinter;S.browser_fallback_url=;end;`;
-    
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = intentUrl;
-    document.body.appendChild(iframe);
-    
-    setTimeout(() => {
-      if (document.body.contains(iframe)) document.body.removeChild(iframe);
-      setIsPrinting(false);
-      setPrintSuccess(true);
-    }, 1500);
-  };
 
   useEffect(() => {
-    // Berikan delay 500ms agar modal muncul sempurna sebelum perintah cetak dikirim
-    const timer = setTimeout(() => {
-      if (!hasPrinted.current && transaction) {
-        sendToRawBT();
-        hasPrinted.current = true;
-      }
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [transaction]);
+    const connectAndPrint = async () => {
+      try {
+        if (!navigator.bluetooth) throw new Error("Bluetooth tidak didukung");
+        await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: PRINTER_SERVICES });
+        setTimeout(() => setPrintSuccess(true), 1500);
+      } catch (err) { setTimeout(() => setPrintSuccess(true), 1500); }
+    };
+    connectAndPrint();
+  }, []);
 
   return (
-    <div className="fixed inset-0 bg-black/95 backdrop-blur-xl z-[99] flex flex-col items-center justify-center p-4 print:hidden">
-      {/* Status Bar Atas (Android Style) */}
-      <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center text-white/40 text-[10px] font-bold tracking-widest uppercase">
-        <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div> System Online</div>
-        <div>{new Date().toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</div>
-      </div>
-
-      <div className="bg-[#fcfcfc] w-full max-w-[320px] rounded-t-[40px] shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden relative border-x border-t border-white/10">
-        <div className="h-8 w-full bg-[radial-gradient(circle,transparent_10px,#fcfcfc_10px)] bg-[length:25px_25px] -mt-3 relative z-10 opacity-40"></div>
-        <div className="p-10 font-mono text-center text-sm text-black">
-          <img src={CUSTOM_LOGO_B64} alt="Logo" className="w-20 h-auto mx-auto mb-6 grayscale contrast-150" />
-          <h2 className="font-black text-2xl border-b-4 border-double border-gray-300 pb-6 mb-8 leading-tight">
-            DEVICE KASIER PARKIR
-            <span className="text-[11px] uppercase tracking-[0.3em] font-black mt-3 block opacity-40">LOKASI: {transaction.location}</span>
-          </h2>
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[99] flex flex-col items-center justify-center p-4 print:hidden">
+      <div className="bg-[#fcfcfc] w-full max-w-[320px] rounded-t-lg shadow-2xl overflow-hidden relative drop-shadow-2xl">
+        <div className="h-4 w-full bg-[radial-gradient(circle,transparent_5px,#fcfcfc_5px)] bg-[length:14px_14px] -mt-1 relative z-10"></div>
+        <div className="p-6 font-mono text-center text-sm text-black">
+          <h2 className="font-bold text-xl border-b-2 border-dashed border-gray-400 pb-3 mb-5">DEVICE KASIER PARKIR</h2>
+          
+          <p className="text-xs mb-4 border-b border-black pb-2 uppercase tracking-widest font-bold">LOKASI: {transaction.location}</p>
 
           {transaction.type === 'masuk' ? (
-            <div className="animate-in fade-in zoom-in duration-500">
-              <p className="mb-3 text-[10px] font-black opacity-40 uppercase tracking-[0.2em]">Tiket Masuk ({transaction.vehicleType})</p>
-              <h1 className="text-7xl font-black my-8 tracking-tighter leading-none">{transaction.plate}</h1>
-              <div className="bg-gray-100 p-4 rounded-2xl inline-block border border-gray-200">
-                <p className="text-[10px] text-gray-400 uppercase font-black mb-1 tracking-widest">Waktu Masuk</p>
-                <p className="font-black text-base">{transaction.time.toLocaleDateString('id-ID')} {transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</p>
-              </div>
-              {transaction.isMember && <div className="mt-8 border-4 border-black py-3 text-sm font-black uppercase tracking-[0.2em] bg-black text-white">MEMBER AKTIF</div>}
-            </div>
+            <>
+              <p className="mb-2 text-base">TIKET MASUK ({transaction.vehicleType})</p>
+              <h1 className="text-5xl font-black my-6 tracking-tighter leading-none">{transaction.plate}</h1>
+              <p className="text-xs text-gray-600">JAM MASUK</p>
+              <p className="font-bold text-base mt-1">{transaction.time.toLocaleDateString('id-ID')} {transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</p>
+              {transaction.isMember && <div className="mt-5 border-2 border-black p-2 text-sm font-black uppercase">Member Aktif</div>}
+            </>
           ) : (
-            <div className="animate-in fade-in slide-in-from-bottom-8 duration-500">
-              <p className="mb-6 text-[10px] font-black opacity-40 uppercase tracking-[0.2em]">Struk Keluar ({transaction.vehicleType})</p>
-              <div className="text-left mt-6 text-sm space-y-4 font-bold border-y-2 border-dashed border-gray-200 py-6">
-                <div className="flex justify-between items-center"><span>Plat:</span><span className="font-black text-2xl tracking-tighter">{transaction.plate}</span></div>
-                <div className="flex justify-between items-center text-gray-500"><span>Durasi:</span><span>{transaction.durationHours} Jam</span></div>
-                <div className="flex justify-between items-center text-gray-400 text-xs"><span>Masuk:</span><span>{transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
-                <div className="flex justify-between items-center text-gray-400 text-xs"><span>Keluar:</span><span>{transaction.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
+            <>
+              <p className="mb-2 text-base font-bold">STRUK KELUAR ({transaction.vehicleType})</p>
+              <p className="text-lg font-bold my-1 border-b border-black pb-2">Plat: {transaction.plate}</p>
+              <div className="text-left mt-4 text-sm space-y-2 font-medium">
+                <div className="flex justify-between"><span>Masuk:</span><span>{transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
+                <div className="flex justify-between"><span>Keluar:</span><span>{transaction.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
+                <div className="flex justify-between"><span>Durasi:</span><span>{transaction.durationHours} Jam</span></div>
               </div>
-              <div className="mt-8">
-                <p className="text-[10px] font-black mb-3 opacity-40 uppercase tracking-[0.2em]">Total Pembayaran</p>
-                <div className="bg-black text-white py-6 px-4 rounded-[32px] shadow-xl">
-                  <h2 className="text-5xl font-black tracking-tighter">{transaction.isMember ? 'GRATIS' : `Rp ${transaction.cost.toLocaleString('id-ID')}`}</h2>
+              <div className="border-t-2 border-dashed border-gray-400 my-5 pt-3">
+                <p className="text-sm font-bold mb-2">TOTAL BAYAR</p>
+                <div className="bg-black text-white py-3 px-2 rounded-lg border-2 border-black">
+                  <h2 className="text-3xl font-black tracking-tight">{transaction.isMember ? 'GRATIS' : `Rp ${transaction.cost.toLocaleString('id-ID')}`}</h2>
                 </div>
               </div>
-            </div>
+            </>
           )}
-          
-          <div className="mt-10 pt-6 border-t-2 border-dashed border-gray-200">
-             <p className="text-[10px] font-black opacity-30 uppercase tracking-[0.3em] italic">Terima kasih atas kunjungan Anda</p>
-          </div>
         </div>
       </div>
-
-      <div className="mt-10 bg-white/5 border border-white/10 backdrop-blur-3xl p-8 rounded-[40px] w-full max-w-[320px] text-center shadow-2xl">
-        {isPrinting ? (
-          <div className="flex flex-col items-center justify-center gap-5 text-white py-2">
-            <div className="relative">
-              <div className="w-12 h-12 border-4 border-white/10 rounded-full"></div>
-              <div className="absolute inset-0 w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin shadow-[0_0_20px_rgba(34,197,94,0.6)]"></div>
+      <div className="mt-8 bg-white/10 border border-white/20 backdrop-blur-xl p-5 rounded-3xl w-full max-w-[320px] text-center shadow-lg">
+        {!printSuccess ? (
+          <div className="flex flex-col items-center justify-center gap-4 text-white">
+            <div className="flex items-center gap-4">
+              <div className="w-6 h-6 border-4 border-green-400 border-t-transparent rounded-full animate-spin"></div>
+              <p className="font-bold tracking-wide">Mencetak...</p>
             </div>
-            <p className="font-black tracking-[0.3em] uppercase text-[10px] animate-pulse text-green-400">Proses Cetak Otomatis...</p>
+            {/* Trik Fallback: Kasir bisa lewati jika bluetooth hang */}
+            <button onClick={onComplete} className="text-white/50 text-xs underline mt-2 hover:text-white cursor-pointer">Lewati / Tutup (Jika Printer Error)</button>
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
-            <button onClick={onComplete} className="w-full bg-green-500 text-black rounded-[24px] py-5 font-black text-lg flex justify-center items-center gap-3 active:scale-90 transition-all shadow-[0_15px_30px_rgba(34,197,94,0.4)] hover:bg-green-400">
-              <Check size={24} strokeWidth={3} /> SELESAI
-            </button>
-            <div className="flex gap-2">
-              <button onClick={sendToRawBT} className="flex-1 bg-white/5 hover:bg-white/10 text-white/50 rounded-2xl py-3 font-bold flex justify-center items-center gap-2 transition-all text-[9px] border border-white/5 tracking-widest uppercase">
-                <Printer size={14} /> Cetak Ulang
-              </button>
-            </div>
-          </div>
+          <button onClick={onComplete} className="w-full bg-green-500 text-black rounded-xl py-4 font-extrabold flex justify-center gap-2 active:scale-95 transition-transform"><Check size={24} /> Selesai</button>
         )}
       </div>
-
-      {/* Info Bantuan (Hanya muncul jika gagal cetak otomatis) */}
-      {!isPrinting && !printSuccess && (
-        <div className="mt-6 text-white/30 text-[9px] font-medium max-w-[280px] text-center leading-relaxed animate-in fade-in duration-1000">
-          Pastikan <span className="text-white/60">"Web Server"</span> aktif di aplikasi RawBT (Port 40213) untuk cetak tanpa pindah aplikasi.
-        </div>
-      )}
     </div>
   );
 }
