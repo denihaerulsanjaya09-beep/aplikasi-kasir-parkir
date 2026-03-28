@@ -196,6 +196,9 @@ function MainApp() {
   const [adminReports, setAdminReports] = useState([]);
   const [isLoadingReports, setIsLoadingReports] = useState(false);
 
+  // BUG FIX: Mendefinisikan canAccessSettings
+  const canAccessSettings = currentUser && (currentUser.role === 'Master' || currentUser.role === 'Korlap' || currentUser.role === 'Auditor');
+
   // ==================================================
   // EFEK 1-4: KONEKSI & FETCHING FIREBASE
   // ==================================================
