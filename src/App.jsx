@@ -197,10 +197,6 @@ function MainApp() {
   const [adminSelectedDate, setAdminSelectedDate] = useState(parseDateStrToInput(getBusinessDateStr(new Date())));
   const [adminReports, setAdminReports] = useState([]);
   const [isLoadingReports, setIsLoadingReports] = useState(false);
-  
-  // State Khusus Histori Login
-  const [loginHistoryData, setLoginHistoryData] = useState([]);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   const canAccessSettings = currentUser && (currentUser.role === 'Master' || currentUser.role === 'Korlap' || currentUser.role === 'Auditor');
 
@@ -295,30 +291,6 @@ function MainApp() {
      }
   }, [settingsMenu]);
 
-  // FUNGSI BARU: Mengambil Histori Login (Dipindahkan ke luar kondisi agar tidak melanggar aturan Hooks #310)
-  const fetchLoginHistory = async () => {
-     setIsLoadingHistory(true);
-     try {
-         const snap = await getDocs(collection(db, 'artifacts', DB_APP_ID, 'public', 'data', 'loginHistory'));
-         const items = [];
-         snap.forEach(d => {
-             items.push(d.data());
-         });
-         // Urutkan dari yang terbaru login
-         items.sort((a, b) => new Date(b.time) - new Date(a.time));
-         setLoginHistoryData(items);
-     } catch(e) {
-         console.error("Gagal menarik data histori login: ", e);
-     }
-     setIsLoadingHistory(false);
-  };
-
-  // Otomatis tarik data saat menu history diklik
-  useEffect(() => {
-      if (settingsMenu === 'history') {
-          fetchLoginHistory();
-      }
-  }, [settingsMenu]);
 
   // ==================================================
   // LOGIKA WAKTU & SISTEM LOCKOUT SHIFT KASIR
@@ -338,7 +310,6 @@ function MainApp() {
         time: now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
       });
 
-      // Rules Lockout Shift ini SEKARANG HANYA BERLAKU UNTUK ROLE "Kasier"
       if (currentUser && currentUser.role === 'Kasier' && shiftRef.current && shiftRef.current !== shiftName) {
         setIsShiftLocked(true);
         // Tarik data sebelum menembakkan report
@@ -369,33 +340,14 @@ function MainApp() {
     if (!foundUser) return alert("Akses Ditolak: NIPKWT atau Password tidak valid!");
     
     setPendingLoginUser({ name: user, nipkwt: foundUser.nipkwt, role: foundUser.role, location });
-    setShowLoginCamera(true); // Berlaku untuk semua role
+    setShowLoginCamera(true);
   };
 
-  const onLoginPhotoCaptured = async (photoBase64) => {
+  const onLoginPhotoCaptured = (photoBase64) => {
     const loggedInUser = { ...pendingLoginUser, photo: photoBase64 };
     localStorage.setItem('app_currentUser', JSON.stringify(loggedInUser));
-    setCurrentUser(loggedInUser); 
-    setShowLoginCamera(false); 
-    setView('dashboard');
+    setCurrentUser(loggedInUser); setShowLoginCamera(false); setView('dashboard');
     setPlateMasuk(''); setPlateKeluar(''); setIsShiftLocked(false); shiftRef.current = ''; setActiveTab('masuk');
-
-    // Menuliskan Histori Login ke Firebase
-    if (db) {
-        try {
-            const docId = `${loggedInUser.nipkwt}_${Date.now()}`;
-            await setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', 'loginHistory', docId), {
-                name: loggedInUser.name,
-                nipkwt: loggedInUser.nipkwt,
-                role: loggedInUser.role,
-                location: loggedInUser.location,
-                photo: photoBase64,
-                time: new Date().toISOString()
-            });
-        } catch(e) {
-            console.error("Gagal menyimpan histori login", e);
-        }
-    }
   };
 
   const confirmLogout = () => {
@@ -718,7 +670,7 @@ function MainApp() {
             <h1 className="text-4xl font-extrabold tracking-tight mb-2 text-transparent bg-clip-text bg-gradient-to-r from-white to-green-300 uppercase">
               Resparking
             </h1>
-            <p className="text-white/60 text-xs mb-3">Login Sistem Parkir</p>
+            <p className="text-white/60 text-xs mb-3">Login Petugas Parkir</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
@@ -730,19 +682,19 @@ function MainApp() {
                   {LOCATIONS.map(loc => <option key={loc} value={loc}>{loc}</option>)}
                 </select>
               </div>
-              <input name="username" placeholder="Nama Anda (Bebas)" className="w-full bg-black/30 border border-white/10 rounded-xl p-4 text-[17px] outline-none focus:ring-2 focus:ring-green-500/50 transition-all placeholder:text-white/40 text-white" required />
+              <input name="username" placeholder="Nama Kasir / Petugas (Bebas)" className="w-full bg-black/30 border border-white/10 rounded-xl p-4 text-[17px] outline-none focus:ring-2 focus:ring-green-500/50 transition-all placeholder:text-white/40 text-white" required />
               <input name="nipkwt" placeholder="NIPKWT User" className="w-full bg-black/30 border border-white/10 rounded-xl p-4 text-[17px] outline-none focus:ring-2 focus:ring-green-500/50 transition-all placeholder:text-white/40 text-white" required />
               <input name="password" type="password" placeholder="Password" className="w-full bg-black/30 border border-white/10 rounded-xl p-4 text-[17px] outline-none focus:ring-2 focus:ring-green-500/50 transition-all placeholder:text-white/40 text-white" required />
             </div>
 
             <div className="bg-green-500/10 text-green-300 p-4 rounded-xl text-center mt-2 border border-green-500/20">
-              <p className="text-xs font-semibold uppercase tracking-wider mb-1 opacity-80">Waktu Terdeteksi</p>
+              <p className="text-xs font-semibold uppercase tracking-wider mb-1 opacity-80">Shift Terdeteksi</p>
               <p className="text-xl font-bold">{shiftInfo.name}</p>
               <p className="text-sm opacity-70">{shiftInfo.time} WIB</p>
             </div>
 
             <button type="submit" className="w-full bg-green-500 text-black rounded-xl py-4 text-[17px] font-bold mt-4 shadow-[0_0_15px_rgba(34,197,94,0.3)] hover:bg-green-400 active:scale-[0.98] transition-all flex justify-center items-center gap-2">
-              <Camera size={20} /> Login & Foto Wajah
+              <Camera size={20} /> Login & Ambil Foto
             </button>
             
             <p className="text-center text-white/30 text-[11px] font-bold tracking-widest uppercase mt-6">
@@ -755,8 +707,7 @@ function MainApp() {
           <CameraModal 
             onCapture={onLoginPhotoCaptured} 
             onClose={() => setShowLoginCamera(false)} 
-            title="Foto Wajah / Selfie Kehadiran" 
-            facingMode="user" // MEMAKSA MENGGUNAKAN KAMERA DEPAN
+            title="Foto Kehadiran (Selfie)" 
           />
         )}
       </div>
@@ -797,7 +748,6 @@ function MainApp() {
             </div>
             
             <div className="flex flex-wrap gap-2 md:gap-3 w-full md:w-auto">
-              {/* LAPORAN SHIFT HANYA UNTUK KASIR */}
               {currentUser?.role === 'Kasier' && (
                 <button onClick={async () => {
                    setIsSaving(true);
@@ -867,8 +817,7 @@ function MainApp() {
                 </div>
               </div>
 
-              {/* Tombol Foto Transaksi tetap bisa diakses semua yang login */}
-              <button onClick={handleMasuk} className={`w-full rounded-2xl py-5 text-xl font-extrabold mt-6 transition-all flex items-center justify-center gap-2 bg-green-500 text-black hover:bg-green-400 active:scale-[0.98] shadow-[0_0_20px_rgba(34,197,94,0.3)]`}>
+              <button onClick={handleMasuk} disabled={currentUser?.role !== 'Kasier'} className={`w-full rounded-2xl py-5 text-xl font-extrabold mt-6 transition-all flex items-center justify-center gap-2 ${currentUser?.role === 'Kasier' ? 'bg-green-500 text-black hover:bg-green-400 active:scale-[0.98] shadow-[0_0_20px_rgba(34,197,94,0.3)]' : 'bg-gray-600 text-gray-400 cursor-not-allowed opacity-50'}`}>
                 <Camera size={24} /> FOTO & CETAK TIKET
               </button>
             </div>
@@ -921,7 +870,7 @@ function MainApp() {
                   )}
                </div>
 
-               <button onClick={() => handleKeluar()} className={`w-full rounded-2xl py-5 text-xl font-extrabold mt-6 transition-all flex items-center justify-center gap-2 bg-red-500/90 text-white hover:bg-red-400 active:scale-[0.98] shadow-[0_0_20px_rgba(239,68,68,0.3)]`}>
+               <button onClick={() => handleKeluar()} disabled={currentUser?.role !== 'Kasier'} className={`w-full rounded-2xl py-5 text-xl font-extrabold mt-6 transition-all flex items-center justify-center gap-2 ${currentUser?.role === 'Kasier' ? 'bg-red-500/90 text-white hover:bg-red-400 active:scale-[0.98] shadow-[0_0_20px_rgba(239,68,68,0.3)]' : 'bg-gray-600 text-gray-400 cursor-not-allowed opacity-50'}`}>
                  <Printer size={24} /> SELESAIKAN & CETAK
                </button>
             </div>
@@ -965,8 +914,7 @@ function MainApp() {
 
         </div>
 
-        {/* FOTO PARKIR TETAP MENGGUNAKAN KAMERA BELAKANG (environment) */}
-        {showCamera && <CameraModal onCapture={handleCapture} onClose={() => setShowCamera(false)} facingMode="environment" />}
+        {showCamera && <CameraModal onCapture={handleCapture} onClose={() => setShowCamera(false)} />}
           
         {showPrintModal && <PrintModal transaction={currentTransaction} onComplete={handlePrintComplete} />}
         {showReportModal && <ReportModal />}
@@ -1096,13 +1044,12 @@ function MainApp() {
                <p className="text-green-300 font-bold flex items-center gap-2"><MapPin size={16}/> {currentUser?.location}</p>
             </div>
 
-            <div className="space-y-2 flex-1 overflow-y-auto pr-2">
+            <div className="space-y-2 flex-1 overflow-y-auto">
               {[
                 { id: 'tarif', icon: <Settings size={18}/>, label: 'Tarif & Membership' },
                 { id: 'users', icon: <Users size={18}/>, label: 'Manajemen User' },
                 { id: 'laporan', icon: <BarChart3 size={18}/>, label: 'Laporan Pendapatan' },
                 { id: 'rekap', icon: <Search size={18}/>, label: 'Rekap Kendaraan' },
-                { id: 'history', icon: <ShieldCheck size={18}/>, label: 'Histori Akses Login' },
                 { id: 'overnight', icon: <Moon size={18}/>, label: 'Kendaraan Overnight' },
                 { id: 'device', icon: <Bluetooth size={18}/>, label: 'Device & Printer' }
               ].map(item => (
@@ -1121,46 +1068,6 @@ function MainApp() {
                     <p className="font-bold">Mode Hanya Lihat (Viewer Mode)</p>
                     <p className="text-sm opacity-80">Anda masuk sebagai {currentUser?.role}. Anda tidak memiliki izin untuk mengubah konfigurasi tarif & sistem.</p>
                  </div>
-              </div>
-            )}
-
-            {settingsMenu === 'history' && (
-              <div className="space-y-6 max-w-5xl animate-fade-in">
-                <div className="flex justify-between items-end mb-6">
-                   <div>
-                     <h2 className="text-3xl font-extrabold mb-2">Histori Akses Login</h2>
-                     <p className="text-white/50 text-sm">Rekaman aktivitas login seluruh petugas dan admin, lengkap dengan foto wajah untuk keamanan dan absensi.</p>
-                   </div>
-                   <button onClick={fetchLoginHistory} className="bg-white/10 hover:bg-white/20 p-3 rounded-xl transition-colors">
-                      <Search size={20} />
-                   </button>
-                </div>
-
-                <div className="bg-white/5 border border-white/10 p-6 rounded-[24px]">
-                   {isLoadingHistory ? (
-                       <div className="py-10 text-center flex flex-col items-center text-white/40"><div className="w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full animate-spin mb-4"></div>Memuat Data Akses...</div>
-                   ) : loginHistoryData.length === 0 ? (
-                       <div className="py-10 text-center text-white/40 border-t border-white/5">Belum ada data histori login di sistem.</div>
-                   ) : (
-                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                           {loginHistoryData.map((log, i) => (
-                               <div key={i} className="bg-black/40 border border-white/10 rounded-xl p-4 flex gap-4 items-center hover:bg-white/5 transition-colors group">
-                                   {log.photo ? (
-                                       <img src={log.photo} alt="Foto Login" className="w-16 h-16 rounded-lg object-cover border border-white/20 shadow-md group-hover:scale-105 transition-transform" />
-                                   ) : (
-                                       <div className="w-16 h-16 rounded-lg bg-white/5 flex items-center justify-center border border-white/20"><Users size={24} className="text-white/30"/></div>
-                                   )}
-                                   <div className="overflow-hidden">
-                                       <p className="font-bold text-green-400 truncate" title={log.name}>{log.name}</p>
-                                       <p className="text-xs text-white/70 mb-1">{log.role} • {log.nipkwt}</p>
-                                       <p className="text-[10px] text-white/40 bg-white/10 inline-block px-2 py-0.5 rounded-md truncate max-w-full"><MapPin size={10} className="inline mr-1 mb-0.5"/>{log.location}</p>
-                                       <p className="text-xs text-white/50 mt-1">{new Date(log.time).toLocaleString('id-ID')}</p>
-                                   </div>
-                               </div>
-                           ))}
-                       </div>
-                   )}
-                </div>
               </div>
             )}
 
@@ -1583,8 +1490,7 @@ function MainApp() {
 // =====================================
 // SUBKOMPONEN MODAL (KAMERA & PRINTER)
 // =====================================
-// DITAMBAHKAN: Prop "facingMode" untuk memilih kamera depan/belakang
-function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek", facingMode = "environment" }) {
+function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek" }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [error, setError] = useState(false);
@@ -1593,14 +1499,13 @@ function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek", facingMod
     let stream = null;
     const startCamera = async () => {
       try {
-        // Menggunakan "facingMode" secara dinamis berdasarkan properti yang dikirim
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facingMode } });
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
         if (videoRef.current) videoRef.current.srcObject = stream;
       } catch (err) { setError(true); }
     };
     startCamera();
     return () => { if (stream) stream.getTracks().forEach(track => track.stop()); };
-  }, [facingMode]);
+  }, []);
 
   const takePhoto = () => {
     if (error) { 
@@ -1617,13 +1522,6 @@ function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek", facingMod
       canvas.width = video.videoWidth * scale;
       canvas.height = video.videoHeight * scale;
       const ctx = canvas.getContext('2d');
-      
-      // Jika kamera depan, gambar juga perlu di-mirror agar hasil foto sesuai dengan preview
-      if (facingMode === 'user') {
-          ctx.translate(canvas.width, 0);
-          ctx.scale(-1, 1);
-      }
-      
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       onCapture(canvas.toDataURL('image/jpeg', 0.6)); 
     } else {
@@ -1639,8 +1537,7 @@ function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek", facingMod
       </div>
       <button onClick={onClose} className="absolute top-12 right-6 bg-white/20 p-3 rounded-full text-white hover:bg-white/30"><X size={28} /></button>
       <div className="w-full max-w-sm aspect-[3/4] bg-[#0A1A13] rounded-[32px] overflow-hidden relative shadow-2xl border border-white/10 mt-10">
-        {/* Jika kamera depan (user), video di-mirror menggunakan scale-x-[-1] */}
-        {!error ? <video ref={videoRef} autoPlay playsInline className={`w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`} /> : (
+        {!error ? <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover scale-x-[-1]" /> : (
           <div className="w-full h-full flex flex-col items-center justify-center text-white/50 p-6 text-center bg-white/5">
              <ImageIcon size={72} className="mb-4 opacity-50" />
              <p className="font-bold">Kamera Dibatasi Sistem</p>
