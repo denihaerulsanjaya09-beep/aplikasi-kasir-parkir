@@ -189,7 +189,7 @@ function MainApp() {
   const [showReportModal, setShowReportModal] = useState(false);
   const [currentTransaction, setCurrentTransaction] = useState(null);
   const [capturedImage, setCapturedImage] = useState(null);
-  const [isSaving, setIsSaving] = useState(false); // Penanda saat sedang Write DB
+  const [isSaving, setIsSaving] = useState(false); 
   
   // Mengamankan referensi memori data transaksi agar tidak kena jeda react
   const txDataRef = useRef(null); 
@@ -231,9 +231,11 @@ function MainApp() {
 
   useEffect(() => {
     if (!fbUser || !db || !currentUser?.location) return;
+    // Cegah error path firebase jika string lokasi mengandung slash (garis miring)
     const loc = currentUser.location;
+    const safeLoc = loc.replace(/\//g, '-');
 
-    const confRef = doc(db, 'artifacts', DB_APP_ID, 'public', 'data', 'locationConfigs', loc);
+    const confRef = doc(db, 'artifacts', DB_APP_ID, 'public', 'data', 'locationConfigs', safeLoc);
     const unsubConf = onSnapshot(confRef, (snap) => {
       if (snap.exists()) {
         const d = snap.data();
@@ -254,7 +256,7 @@ function MainApp() {
       }
     }, (err) => console.error(err));
 
-    const pvRef = collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${loc}`);
+    const pvRef = collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${safeLoc}`);
     const unsubPv = onSnapshot(pvRef, (snap) => {
       const items = [];
       snap.forEach(d => {
@@ -265,7 +267,7 @@ function MainApp() {
     }, (err) => console.error(err));
 
     const todayBusinessStr = getBusinessDateStr(new Date());
-    const txRef = collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${loc}_${todayBusinessStr}`);
+    const txRef = collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${safeLoc}_${todayBusinessStr}`);
     const unsubTx = onSnapshot(txRef, (snap) => {
       const items = [];
       snap.forEach(d => {
@@ -312,7 +314,8 @@ function MainApp() {
 
   const updateLocConfig = (partial) => {
     if (currentUser?.role !== 'Master' || !db || !fbUser || !currentUser?.location) return;
-    setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', 'locationConfigs', currentUser.location), partial, { merge: true }).catch(console.error);
+    const safeLoc = currentUser.location.replace(/\//g, '-');
+    setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', 'locationConfigs', safeLoc), partial, { merge: true }).catch(console.error);
   };
 
   const handleLogin = (e) => {
@@ -321,12 +324,9 @@ function MainApp() {
     const user = data.get('username'), pwd = data.get('password'), nip = data.get('nipkwt'), location = data.get('location');
     if (!user || !pwd || !nip || !location) return alert("Mohon isi semua data login termasuk lokasi stasiun!");
     
-    // Pencarian role login HANYA dipicu dari NIPKWT dan Password.
     const foundUser = usersList.find(u => u.nipkwt === nip && u.password === pwd);
-    
     if (!foundUser) return alert("Akses Ditolak: NIPKWT atau Password tidak valid!");
     
-    // Variabel "user" (kolom nama yang diketik) tetap digunakan secara bebas 
     setPendingLoginUser({ name: user, nipkwt: foundUser.nipkwt, role: foundUser.role, location });
     setShowLoginCamera(true);
   };
@@ -376,9 +376,7 @@ function MainApp() {
 
   // --- TRANSAKSI KASIR UTAMA ---
   const handleMasuk = () => {
-    // FIX BUG toUpperCase: Amankan dengan konversi string + fallback kosong
-    const safePlateMasuk = (plateMasuk || '').toString().toUpperCase();
-    
+    const safePlateMasuk = (plateMasuk || '').toString().toUpperCase().trim();
     if (!safePlateMasuk) return alert("Masukkan Plat Nomor!");
     
     const tx = {
@@ -389,18 +387,16 @@ function MainApp() {
       location: currentUser?.location,
       cashier: currentUser?.name,
       shift: shiftInfo.name,
-      // FIX BUG toUpperCase Member: Pastikan m.plate dibaca secara aman
       isMember: members.some(m => (m.plate || '').toUpperCase() === safePlateMasuk)
     };
-    txDataRef.current = tx; // Kunci data agar tidak hilang oleh re-render
+    txDataRef.current = tx; 
     setCurrentTransaction(tx);
     setShowCamera(true);
   };
 
   const handleKeluar = (plateInput = plateKeluar) => {
-    // FIX BUG toUpperCase Keluar: Mengantisipasi jika event click masuk sebagai parameter
     const rawPlate = typeof plateInput === 'string' ? plateInput : plateKeluar;
-    const safePlateKeluar = (rawPlate || '').toString().toUpperCase();
+    const safePlateKeluar = (rawPlate || '').toString().toUpperCase().trim();
 
     if (!safePlateKeluar) return alert("Masukkan Plat Nomor Keluar!");
     
@@ -434,16 +430,16 @@ function MainApp() {
       exitCashier: currentUser?.name,
       exitShift: shiftInfo.name
     };
-    txDataRef.current = tx; // Kunci data agar tidak hilang
+    txDataRef.current = tx; 
     setCurrentTransaction(tx);
     setShowCamera(true);
   };
 
-  // --- PENYIMPANAN DATA INSTAN DARI KAMERA ---
+  // --- PENYIMPANAN DATA INSTAN DARI KAMERA (DIPERKUAT) ---
   const handleCapture = async (photoBase64) => {
     setCapturedImage(photoBase64);
     setShowCamera(false); 
-    setIsSaving(true); // Memunculkan loading layar hitam
+    setIsSaving(true); 
     
     const tx = txDataRef.current || currentTransaction;
     
@@ -454,23 +450,48 @@ function MainApp() {
     }
 
     try {
-      if (tx.type === 'masuk') {
-        const v = { ...tx, photo: photoBase64, time: tx.time.toISOString() };
-        await setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, v.plate), v);
-      } else if (tx.type === 'keluar') {
-        await deleteDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${currentUser.location}`, tx.plate));
-        // Menyimpan data keluar beserta foto bukti keluarnya
-        const exitTx = { ...tx, exitPhoto: photoBase64, time: tx.time.toISOString(), exitTime: tx.exitTime.toISOString() };
-        const businessStr = getBusinessDateStr(new Date());
-        await setDoc(doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${currentUser.location}_${businessStr}`, `${exitTx.plate}_${Date.now()}`), exitTx);
-      }
+        // [PERBAIKAN 1]: Hilangkan karakter garis miring (slash) agar path Firebase tidak pecah
+        const safePlateId = (tx.plate || 'UNKNOWN').replace(/\//g, '-');
+        const safeLoc = (currentUser.location || 'default').replace(/\//g, '-');
+
+        // [PERBAIKAN 2]: Sistem Timeout 15 Detik mencegah Loading Terus Menerus jika internet mati
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("TIMEOUT_ERROR")), 15000)
+        );
+
+        let savePromise;
+
+        if (tx.type === 'masuk') {
+            const v = { ...tx, photo: photoBase64, time: tx.time.toISOString() };
+            const docRef = doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${safeLoc}`, safePlateId);
+            savePromise = setDoc(docRef, v);
+        } else if (tx.type === 'keluar') {
+            const docRefDelete = doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `pv_${safeLoc}`, safePlateId);
+            await deleteDoc(docRefDelete);
+
+            const exitTx = { ...tx, exitPhoto: photoBase64, time: tx.time.toISOString(), exitTime: tx.exitTime.toISOString() };
+            const businessStr = getBusinessDateStr(new Date());
+            const historyDocRef = doc(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${safeLoc}_${businessStr}`, `${safePlateId}_${Date.now()}`);
+            savePromise = setDoc(historyDocRef, exitTx);
+        }
+
+        // Jalankan perlombaan antara fungsi menyimpan data VS Timer 15 Detik
+        await Promise.race([savePromise, timeoutPromise]);
       
-      setIsSaving(false); // Sembunyikan loading
-      setShowPrintModal(true); // Baru munculkan modal cetak (data dijamin sudah aman)
+        setIsSaving(false); 
+        setShowPrintModal(true); 
     } catch (err) {
-      console.error("Database Error:", err);
-      setIsSaving(false);
-      alert("Gagal menyimpan data ke server: " + err.message + "\n\nPastikan Anda memiliki hak akses (Permissions Firebase) atau koneksi internet stabil.");
+        console.error("Database Error Detail:", err);
+        setIsSaving(false);
+        
+        // [PERBAIKAN 3]: Notifikasi Error Jelas
+        if (err.message === "TIMEOUT_ERROR") {
+             alert("GAGAL MENYIMPAN: Koneksi internet Anda lambat atau terputus. Data gagal terkirim ke server.");
+        } else if (err.code === 'permission-denied') {
+             alert("GAGAL MENYIMPAN (Akses Ditolak): Anda belum mengizinkan aplikasi menulis ke Database Anda.\n\nBuka Firebase Console -> Firestore Database -> Rules, ubah rules Anda menjadi:\n'allow read, write: if true;'");
+        } else {
+             alert(`Gagal menyimpan data ke server! (${err.message})`);
+        }
     }
   };
 
@@ -481,7 +502,6 @@ function MainApp() {
   };
 
   const handlePrintComplete = () => {
-    // Membersihkan UI Form setelah print
     if (txDataRef.current?.type === 'masuk') setPlateMasuk('');
     else if (txDataRef.current?.type === 'keluar') setPlateKeluar('');
     
@@ -749,7 +769,6 @@ function MainApp() {
               <div className="flex-1 space-y-6 z-10">
                 <div>
                   <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-2 block">Ketik Plat Nomor Masuk</label>
-                  {/* FIX BUG toUpperCase: Optional Chaining di form onChange */}
                   <input value={plateMasuk} onChange={e => setPlateMasuk((e.target?.value || '').toUpperCase())} placeholder="D 1234 XY" className="w-full bg-black/50 border border-green-500/30 rounded-2xl p-5 text-4xl font-black text-center text-white uppercase tracking-[0.2em] outline-none focus:ring-2 focus:ring-green-500 transition-all placeholder:text-white/10 shadow-inner" />
                 </div>
                 
@@ -784,7 +803,6 @@ function MainApp() {
                     <label className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-2 block">Cari / Scan Plat Keluar</label>
                     <div className="relative">
                       <Search className="absolute left-5 top-5 text-white/40" size={26} />
-                      {/* FIX BUG toUpperCase: Optional Chaining di form onChange */}
                       <input value={plateKeluar} onChange={e => setPlateKeluar((e.target?.value || '').toUpperCase())} placeholder="D 12..." className="w-full bg-black/50 border border-red-500/30 rounded-2xl p-5 pl-14 text-3xl font-black text-white uppercase tracking-widest outline-none focus:ring-2 focus:ring-red-500 transition-all placeholder:text-white/10 shadow-inner" />
                     </div>
                   </div>
@@ -906,9 +924,11 @@ function MainApp() {
 
          let allData = [];
          const chunkSize = 30; // Batch fetching to stay within limits
+         const safeLoc = (currentUser.location || 'default').replace(/\//g, '-');
+
          for(let i=0; i<datesToFetch.length; i+=chunkSize){
              const chunk = datesToFetch.slice(i, i+chunkSize);
-             const promises = chunk.map(d => getDocs(collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${currentUser.location}_${d}`)));
+             const promises = chunk.map(d => getDocs(collection(db, 'artifacts', DB_APP_ID, 'public', 'data', `tx_${safeLoc}_${d}`)));
              const snaps = await Promise.all(promises);
              snaps.forEach(snap => {
                  snap.forEach(doc => {
@@ -1101,7 +1121,6 @@ function MainApp() {
                   <h3 className="text-xl font-bold mb-4 text-green-300">Daftar Member (Gratis)</h3>
                   {isEditor && (
                     <form onSubmit={handleAddMember} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                       {/* FIX BUG toUpperCase: Optional Chaining di form onChange */}
                        <input required value={newMember.plate} onChange={e=>setNewMember({...newMember, plate: (e.target?.value || '').toUpperCase()})} placeholder="Plat Nomor" className="bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white" />
                        <input required value={newMember.nip} onChange={e=>setNewMember({...newMember, nip: e.target.value})} placeholder="NIP/NIPP Pegawai" className="bg-black/40 border border-white/10 p-3 rounded-xl outline-none focus:ring-1 focus:ring-green-500 text-white" />
                        <button type="submit" className="bg-green-500 text-black font-bold p-3 rounded-xl flex items-center justify-center gap-2 hover:bg-green-400"><Plus size={18}/> Tambah Member</button>
@@ -1275,7 +1294,6 @@ function MainApp() {
                 <div className="bg-white/5 border border-white/10 p-6 rounded-[24px]">
                   <div className="relative mb-6">
                     <Search className="absolute left-4 top-4 text-white/40" size={20} />
-                    {/* FIX BUG toUpperCase: Optional Chaining di form onChange */}
                     <input 
                       value={rekapSearch} 
                       onChange={e => setRekapSearch((e.target?.value || '').toUpperCase())} 
@@ -1478,7 +1496,6 @@ function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek" }) {
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       onCapture(canvas.toDataURL('image/jpeg', 0.6)); 
     } else {
-      // Fallback jika video belum termuat dengan sempurna
       onCapture('dummy_image_data');
     }
   };
