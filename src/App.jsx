@@ -171,7 +171,6 @@ function MainApp() {
   const [settingsMenu, setSettingsMenu] = useState('tarif'); 
   const [newUser, setNewUser] = useState({ username: '', nipkwt: '', password: '', role: 'Kasier' });
   const [newMember, setNewMember] = useState({ plate: '', nip: '' });
-  const [reportToPrint, setReportToPrint] = useState(null); 
   const [rekapSearch, setRekapSearch] = useState('');
   
   const [showCamera, setShowCamera] = useState(false);
@@ -329,9 +328,10 @@ function MainApp() {
     setHasClosedShift(false);
   };
 
+  // --- BUG FIX: Hard Reload on Logout ---
   const confirmLogout = () => {
-    if(currentUser) localStorage.removeItem('app_currentUser');
-    setCurrentUser(null); setShowReportModal(false); setView('login');
+    localStorage.removeItem('app_currentUser');
+    window.location.reload(); // Paksa reload agar semua state & interval kembali bersih
   };
 
   const getBusinessDate = (dateObj) => {
@@ -366,6 +366,39 @@ function MainApp() {
       }
     });
     return stats;
+  };
+
+  // --- BUG FIX: Eksekutor Laporan Print Langsung (Mencegah Blokir Intent) ---
+  const executePrintReport = (report) => {
+    let textToPrint = `[C]<b>${report.title || "LAPORAN PENDAPATAN"}</b>\n`;
+    textToPrint += `[C]--------------------------------\n`;
+    textToPrint += `[C]Periode: ${report.date}\n`;
+    textToPrint += `[C]Lokasi: ${report.location}\n`;
+    if (report.shift) textToPrint += `[C]Shift: ${report.shift}\n`;
+    textToPrint += `[C]Dicetak: ${new Date().toLocaleString('id-ID')}\n`;
+    textToPrint += `[C]--------------------------------\n\n`;
+
+    textToPrint += `[L]Total Kendaraan: [R]${report.data.length} Unit\n`;
+    textToPrint += `[L]Total Setoran: [R]Rp ${report.stats.total.toLocaleString('id-ID')}\n\n`;
+
+    textToPrint += `[C]<b>Rincian Kategori</b>\n`;
+    textToPrint += `[L]Motor: [R]${report.stats.motorQty} (Rp ${report.stats.motorNom.toLocaleString('id-ID')})\n`;
+    textToPrint += `[L]Mobil: [R]${report.stats.mobilQty} (Rp ${report.stats.mobilNom.toLocaleString('id-ID')})\n`;
+    textToPrint += `[L]Truk/Box: [R]${report.stats.trukQty} (Rp ${report.stats.trukNom.toLocaleString('id-ID')})\n`;
+    textToPrint += `[L]Member: [R]${report.stats.memberQty} (Gratis)\n\n`;
+
+    textToPrint += `[C]<b>Statistik Durasi</b>\n`;
+    const totalP = report.data.length;
+    textToPrint += `[L]1 Jam Pertama: [R]${report.stats.dur1} (${totalP ? Math.round((report.stats.dur1 / totalP) * 100) : 0}%)\n`;
+    textToPrint += `[L]< 3 Jam: [R]${report.stats.dur3} (${totalP ? Math.round((report.stats.dur3 / totalP) * 100) : 0}%)\n`;
+    textToPrint += `[L]< 6 Jam: [R]${report.stats.dur6} (${totalP ? Math.round((report.stats.dur6 / totalP) * 100) : 0}%)\n`;
+      textToPrint += `[C]${report.cashier || currentUser?.name}\n`;
+      textToPrint += `[C]${report.role || currentUser?.role}\n\n\n`;
+
+      const intentUrl = "intent:" + encodeURIComponent(textToPrint) + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+      
+      // FIX: Gunakan redirect bawaan untuk laporan (tanpa anchor bayangan)
+      window.location.href = intentUrl;
   };
 
   // --- TRANSAKSI KASIR ---
@@ -427,60 +460,6 @@ function MainApp() {
     setCapturedImage(null);
   };
 
-  useEffect(() => {
-    if (reportToPrint) {
-      const timer1 = setTimeout(() => { 
-        let textToPrint = `[C]<b>${reportToPrint.title || "LAPORAN PENDAPATAN"}</b>\n`;
-        textToPrint += `[C]--------------------------------\n`;
-        textToPrint += `[C]Periode: ${reportToPrint.date}\n`;
-        textToPrint += `[C]Lokasi: ${reportToPrint.location}\n`;
-        if (reportToPrint.shift) textToPrint += `[C]Shift: ${reportToPrint.shift}\n`;
-        textToPrint += `[C]Dicetak: ${new Date().toLocaleString('id-ID')}\n`;
-        textToPrint += `[C]--------------------------------\n\n`;
-
-        textToPrint += `[L]Total Kendaraan: [R]${reportToPrint.data.length} Unit\n`;
-        textToPrint += `[L]Total Setoran: [R]Rp ${reportToPrint.stats.total.toLocaleString('id-ID')}\n\n`;
-
-        textToPrint += `[C]<b>Rincian Kategori</b>\n`;
-        textToPrint += `[L]Motor: [R]${reportToPrint.stats.motorQty} (Rp ${reportToPrint.stats.motorNom.toLocaleString('id-ID')})\n`;
-        textToPrint += `[L]Mobil: [R]${reportToPrint.stats.mobilQty} (Rp ${reportToPrint.stats.mobilNom.toLocaleString('id-ID')})\n`;
-        textToPrint += `[L]Truk/Box: [R]${reportToPrint.stats.trukQty} (Rp ${reportToPrint.stats.trukNom.toLocaleString('id-ID')})\n`;
-        textToPrint += `[L]Member: [R]${reportToPrint.stats.memberQty} (Gratis)\n\n`;
-
-        textToPrint += `[C]<b>Statistik Durasi</b>\n`;
-        const totalP = reportToPrint.data.length;
-        textToPrint += `[L]1 Jam Pertama: [R]${reportToPrint.stats.dur1} (${totalP ? Math.round((reportToPrint.stats.dur1 / totalP) * 100) : 0}%)\n`;
-        textToPrint += `[L]< 3 Jam: [R]${reportToPrint.stats.dur3} (${totalP ? Math.round((reportToPrint.stats.dur3 / totalP) * 100) : 0}%)\n`;
-        textToPrint += `[L]< 6 Jam: [R]${reportToPrint.stats.dur6} (${totalP ? Math.round((reportToPrint.stats.dur6 / totalP) * 100) : 0}%)\n`;
-        textToPrint += `[L]< 8 Jam: [R]${reportToPrint.stats.dur8} (${totalP ? Math.round((reportToPrint.stats.dur8 / totalP) * 100) : 0}%)\n`;
-        textToPrint += `[L]< 12 Jam: [R]${reportToPrint.stats.dur12} (${totalP ? Math.round((reportToPrint.stats.dur12 / totalP) * 100) : 0}%)\n`;
-        textToPrint += `[L]> 12 Jam: [R]${reportToPrint.stats.durOver12} (${totalP ? Math.round((reportToPrint.stats.durOver12 / totalP) * 100) : 0}%)\n\n`;
-
-        textToPrint += `[C]--------------------------------\n`;
-        textToPrint += `[C]Dinyatakan Oleh,\n\n\n`;
-        textToPrint += `[C]${reportToPrint.cashier || currentUser?.name}\n`;
-        textToPrint += `[C]${reportToPrint.role || currentUser?.role}\n\n\n`;
-
-        const S = "#Intent;scheme=rawbt;";
-        const P = "package=ru.a402d.rawbtprinter;end;";
-        const textEncoded = encodeURIComponent(textToPrint);
-        const intentUrl = "intent:" + textEncoded + S + P;
-        
-        try {
-          window.location.href = intentUrl;
-        } catch (e) {
-          console.error("Gagal membuka RawBT:", e);
-        }
-
-        const timer2 = setTimeout(() => {
-          setReportToPrint(null);
-        }, 1000); 
-      }, 500);
-      return () => clearTimeout(timer1);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reportToPrint]);
-
   // =====================================
   // TAMPILAN LOADING DB
   // =====================================
@@ -506,17 +485,19 @@ function MainApp() {
     const s = generateReportStats(myShiftTx);
     const dateStr = new Date().toLocaleDateString('id-ID');
 
+    // --- BUG FIX: Trigger Print PDF Report langsung via intent ---
     const triggerAction = (actionType) => {
       const payload = { type: 'report', title: 'LAPORAN KASIR (SHIFT)', stats: s, date: dateStr, shift: shiftInfo.name, location: currentUser?.location, cashier: currentUser?.name, role: 'Petugas Kasir', data: myShiftTx };
       
-      setHasClosedShift(true);
-      setShowReportModal(false);
-
       if(actionType === 'wa') {
         const msg = `*LAPORAN SHIFT KASIR*\n📍 Lokasi: ${currentUser?.location}\n🗓 ${dateStr}\n👤 ${currentUser?.name} (${currentUser?.nipkwt})\n🕒 ${shiftInfo.name}\n\n*RINCIAN:*\n🏍 Motor: ${s.motorQty} (Rp ${s.motorNom.toLocaleString()})\n🚗 Mobil: ${s.mobilQty} (Rp ${s.mobilNom.toLocaleString()})\n🚚 Box: ${s.trukQty} (Rp ${s.trukNom.toLocaleString()})\n💳 Member: ${s.memberQty}\n\n*TOTAL STORAN: Rp ${s.total.toLocaleString()}*`;
         window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+        setHasClosedShift(true);
+        setShowReportModal(false);
       } else if (actionType === 'pdf') {
-        setReportToPrint(payload);
+        executePrintReport(payload); 
+        // FIX: Modal tidak ditutup otomatis agar aplikasi tidak crash saat pindah ke RawBT
+        setHasClosedShift(true);
       }
     };
 
@@ -552,10 +533,10 @@ function MainApp() {
           <div className="flex flex-col gap-3">
             <div className="flex gap-3">
                <button onClick={() => triggerAction('wa')} className={`flex-1 ${isShiftLocked ? 'bg-red-600 hover:bg-red-500' : 'bg-green-600 hover:bg-green-500'} text-white font-bold rounded-xl py-4 shadow-lg transition-all flex justify-center items-center gap-2 text-sm`}>
-                 <Send size={18} /> Kirim WA {isShiftLocked && '& Keluar'}
+                 <Send size={18} /> Kirim WA
                </button>
                <button onClick={() => triggerAction('pdf')} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl py-4 shadow-lg transition-all flex justify-center items-center gap-2 text-sm">
-                 <Download size={18} /> Cetak PDF {isShiftLocked && '& Keluar'}
+                 <Download size={18} /> Cetak PDF
                </button>
             </div>
             <button onClick={() => { setShowReportModal(false); confirmLogout(); }} className="w-full bg-red-600/20 hover:bg-red-600/40 text-red-500 border border-red-500/50 font-bold rounded-xl py-4 shadow-lg transition-all flex justify-center items-center gap-2 text-sm">
@@ -880,8 +861,10 @@ function MainApp() {
        let title = `LAPORAN PENDAPATAN (${reportFilterType.toUpperCase()})`;
        let sub = adminSelectedDate;
        if(reportFilterType==='shift') sub = `${adminSelectedDate} | ${reportFilterShift}`;
-       // Menyertakan nama user dan jabatannya dalam parameter laporan untuk di cetak
-       setReportToPrint({ type: 'report', title, date: sub, stats: s, data: adminReports, location: currentUser?.location, cashier: currentUser?.name, role: currentUser?.role });
+
+       // --- BUG FIX: Langsung eksekusi laporan pdf, tanpa menggunakan useEffect state ---
+       const payload = { type: 'report', title, date: sub, stats: s, data: adminReports, location: currentUser?.location, cashier: currentUser?.name, role: currentUser?.role };
+       executePrintReport(payload);
     };
 
     const exportWALaporan = () => {
@@ -1444,21 +1427,7 @@ function PrintModal({ transaction, onComplete }) {
     return text;
   }, [transaction]);
 
-  const handlePrint = () => {
-    const S = "#Intent;scheme=rawbt;";
-    const P = "package=ru.a402d.rawbtprinter;end;";
-    const textEncoded = encodeURIComponent(textToPrint);
-    const intentUrl = "intent:" + textEncoded + S + P;
-    
-    try {
-      window.location.href = intentUrl;
-    } catch (e) {
-      console.error("Gagal membuka RawBT:", e);
-    }
-    
-    setPrintSuccess(true);
-    setTimeout(onComplete, 1500);
-  };
+  const intentUrl = "intent:" + encodeURIComponent(textToPrint) + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[99] flex flex-col items-center justify-center p-4 print:block print:absolute print:inset-0 print:bg-white print:text-black print:z-[9999]">
@@ -1500,24 +1469,22 @@ function PrintModal({ transaction, onComplete }) {
         </div>
       </div>
       <div className="mt-8 bg-white/10 border border-white/20 backdrop-blur-xl p-5 rounded-3xl w-full max-w-[320px] text-center shadow-lg print:hidden">
-        {!printSuccess ? (
-          <div className="flex flex-col items-center justify-center gap-4 text-white">
-            <div className="flex items-center gap-3 mb-2">
-              <Printer size={24} className="text-blue-400" />
-              <p className="font-bold tracking-wide text-lg">Struk Siap Dicetak</p>
-            </div>
-            <a href={"intent:" + encodeURIComponent(textToPrint) + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;"} onClick={() => { setPrintSuccess(true); setTimeout(onComplete, 1500); }} className="w-full bg-blue-500 hover:bg-blue-400 text-white px-6 py-4 rounded-xl font-bold text-base shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
-              <Printer size={20} /> Cetak Struk (RawBT)
-            </a>
-            <button onClick={onComplete} className="mt-2 text-white/50 hover:text-white text-sm underline py-2">
-              Tutup Tanpa Cetak
-            </button>
+        <div className="flex flex-col items-center justify-center gap-4 text-white">
+          <div className="flex items-center gap-3 mb-2">
+            <Printer size={24} className="text-blue-400" />
+            <p className="font-bold tracking-wide text-lg">Struk Siap Dicetak</p>
           </div>
-        ) : (
-          <div className="flex justify-center items-center gap-2 text-green-400 font-bold">
-             <Check size={24} /> Selesai Dicetak
-          </div>
-        )}
+          
+          {/* FIX: Gunakan tag link HTML murni untuk keamanan PWA tanpa intervensi JS */}
+          <a href={intentUrl} className="w-full bg-blue-500 hover:bg-blue-400 text-white px-6 py-4 rounded-xl font-bold text-base shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
+            <Printer size={20} /> Buka RawBT & Cetak
+          </a>
+          
+          {/* FIX: Kasir menutup modal secara manual setalah kembali dari aplikasi RawBT */}
+          <button onClick={onComplete} className="w-full mt-2 bg-red-500/20 border border-red-500/50 hover:bg-red-500/30 text-red-400 px-6 py-3 rounded-xl font-bold transition-all shadow-lg">
+            Tutup Struk
+          </button>
+        </div>
       </div>
     </div>
   );
