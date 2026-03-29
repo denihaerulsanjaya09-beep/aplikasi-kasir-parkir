@@ -181,6 +181,7 @@ function MainApp() {
   const [showReportModal, setShowReportModal] = useState(false);
   const [currentTransaction, setCurrentTransaction] = useState(null);
   const [capturedImage, setCapturedImage] = useState(null);
+  const [hasClosedShift, setHasClosedShift] = useState(false);
 
   // State Khusus Admin Laporan
   const [reportFilterType, setReportFilterType] = useState('cutoff'); 
@@ -325,6 +326,7 @@ function MainApp() {
     localStorage.setItem('app_currentUser', JSON.stringify(loggedInUser));
     setCurrentUser(loggedInUser); setShowLoginCamera(false); setView('dashboard');
     setPlateMasuk(''); setPlateKeluar(''); setIsShiftLocked(false); shiftRef.current = ''; setActiveTab('masuk');
+    setHasClosedShift(false);
   };
 
   const confirmLogout = () => {
@@ -459,8 +461,15 @@ function MainApp() {
 
         const S = "#Intent;scheme=rawbt;";
         const P = "package=ru.a402d.rawbtprinter;end;";
-        const textEncoded = encodeURI(textToPrint);
-        window.location.href = "intent:" + textEncoded + S + P;
+        const textEncoded = encodeURIComponent(textToPrint);
+        const intentUrl = "intent:" + textEncoded + S + P;
+        
+        const a = document.createElement('a');
+        a.href = intentUrl;
+        a.target = "_top";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
 
         const timer2 = setTimeout(() => {
           setReportToPrint(null);
@@ -502,6 +511,8 @@ function MainApp() {
     const triggerAction = (actionType) => {
       const payload = { type: 'report', title: 'LAPORAN KASIR (SHIFT)', stats: s, date: dateStr, shift: shiftInfo.name, location: currentUser?.location, cashier: currentUser?.name, role: 'Petugas Kasir', data: myShiftTx };
       
+      setHasClosedShift(true);
+
       if(actionType === 'wa') {
         const msg = `*LAPORAN SHIFT KASIR*\n📍 Lokasi: ${currentUser?.location}\n🗓 ${dateStr}\n👤 ${currentUser?.name} (${currentUser?.nipkwt})\n🕒 ${shiftInfo.name}\n\n*RINCIAN:*\n🏍 Motor: ${s.motorQty} (Rp ${s.motorNom.toLocaleString()})\n🚗 Mobil: ${s.mobilQty} (Rp ${s.mobilNom.toLocaleString()})\n🚚 Box: ${s.trukQty} (Rp ${s.trukNom.toLocaleString()})\n💳 Member: ${s.memberQty}\n\n*TOTAL STORAN: Rp ${s.total.toLocaleString()}*`;
         window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
@@ -684,6 +695,12 @@ function MainApp() {
         {/* UI SIMPLE TRANSAKSI */}
         <div className="p-4 mt-2 max-w-xl mx-auto w-full flex-1 flex flex-col">
           
+          {hasClosedShift && (
+            <button onClick={confirmLogout} className="w-full mb-6 bg-red-600 hover:bg-red-500 text-white font-black text-xl py-5 rounded-2xl shadow-[0_0_20px_rgba(239,68,68,0.4)] flex items-center justify-center gap-2 animate-pulse">
+              <LogOut size={28} /> SELESAI DAN KELUAR
+            </button>
+          )}
+
           <div className="flex gap-4 mb-6">
               <button onClick={() => setActiveTab('masuk')} className={`flex-1 py-4 rounded-2xl font-black text-lg md:text-xl flex items-center justify-center gap-2 transition-all ${activeTab === 'masuk' ? 'bg-green-500 text-black shadow-[0_0_20px_rgba(34,197,94,0.4)]' : 'bg-black/40 text-white/50 border border-white/10 hover:bg-white/10'}`}>
                   <ArrowRight size={24} /> MASUK
@@ -1389,6 +1406,50 @@ function CameraModal({ onCapture, onClose, title = "Arahkan ke Objek", facingMod
 function PrintModal({ transaction, onComplete }) {
   const [printSuccess, setPrintSuccess] = useState(false);
 
+  const textToPrint = useMemo(() => {
+    let text = "[C]<b>DEVICE KASIER PARKIR</b>\n";
+    text += "[C]--------------------------------\n";
+    text += `[C]LOKASI: ${transaction.location}\n\n`;
+    
+    if (transaction.type === 'masuk') {
+      text += `[C]TIKET MASUK (${transaction.vehicleType})\n\n`;
+      text += `[C]<font size='big'>${transaction.plate}</font>\n\n`;
+      text += `[C]JAM MASUK\n`;
+      text += `[C]${transaction.time.toLocaleDateString('id-ID')} ${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
+      if (transaction.isMember) {
+        text += `\n[C]<b>Member Aktif</b>\n`;
+      }
+    } else {
+      text += `[C]<b>STRUK KELUAR (${transaction.vehicleType})</b>\n`;
+      text += `[C]<b>Plat: ${transaction.plate}</b>\n\n`;
+      text += `[L]Masuk:  [R]${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
+      text += `[L]Keluar: [R]${transaction.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
+      text += `[L]Durasi: [R]${transaction.durationHours} Jam\n`;
+      text += "[C]--------------------------------\n";
+      text += `[C]<b>TOTAL BAYAR</b>\n`;
+      text += `[C]<font size='big'>${transaction.isMember ? 'GRATIS' : `Rp ${transaction.cost.toLocaleString('id-ID')}`}</font>\n`;
+    }
+    text += "\n\n\n";
+    return text;
+  }, [transaction]);
+
+  const handlePrint = () => {
+    const S = "#Intent;scheme=rawbt;";
+    const P = "package=ru.a402d.rawbtprinter;end;";
+    const textEncoded = encodeURIComponent(textToPrint);
+    const intentUrl = "intent:" + textEncoded + S + P;
+    
+    const a = document.createElement('a');
+    a.href = intentUrl;
+    a.target = "_top";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    
+    setPrintSuccess(true);
+    setTimeout(onComplete, 1500);
+  };
+
   useEffect(() => {
     let isPrinted = false;
     const connectAndPrint = async () => {
@@ -1396,37 +1457,7 @@ function PrintModal({ transaction, onComplete }) {
       isPrinted = true;
       try {
         setTimeout(() => {
-           let textToPrint = "[C]<b>DEVICE KASIER PARKIR</b>\n";
-           textToPrint += "[C]--------------------------------\n";
-           textToPrint += `[C]LOKASI: ${transaction.location}\n\n`;
-           
-           if (transaction.type === 'masuk') {
-             textToPrint += `[C]TIKET MASUK (${transaction.vehicleType})\n\n`;
-             textToPrint += `[C]<font size='big'>${transaction.plate}</font>\n\n`;
-             textToPrint += `[C]JAM MASUK\n`;
-             textToPrint += `[C]${transaction.time.toLocaleDateString('id-ID')} ${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
-             if (transaction.isMember) {
-               textToPrint += `\n[C]<b>Member Aktif</b>\n`;
-             }
-           } else {
-             textToPrint += `[C]<b>STRUK KELUAR (${transaction.vehicleType})</b>\n`;
-             textToPrint += `[C]<b>Plat: ${transaction.plate}</b>\n\n`;
-             textToPrint += `[L]Masuk:  [R]${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
-             textToPrint += `[L]Keluar: [R]${transaction.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
-             textToPrint += `[L]Durasi: [R]${transaction.durationHours} Jam\n`;
-             textToPrint += "[C]--------------------------------\n";
-             textToPrint += `[C]<b>TOTAL BAYAR</b>\n`;
-             textToPrint += `[C]<font size='big'>${transaction.isMember ? 'GRATIS' : `Rp ${transaction.cost.toLocaleString('id-ID')}`}</font>\n`;
-           }
-           textToPrint += "\n\n\n";
-
-           const S = "#Intent;scheme=rawbt;";
-           const P = "package=ru.a402d.rawbtprinter;end;";
-           const textEncoded = encodeURI(textToPrint);
-           window.location.href = "intent:" + textEncoded + S + P;
-
-           setPrintSuccess(true);
-           setTimeout(onComplete, 1500);
+           handlePrint();
         }, 500);
       } catch (err) { 
         setTimeout(() => {
@@ -1478,9 +1509,17 @@ function PrintModal({ transaction, onComplete }) {
       </div>
       <div className="mt-8 bg-white/10 border border-white/20 backdrop-blur-xl p-5 rounded-3xl w-full max-w-[320px] text-center shadow-lg print:hidden">
         {!printSuccess ? (
-          <div className="flex items-center justify-center gap-4 text-white">
-            <div className="w-6 h-6 border-4 border-green-400 border-t-transparent rounded-full animate-spin"></div>
-            <p className="font-bold tracking-wide">Mencetak Otomatis...</p>
+          <div className="flex flex-col items-center justify-center gap-4 text-white">
+            <div className="flex items-center gap-4">
+              <div className="w-6 h-6 border-4 border-green-400 border-t-transparent rounded-full animate-spin"></div>
+              <p className="font-bold tracking-wide">Mencetak Otomatis...</p>
+            </div>
+            <button onClick={handlePrint} className="mt-2 bg-blue-500 hover:bg-blue-400 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-lg active:scale-95 transition-all">
+              Cetak Manual (RawBT)
+            </button>
+            <button onClick={onComplete} className="mt-1 text-white/50 hover:text-white text-xs underline">
+              Tutup Tanpa Cetak
+            </button>
           </div>
         ) : (
           <div className="flex justify-center items-center gap-2 text-green-400 font-bold">
