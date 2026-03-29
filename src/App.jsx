@@ -291,7 +291,7 @@ function MainApp() {
         setShowReportModal(true);
       }
       
-      if(!shiftRef.current) shiftRef.current = shiftName;
+      shiftRef.current = shiftName;
     };
 
     updateTimeAndShift();
@@ -465,16 +465,13 @@ function MainApp() {
         const intentUrl = "intent:" + textEncoded + S + P;
         
         try {
-          window.open(intentUrl, '_top');
+          window.location.href = intentUrl;
         } catch (e) {
           console.error("Gagal membuka RawBT:", e);
         }
 
         const timer2 = setTimeout(() => {
           setReportToPrint(null);
-          if (isShiftLocked) {
-            confirmLogout();
-          }
         }, 1000); 
       }, 500);
       return () => clearTimeout(timer1);
@@ -511,20 +508,13 @@ function MainApp() {
       const payload = { type: 'report', title: 'LAPORAN KASIR (SHIFT)', stats: s, date: dateStr, shift: shiftInfo.name, location: currentUser?.location, cashier: currentUser?.name, role: 'Petugas Kasir', data: myShiftTx };
       
       setHasClosedShift(true);
+      setShowReportModal(false);
 
       if(actionType === 'wa') {
         const msg = `*LAPORAN SHIFT KASIR*\n📍 Lokasi: ${currentUser?.location}\n🗓 ${dateStr}\n👤 ${currentUser?.name} (${currentUser?.nipkwt})\n🕒 ${shiftInfo.name}\n\n*RINCIAN:*\n🏍 Motor: ${s.motorQty} (Rp ${s.motorNom.toLocaleString()})\n🚗 Mobil: ${s.mobilQty} (Rp ${s.mobilNom.toLocaleString()})\n🚚 Box: ${s.trukQty} (Rp ${s.trukNom.toLocaleString()})\n💳 Member: ${s.memberQty}\n\n*TOTAL STORAN: Rp ${s.total.toLocaleString()}*`;
         window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
-        if(isShiftLocked) {
-           setTimeout(() => confirmLogout(), 2000);
-        } else {
-           setShowReportModal(false);
-        }
       } else if (actionType === 'pdf') {
         setReportToPrint(payload);
-        if(!isShiftLocked) {
-           setShowReportModal(false);
-        }
       }
     };
 
@@ -1448,7 +1438,7 @@ function PrintModal({ transaction, onComplete }) {
     const intentUrl = "intent:" + textEncoded + S + P;
     
     try {
-      window.open(intentUrl, '_top');
+      window.location.href = intentUrl;
     } catch (e) {
       console.error("Gagal membuka RawBT:", e);
     }
@@ -1521,7 +1511,7 @@ function PrintModal({ transaction, onComplete }) {
               <div className="w-6 h-6 border-4 border-green-400 border-t-transparent rounded-full animate-spin"></div>
               <p className="font-bold tracking-wide">Mencetak Otomatis...</p>
             </div>
-            <a href={"intent:" + encodeURIComponent(textToPrint) + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;"} target="_top" onClick={() => { setPrintSuccess(true); setTimeout(onComplete, 1500); }} className="mt-2 bg-blue-500 hover:bg-blue-400 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-lg active:scale-95 transition-all inline-block">
+            <a href={"intent:" + encodeURIComponent(textToPrint) + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;"} onClick={() => { setPrintSuccess(true); setTimeout(onComplete, 1500); }} className="mt-2 bg-blue-500 hover:bg-blue-400 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-lg active:scale-95 transition-all inline-block">
               Cetak Manual (RawBT)
             </a>
             <button onClick={onComplete} className="mt-1 text-white/50 hover:text-white text-xs underline">
