@@ -378,6 +378,7 @@ function MainApp() {
       time: new Date(),
       location: currentUser?.location,
       cashier: currentUser?.name,
+      nipkwt: currentUser?.nipkwt,
       shift: shiftInfo.name,
       isMember: members.some(m => m.plate === plateMasuk.toUpperCase())
     });
@@ -414,6 +415,7 @@ function MainApp() {
       cost, 
       location: currentUser?.location,
       exitCashier: currentUser?.name,
+      exitNipkwt: currentUser?.nipkwt,
       exitShift: shiftInfo.name
     });
     setShowCamera(true);
@@ -1320,6 +1322,15 @@ function MainApp() {
                      Buka Aplikasi RawBT
                    </a>
                 </div>
+
+                <div className="mt-8 bg-red-500/10 border border-red-500/30 p-8 rounded-[24px] flex flex-col items-center justify-center text-center">
+                  <AlertTriangle size={48} className="text-red-400 mb-4" />
+                  <h3 className="text-xl font-bold mb-2 text-red-400">Troubleshooting Sistem</h3>
+                  <p className="text-sm text-white/50 mb-6 max-w-md">Jika aplikasi mengalami kendala, data tidak sinkron, atau error, Anda dapat menghapus cache lokal perangkat ini tanpa harus menghapus data browser secara manual.</p>
+                  <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="bg-red-600 hover:bg-red-500 text-white font-bold px-8 py-4 rounded-2xl transition-all flex items-center gap-2 shadow-lg">
+                    <Trash2 size={20} /> Hapus Cache & Muat Ulang
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -1414,6 +1425,7 @@ function PrintModal({ transaction, onComplete }) {
       text += `[C]<font size='big'>${transaction.plate}</font>\n\n`;
       text += `[C]JAM MASUK\n`;
       text += `[C]${transaction.time.toLocaleDateString('id-ID')} ${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
+      text += `[C]Petugas: ${transaction.cashier} (${transaction.nipkwt})\n`;
       if (transaction.isMember) {
         text += `\n[C]<b>Member Aktif</b>\n`;
       }
@@ -1423,6 +1435,7 @@ function PrintModal({ transaction, onComplete }) {
       text += `[L]Masuk:  [R]${transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
       text += `[L]Keluar: [R]${transaction.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}\n`;
       text += `[L]Durasi: [R]${transaction.durationHours} Jam\n`;
+      text += `[L]Petugas: [R]${transaction.exitCashier} (${transaction.exitNipkwt})\n`;
       text += "[C]--------------------------------\n";
       text += `[C]<b>TOTAL BAYAR</b>\n`;
       text += `[C]<font size='big'>${transaction.isMember ? 'GRATIS' : `Rp ${transaction.cost.toLocaleString('id-ID')}`}</font>\n`;
@@ -1447,26 +1460,6 @@ function PrintModal({ transaction, onComplete }) {
     setTimeout(onComplete, 1500);
   };
 
-  useEffect(() => {
-    let isPrinted = false;
-    const connectAndPrint = async () => {
-      if (isPrinted) return;
-      isPrinted = true;
-      try {
-        setTimeout(() => {
-           handlePrint();
-        }, 500);
-      } catch (err) { 
-        setTimeout(() => {
-           setPrintSuccess(true);
-           setTimeout(onComplete, 1500);
-        }, 1500); 
-      }
-    };
-    connectAndPrint();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[99] flex flex-col items-center justify-center p-4 print:block print:absolute print:inset-0 print:bg-white print:text-black print:z-[9999]">
       <div className="bg-[#fcfcfc] w-full max-w-[320px] rounded-t-lg shadow-2xl overflow-hidden relative drop-shadow-2xl print:shadow-none print:w-full print:max-w-full">
@@ -1483,6 +1476,7 @@ function PrintModal({ transaction, onComplete }) {
               <h1 className="text-5xl font-black my-6 tracking-tighter leading-none">{transaction.plate}</h1>
               <p className="text-xs text-gray-600">JAM MASUK</p>
               <p className="font-bold text-base mt-1">{transaction.time.toLocaleDateString('id-ID')} {transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</p>
+              <p className="font-bold text-sm mt-1">Petugas: {transaction.cashier} ({transaction.nipkwt})</p>
               {transaction.isMember && <div className="mt-5 border-2 border-black p-2 text-sm font-black uppercase">Member Aktif</div>}
             </>
           ) : (
@@ -1493,6 +1487,7 @@ function PrintModal({ transaction, onComplete }) {
                 <div className="flex justify-between"><span>Masuk:</span><span>{transaction.time.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
                 <div className="flex justify-between"><span>Keluar:</span><span>{transaction.exitTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span></div>
                 <div className="flex justify-between"><span>Durasi:</span><span>{transaction.durationHours} Jam</span></div>
+                <div className="flex justify-between"><span>Petugas:</span><span>{transaction.exitCashier} ({transaction.exitNipkwt})</span></div>
               </div>
               <div className="border-t-2 border-dashed border-gray-400 my-5 pt-3">
                 <p className="text-sm font-bold mb-2">TOTAL BAYAR</p>
@@ -1507,14 +1502,14 @@ function PrintModal({ transaction, onComplete }) {
       <div className="mt-8 bg-white/10 border border-white/20 backdrop-blur-xl p-5 rounded-3xl w-full max-w-[320px] text-center shadow-lg print:hidden">
         {!printSuccess ? (
           <div className="flex flex-col items-center justify-center gap-4 text-white">
-            <div className="flex items-center gap-4">
-              <div className="w-6 h-6 border-4 border-green-400 border-t-transparent rounded-full animate-spin"></div>
-              <p className="font-bold tracking-wide">Mencetak Otomatis...</p>
+            <div className="flex items-center gap-3 mb-2">
+              <Printer size={24} className="text-blue-400" />
+              <p className="font-bold tracking-wide text-lg">Struk Siap Dicetak</p>
             </div>
-            <a href={"intent:" + encodeURIComponent(textToPrint) + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;"} onClick={() => { setPrintSuccess(true); setTimeout(onComplete, 1500); }} className="mt-2 bg-blue-500 hover:bg-blue-400 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-lg active:scale-95 transition-all inline-block">
-              Cetak Manual (RawBT)
+            <a href={"intent:" + encodeURIComponent(textToPrint) + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;"} onClick={() => { setPrintSuccess(true); setTimeout(onComplete, 1500); }} className="w-full bg-blue-500 hover:bg-blue-400 text-white px-6 py-4 rounded-xl font-bold text-base shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
+              <Printer size={20} /> Cetak Struk (RawBT)
             </a>
-            <button onClick={onComplete} className="mt-1 text-white/50 hover:text-white text-xs underline">
+            <button onClick={onComplete} className="mt-2 text-white/50 hover:text-white text-sm underline py-2">
               Tutup Tanpa Cetak
             </button>
           </div>
