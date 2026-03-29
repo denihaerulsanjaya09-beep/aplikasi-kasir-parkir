@@ -464,12 +464,11 @@ function MainApp() {
         const textEncoded = encodeURIComponent(textToPrint);
         const intentUrl = "intent:" + textEncoded + S + P;
         
-        const a = document.createElement('a');
-        a.href = intentUrl;
-        a.target = "_top";
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        try {
+          window.open(intentUrl, '_top');
+        } catch (e) {
+          console.error("Gagal membuka RawBT:", e);
+        }
 
         const timer2 = setTimeout(() => {
           setReportToPrint(null);
@@ -695,22 +694,29 @@ function MainApp() {
         {/* UI SIMPLE TRANSAKSI */}
         <div className="p-4 mt-2 max-w-xl mx-auto w-full flex-1 flex flex-col">
           
-          {hasClosedShift && (
-            <button onClick={confirmLogout} className="w-full mb-6 bg-red-600 hover:bg-red-500 text-white font-black text-xl py-5 rounded-2xl shadow-[0_0_20px_rgba(239,68,68,0.4)] flex items-center justify-center gap-2 animate-pulse">
-              <LogOut size={28} /> SELESAI DAN KELUAR
-            </button>
-          )}
-
-          <div className="flex gap-4 mb-6">
-              <button onClick={() => setActiveTab('masuk')} className={`flex-1 py-4 rounded-2xl font-black text-lg md:text-xl flex items-center justify-center gap-2 transition-all ${activeTab === 'masuk' ? 'bg-green-500 text-black shadow-[0_0_20px_rgba(34,197,94,0.4)]' : 'bg-black/40 text-white/50 border border-white/10 hover:bg-white/10'}`}>
-                  <ArrowRight size={24} /> MASUK
+          {hasClosedShift ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-center animate-fade-in mt-10">
+              <div className="bg-red-500/20 text-red-500 p-6 rounded-full mb-6">
+                 <LogOut size={64} />
+              </div>
+              <h2 className="text-2xl font-black mb-2">Shift Telah Ditutup</h2>
+              <p className="text-white/50 mb-8">Anda telah mencetak/mengirim laporan pendapatan. Silakan akhiri sesi Anda.</p>
+              <button onClick={confirmLogout} className="w-full bg-red-600 hover:bg-red-500 text-white font-black text-xl py-5 rounded-2xl shadow-[0_0_20px_rgba(239,68,68,0.4)] flex items-center justify-center gap-2 animate-pulse">
+                <LogOut size={28} /> SELESAI DAN KELUAR
               </button>
-              <button onClick={() => setActiveTab('keluar')} className={`flex-1 py-4 rounded-2xl font-black text-lg md:text-xl flex items-center justify-center gap-2 transition-all ${activeTab === 'keluar' ? 'bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.4)]' : 'bg-black/40 text-white/50 border border-white/10 hover:bg-white/10'}`}>
-                  <ArrowLeft size={24} /> KELUAR
-              </button>
-          </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex gap-4 mb-6">
+                  <button onClick={() => setActiveTab('masuk')} className={`flex-1 py-4 rounded-2xl font-black text-lg md:text-xl flex items-center justify-center gap-2 transition-all ${activeTab === 'masuk' ? 'bg-green-500 text-black shadow-[0_0_20px_rgba(34,197,94,0.4)]' : 'bg-black/40 text-white/50 border border-white/10 hover:bg-white/10'}`}>
+                      <ArrowRight size={24} /> MASUK
+                  </button>
+                  <button onClick={() => setActiveTab('keluar')} className={`flex-1 py-4 rounded-2xl font-black text-lg md:text-xl flex items-center justify-center gap-2 transition-all ${activeTab === 'keluar' ? 'bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.4)]' : 'bg-black/40 text-white/50 border border-white/10 hover:bg-white/10'}`}>
+                      <ArrowLeft size={24} /> KELUAR
+                  </button>
+              </div>
 
-          {activeTab === 'masuk' && (
+              {activeTab === 'masuk' && (
             <div className="bg-gradient-to-br from-white/5 to-transparent border border-white/10 backdrop-blur-lg rounded-[32px] p-6 shadow-2xl flex flex-col relative overflow-hidden flex-1 animate-fade-in">
               <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none"><Car size={200}/></div>
               
@@ -792,6 +798,8 @@ function MainApp() {
                  <Printer size={24} /> SELESAIKAN & CETAK
                </button>
             </div>
+          )}
+            </>
           )}
         </div>
 
@@ -1439,12 +1447,11 @@ function PrintModal({ transaction, onComplete }) {
     const textEncoded = encodeURIComponent(textToPrint);
     const intentUrl = "intent:" + textEncoded + S + P;
     
-    const a = document.createElement('a');
-    a.href = intentUrl;
-    a.target = "_top";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    try {
+      window.open(intentUrl, '_top');
+    } catch (e) {
+      console.error("Gagal membuka RawBT:", e);
+    }
     
     setPrintSuccess(true);
     setTimeout(onComplete, 1500);
@@ -1514,9 +1521,9 @@ function PrintModal({ transaction, onComplete }) {
               <div className="w-6 h-6 border-4 border-green-400 border-t-transparent rounded-full animate-spin"></div>
               <p className="font-bold tracking-wide">Mencetak Otomatis...</p>
             </div>
-            <button onClick={handlePrint} className="mt-2 bg-blue-500 hover:bg-blue-400 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-lg active:scale-95 transition-all">
+            <a href={"intent:" + encodeURIComponent(textToPrint) + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;"} target="_top" onClick={() => { setPrintSuccess(true); setTimeout(onComplete, 1500); }} className="mt-2 bg-blue-500 hover:bg-blue-400 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-lg active:scale-95 transition-all inline-block">
               Cetak Manual (RawBT)
-            </button>
+            </a>
             <button onClick={onComplete} className="mt-1 text-white/50 hover:text-white text-xs underline">
               Tutup Tanpa Cetak
             </button>
